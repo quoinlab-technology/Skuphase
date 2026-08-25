@@ -1,4 +1,4 @@
-"""Deterministic quality checks for LLM-generated exams."""
+﻿"""Deterministic quality checks for LLM-generated exams."""
 
 from __future__ import annotations
 
@@ -54,7 +54,6 @@ class ExamQualityValidator:
         self,
         parsed_exam: Dict[str, Any],
         request: ExamGenerationRequest,
-        rag_context: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         errors: List[str] = []
         warnings: List[str] = []
@@ -192,7 +191,7 @@ class ExamQualityValidator:
             "generated_marks_total": generated_marks_total,
             "expected_marks_total": expected_marks_total,
             "difficulty_counts": difficulty_counts,
-            "rag_chunks_used": len((rag_context or {}).get("chunks", [])),
+            "curriculum_alignment": "checked",
         }
         return ValidationResult(errors=errors, warnings=warnings, metrics=metrics)
 
@@ -200,9 +199,8 @@ class ExamQualityValidator:
         self,
         parsed_exam: Dict[str, Any],
         request: ExamGenerationRequest,
-        rag_context: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
-        result = self.validate(parsed_exam=parsed_exam, request=request, rag_context=rag_context)
+        result = self.validate(parsed_exam=parsed_exam, request=request)
         if result.errors:
             joined = " | ".join(result.errors)
             raise ValueError(f"Generated exam failed quality validation: {joined}")

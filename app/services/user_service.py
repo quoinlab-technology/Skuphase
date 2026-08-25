@@ -9,6 +9,7 @@ from sqlalchemy import select, update, delete, and_, func
 from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
+from app.models.school import School
 from app.schemas.user import (
     UserInviteRequest,
     UserUpdateRequest,
@@ -21,6 +22,9 @@ from app.schemas.user import (
     UserRemovalResponse,
 )
 from app.core.security import hash_password
+from app.config.settings import get_settings
+from app.services.mailer import send_email
+from app.utils.email_templates import build_invite_email
 
 
 def utc_now() -> datetime:
@@ -70,12 +74,29 @@ class UserService:
             await db.commit()
             await db.refresh(user)
 
+            # Email the accept-invite link; the raw token never goes in the
+            # API response.
+            school_name_result = await db.execute(
+                select(School.name).where(School.id == school_id)
+            )
+            school_name = school_name_result.scalar_one_or_none() or "your school"
+            base_url = get_settings().app_base_url.rstrip("/")
+            invite_url = f"{base_url}/accept-invite?token={invite_token}"
+            delivered = await send_email(
+                to=user.email,
+                subject="You're invited to SkuPhase",
+                html=build_invite_email(user.full_name, school_name, invite_url),
+            )
+
             return InviteResponse(
-                message=f"Invitation generated for {user.email}.",
+                message=(
+                    f"Invitation email {'sent' if delivered else 'queued (mail unavailable)'} "
+                    f"for {user.email}."
+                ),
                 user_email=user.email,
                 role=user.role,
-                invitation_sent=True,
-                invite_token=invite_token,
+                invitation_sent=delivered,
+                invite_token=None,
             )
 
         except IntegrityError as e:
@@ -187,12 +208,28 @@ class UserService:
         user.verification_token_expires_at = utc_now() + timedelta(days=7)
         await db.commit()
 
+        school_name_result = await db.execute(
+            select(School.name).where(School.id == school_id)
+        )
+        school_name = school_name_result.scalar_one_or_none() or "your school"
+        base_url = get_settings().app_base_url.rstrip("/")
+        invite_url = f"{base_url}/accept-invite?token={new_token}"
+        delivered = await send_email(
+            to=user.email,
+            subject="You're invited to SkuPhase",
+            html=build_invite_email(user.full_name, school_name, invite_url),
+        )
+
+        # SECURITY: the token is NEVER returned in the HTTP response.
         return InviteResponse(
-            message=f"Invitation link refreshed for {user.email}.",
+            message=(
+                f"Invitation email {'sent' if delivered else 'queued (mail unavailable)'} "
+                f"for {user.email}."
+            ),
             user_email=user.email,
             role=user.role,
-            invitation_sent=True,
-            invite_token=new_token,
+            invitation_sent=delivered,
+            invite_token=None,
         )
 
     @staticmethod

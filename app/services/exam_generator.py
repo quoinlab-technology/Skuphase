@@ -1,4 +1,4 @@
-"""Exam generation service using RAG + LLM."""
+"""Exam generation service — curriculum-first SQL retrieval + single LLM call."""
 
 import json
 import logging
@@ -10,13 +10,9 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
 
-from app.models.exam import Exam, Question, ExamContext
-from app.models.asset import LearningAsset, QuestionAssetRef
-from app.models.document import SchoolDocument
+from app.models.exam import Exam, Question
 from app.models.question import QuestionRefinement
 from app.schemas.exam import ExamGenerationRequest, SectionConfig
-from app.services.rag_service import RAGService
-from app.services.embedding_service import EmbeddingService
 from app.services.exam_quality_validator import ExamQualityValidator
 from app.services.curriculum_service import CurriculumService
 from app.services.few_shot_selector import FewShotSelector
@@ -31,27 +27,14 @@ def utc_now() -> datetime:
 
 
 class ExamGenerator:
-    """Service for generating exams using RAG + LLM."""
+    """Service for generating exams from official scheme-of-work objectives,
+    curated few-shot examples and one LLM call."""
 
     def __init__(self):
-        """Initialize exam generator.
-
-        Embeddings are OPTIONAL: when neither local models nor an API key
-        are available we degrade gracefully (RAGService falls back to text
-        search, and few-shot selection is SQL-only anyway).
-        """
-        try:
-            self.embedding_service = EmbeddingService(use_local=True)
-        except Exception as e:
-            logger.warning(
-                "Embedding service unavailable - RAG text fallback mode: %s", str(e)
-            )
-            self.embedding_service = None
-        self.rag_service = RAGService(embedding_service=self.embedding_service)
         self.quality_validator = ExamQualityValidator()
         self.few_shot_selector = FewShotSelector()
         self.llm_service = get_llm_service()
-    
+
     async def generate_exam(
         self,
         request: ExamGenerationRequest,
@@ -78,24 +61,21 @@ class ExamGenerator:
         try:
             logger.info("🚀 Starting exam generation for %s - %s", request.subject, request.grade_level)
 
-            # 1. Retrieve Curriculum / RAG context
-            rag_context = await self.retrieve_context(
-                school_id=school_id,
-                document_ids=request.document_ids or [],
+            # 1. Retrieve curriculum context (scheme of work + few-shot examples)
+            curriculum_context = await self.retrieve_context(
                 subject=request.subject,
                 grade_level=request.grade_level,
                 term=request.term,
                 selected_weeks=request.selected_weeks,
                 db=db,
             )
-            asset_context = await self.retrieve_asset_context(
-                school_id=school_id,
-                asset_ids=request.asset_ids or [],
-                db=db,
-            )
 
             # 2. Build dynamic prompt
-            prompt = self.build_prompt(request, rag_context, asset_context)
+            prompt = self.build_prompt(request, curriculum_context)
+
+            # Release the read transaction so no DB connection/lock is held
+            # across the long LLM await (session discipline).
+            await db.commit()
 
             # 3. Single LLM call
             logger.info("📞 Calling LLM for exam generation...")
@@ -115,12 +95,10 @@ class ExamGenerator:
             parsed_exam = self.parse_response(
                 llm_response["content"],
                 request.sections,
-                asset_context=asset_context,
             )
             validation = self.quality_validator.validate_or_raise(
                 parsed_exam=parsed_exam,
                 request=request,
-                rag_context=rag_context,
             )
             for warning in validation.warnings:
                 logger.warning("Generation quality warning: %s", warning)
@@ -132,8 +110,6 @@ class ExamGenerator:
                 request=request,
                 school_id=school_id,
                 created_by_user_id=created_by_user_id,
-                rag_context=rag_context,
-                asset_context=asset_context,
                 llm_response=llm_response,
                 db=db,
                 exam_id=exam_id,
@@ -148,20 +124,19 @@ class ExamGenerator:
 
     async def retrieve_context(
         self,
-        school_id: uuid.UUID,
-        document_ids: Optional[List[uuid.UUID]],
         subject: str,
         grade_level: str,
         term: Optional[str],
         selected_weeks: Optional[List[int]],
         db: AsyncSession,
-        top_k: int = 15,
     ) -> Dict[str, Any]:
         """
-        Retrieve curriculum context from official Scheme of Work and optional school documents.
+        Retrieve curriculum context: official NERDC Scheme of Work objectives
+        plus curated few-shot past-question examples (SQL-only lookups).
         """
         context_blocks: List[str] = []
-        chunks: List[Dict[str, Any]] = []
+        has_scheme_data = False
+        few_shot_count = 0
 
         # 1. Fetch official NERDC Scheme of Work objectives if weeks/term specified
         if selected_weeks and term:
@@ -174,6 +149,7 @@ class ExamGenerator:
                     db=db,
                 )
                 if scheme_data:
+                    has_scheme_data = True
                     lines = [f"OFFICIAL NERDC SCHEME OF WORK ({grade_level} {subject} - {term}):"]
                     for item in scheme_data:
                         lines.append(f"\n[Week {item['week_number']}: {item['topic']}]")
@@ -184,8 +160,8 @@ class ExamGenerator:
             except Exception as e:
                 logger.warning("Could not fetch scheme of work for %s %s: %s", grade_level, subject, str(e))
 
-        # 2. Few-shot past-question examples from the shared question bank
-        #    (SQL-first lookup; embeddings not required).
+        # 2. Few-shot examples from the PLATFORM question bank only
+        #    (owner_type='platform'; school-contributed items never leak here).
         try:
             examples = await self.few_shot_selector.select(
                 db=db,
@@ -194,6 +170,7 @@ class ExamGenerator:
                 week_indices=selected_weeks,
                 term=term,
             )
+            few_shot_count = len(examples)
             if examples:
                 ex_lines = [
                     f"PAST QUESTION EXAMPLES ({grade_level} {subject}):",
@@ -217,102 +194,40 @@ class ExamGenerator:
         except Exception as e:
             logger.warning("Few-shot selection skipped: %s", str(e))
 
-        # 3. Retrieve optional document chunks if document_ids provided
-        if document_ids:
-            try:
-                query = f"Curriculum content for {subject}"
-                chunks = await self.rag_service.search(
-                    school_id=school_id,
-                    query=query,
-                    db=db,
-                    document_ids=document_ids,
-                    top_k=top_k,
-                    use_vector=True,
-                )
-                if chunks:
-                    doc_context = "\n\n".join([
-                        f"[Document Chunk {i+1}] {chunk['content'][:500]}..."
-                        for i, chunk in enumerate(chunks[:10])
-                    ])
-                    context_blocks.append(f"ADDITIONAL SCHOOL LESSON NOTES / MATERIALS:\n{doc_context}")
-            except Exception as e:
-                logger.warning("Optional RAG document retrieval notice: %s", str(e))
-
         if not context_blocks:
             context_blocks.append(f"Standard National Curriculum for Nigerian Schools: {subject} ({grade_level}).")
 
         combined_context = "\n\n═══════════════════════════════════════════════════════════════\n\n".join(context_blocks)
 
         return {
-            "chunks": chunks,
             "combined_context": combined_context,
-            "document_ids": document_ids or [],
-        }
-
-    async def retrieve_asset_context(
-        self,
-        school_id: uuid.UUID,
-        asset_ids: List[uuid.UUID],
-        db: AsyncSession,
-    ) -> Dict[str, Any]:
-        """Retrieve approved asset metadata for prompt-side references."""
-        if not asset_ids:
-            return {"assets": [], "asset_map": {}}
-
-        result = await db.execute(
-            select(LearningAsset).where(
-                and_(
-                    LearningAsset.school_id == school_id,
-                    LearningAsset.id.in_(asset_ids),
-                    LearningAsset.is_active.is_(True),
-                    LearningAsset.is_ai_usable.is_(True),
-                    LearningAsset.processing_status == "approved",
-                )
-            )
-        )
-        assets = list(result.scalars().all())
-        asset_map = {asset.reference_code: asset.id for asset in assets}
-        return {
-            "assets": [
-                {
-                    "id": str(asset.id),
-                    "reference_code": asset.reference_code,
-                    "asset_type": asset.asset_type,
-                    "title": asset.title,
-                    "description": asset.description,
-                    "subject": asset.subject,
-                    "grade_level": asset.grade_level,
-                    "topic": asset.topic,
-                }
-                for asset in assets
-            ],
-            "asset_map": asset_map,
+            "has_scheme_data": has_scheme_data,
+            "few_shot_count": few_shot_count,
         }
     
     def build_prompt(
         self,
         request: ExamGenerationRequest,
-        rag_context: Dict[str, Any],
-        asset_context: Dict[str, Any],
+        curriculum_context: Dict[str, Any],
     ) -> str:
         """
         Build exam generation prompt dynamically based on configuration.
-        
+
         Args:
             request: Exam generation request
-            rag_context: RAG context from documents
-            
+            curriculum_context: Curriculum context from scheme of work + few-shot
+
         Returns:
             Complete prompt for LLM
         """
         # Calculate totals
         total_questions = sum(s.num_questions for s in request.sections)
         total_marks = self._calculate_total_marks(request.sections)
-        
+
         # Build section instructions
         section_instructions = self._build_section_instructions(request.sections)
-        
-        asset_block = self._build_asset_instructions(asset_context.get("assets", []))
+
+        difficulty_block = self._build_difficulty_instructions(request.difficulty_distribution)
         primary_layout_block = self._build_primary_layout_instructions(request)
 
         # Build base prompt
@@ -322,7 +237,11 @@ class ExamGenerator:
 SECTION 1: CURRICULUM CONTEXT
 ═══════════════════════════════════════════════════════════════
 
-{rag_context['combined_context']}
+════════════════════════════════════════════════════════════════
+SECTION 1: CURRICULUM CONTEXT
+════════════════════════════════════════════════════════════════
+
+{curriculum_context['combined_context']}
 
 → All questions MUST align with this curriculum content.
 → Use terminology and examples from the provided context.
@@ -352,9 +271,9 @@ Duration: {request.duration_minutes} minutes
 
 {section_instructions}
 
-{self._build_custom_instructions(request.custom_instructions)}
+{difficulty_block}
 
-{asset_block}
+{self._build_custom_instructions(request.custom_instructions)}
 
 {primary_layout_block}
 
@@ -467,23 +386,27 @@ TEACHER'S CUSTOM INSTRUCTIONS
 → Prioritize these specific requirements in your generation.
 """
     
-    def _build_asset_instructions(self, assets: List[Dict[str, Any]]) -> str:
-        """Build prompt section for approved asset references."""
-        if not assets:
+    def _build_difficulty_instructions(self, difficulty_distribution) -> str:
+        """Turn the requested difficulty mix into explicit prompt instructions (CP5)."""
+        if not difficulty_distribution:
             return ""
 
-        lines = [
-            "",
-            "ASSET REFERENCE CONTEXT",
-            "Use only the listed asset_ref values when a question depends on a figure/diagram/table/formula image.",
-            "Do not invent new asset references.",
-        ]
-        for asset in assets:
-            lines.append(
-                f"- asset_ref={asset['reference_code']} | type={asset['asset_type']} | "
-                f"title={asset.get('title') or '-'} | desc={asset.get('description') or '-'}"
-            )
-        return "\n".join(lines)
+        allowed = ("easy", "medium", "hard")
+        parts = []
+        for level, share in difficulty_distribution.items():
+            level_l = str(level).lower()
+            if level_l not in allowed or not isinstance(share, (int, float)):
+                continue
+            parts.append(f"{int(round(share * 100))}% {level_l}")
+        if not parts:
+            return ""
+
+        return (
+            "\nDIFFICULTY DISTRIBUTION (REQUIRED)\n"
+            + "\n".join(f"• {p} of all questions" for p in parts)
+            + "\nTag every question's difficulty field accordingly; the exam is "
+            "validated against this mix.\n"
+        )
 
     def _build_primary_layout_instructions(self, request: ExamGenerationRequest) -> str:
         """Guidance for primary-school pattern and visual questions."""
@@ -547,18 +470,17 @@ PRIMARY EXAM RENDERING RULES
         self,
         response_text: str,
         sections: List[SectionConfig],
-        asset_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Parse LLM response into structured exam data.
-        
+
         Args:
             response_text: Raw LLM response
             sections: Section configuration
-            
+
         Returns:
             Parsed exam data
-            
+
         Raises:
             ValueError: If parsing fails
         """
@@ -569,37 +491,31 @@ PRIMARY EXAM RENDERING RULES
                 # Remove markdown code blocks
                 lines = json_text.split("\n")
                 json_text = "\n".join(lines[1:-1]) if len(lines) > 2 else json_text
-            
+
             # Parse JSON
             data = json.loads(json_text)
-            
+
             # Validate structure
             if "sections" not in data:
                 raise ValueError("Response missing 'sections' key")
-            
+
             # Validate section count
             if len(data["sections"]) != len(sections):
                 logger.warning(f"Expected {len(sections)} sections, got {len(data['sections'])}")
-            
+
             # Validate total questions
             total_questions = sum(len(s["questions"]) for s in data["sections"])
             expected_questions = sum(s.num_questions for s in sections)
-            
+
             if total_questions != expected_questions:
                 logger.warning(f"Expected {expected_questions} questions, got {total_questions}")
 
             self._validate_markdown_blocks(data)
 
-            # Validate asset reference contract (strict)
-            self._validate_asset_reference_contract(
-                parsed_exam=data,
-                asset_context=asset_context or {"asset_map": {}},
-            )
-            
             logger.info(f"✅ Parsed exam: {len(data['sections'])} sections, {total_questions} questions")
-            
+
             return data
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing failed: {str(e)}")
             logger.error(f"Response text: {response_text[:500]}...")
@@ -617,69 +533,28 @@ PRIMARY EXAM RENDERING RULES
                 if question_text.count("```") % 2 != 0:
                     raise ValueError("Question contains unbalanced markdown fenced code blocks.")
 
-    def _validate_asset_reference_contract(
-        self,
-        parsed_exam: Dict[str, Any],
-        asset_context: Dict[str, Any],
-    ) -> None:
-        """Ensure `asset_ref` usage is explicit and restricted to approved refs."""
-        asset_map = asset_context.get("asset_map", {})
-        allowed_refs = set(asset_map.keys())
-        sections = parsed_exam.get("sections", [])
-        marker_pattern = re.compile(r"asset_ref\s*[:=]\s*([A-Za-z0-9_\-]+)", re.IGNORECASE)
-
-        for section in sections:
-            for question in section.get("questions", []):
-                question_text = str(question.get("question") or "")
-                marker_refs = marker_pattern.findall(question_text)
-                asset_ref = question.get("asset_ref")
-
-                if asset_ref is None:
-                    if marker_refs:
-                        raise ValueError(
-                            "Question contains inline asset_ref marker but asset_ref field is missing/null."
-                        )
-                    continue
-
-                if not isinstance(asset_ref, str) or not asset_ref.strip():
-                    raise ValueError("asset_ref must be a non-empty string when provided.")
-                normalized_ref = asset_ref.strip()
-                question["asset_ref"] = normalized_ref
-
-                if not allowed_refs:
-                    raise ValueError(
-                        f"asset_ref '{normalized_ref}' was provided but no approved assets were selected."
-                    )
-                if normalized_ref not in allowed_refs:
-                    raise ValueError(
-                        f"asset_ref '{normalized_ref}' is not among selected approved asset references."
-                    )
-    
     async def store_exam(
         self,
         parsed_exam: Dict[str, Any],
         request: ExamGenerationRequest,
         school_id: uuid.UUID,
         created_by_user_id: uuid.UUID,
-        rag_context: Dict[str, Any],
-        asset_context: Dict[str, Any],
         llm_response: Dict[str, Any],
         db: AsyncSession,
         exam_id: Optional[uuid.UUID] = None,
     ) -> Exam:
         """
         Store generated exam in database.
-        
+
         Args:
             parsed_exam: Parsed exam data
             request: Original request
             school_id: School ID
             created_by_user_id: User ID
-            rag_context: RAG context used
             llm_response: LLM response metadata
             db: Database session
             exam_id: Optional existing exam ID to update
-            
+
         Returns:
             Stored exam
         """
@@ -701,10 +576,9 @@ PRIMARY EXAM RENDERING RULES
                     exam.status = "under_review"
                     exam.workflow_state = "teacher_review"
                     exam.updated_at = utc_now()
-                    
+
                     # If this is a re-generation, clear old questions
                     await db.execute(delete(Question).where(Question.exam_id == exam_id))
-                    await db.execute(delete(ExamContext).where(ExamContext.exam_id == exam_id))
                 else:
                     logger.warning(f"Exam {exam_id} not found for update, creating new.")
                     exam = Exam(
@@ -745,7 +619,6 @@ PRIMARY EXAM RENDERING RULES
             
             # Create questions (batch)
             question_number = 1
-            asset_map = asset_context.get("asset_map", {})
             for section in parsed_exam["sections"]:
                 for q_data in section["questions"]:
                     question = Question(
@@ -768,32 +641,8 @@ PRIMARY EXAM RENDERING RULES
                         updated_at=utc_now(),
                     )
                     db.add(question)
-                    asset_ref = q_data.get("asset_ref")
-                    if asset_ref and asset_ref in asset_map:
-                        db.add(
-                            QuestionAssetRef(
-                                question_id=question.id,
-                                asset_id=asset_map[asset_ref],
-                                usage_type="required",
-                                is_mandatory=True,
-                            )
-                        )
                     question_number += 1
-            
-            # Create exam context (source citations)
-            for doc_id in rag_context["document_ids"]:
-                context = ExamContext(
-                    id=uuid.uuid4(),
-                    exam_id=exam.id,
-                    document_id=doc_id,
-                    relevance_score=1.0,  # Could calculate from RAG scores
-                    extracted_context=rag_context["combined_context"][:1000],
-                    context_type="curriculum_reference",
-                    created_at=utc_now(),
-                    updated_at=utc_now(),
-                )
-                db.add(context)
-            
+
             await db.commit()
             await db.refresh(exam)
             
@@ -864,6 +713,10 @@ PRIMARY EXAM RENDERING RULES
             }
             for q in questions
         ]
+
+        # Release the read transaction before the LLM await (session
+        # discipline: no idle-in-transaction during provider calls).
+        await db.commit()
 
         prompt = f"""You are refining exam questions for {exam.subject} ({exam.grade_level}).
 

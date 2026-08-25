@@ -1,77 +1,85 @@
-"""Database connection and session management."""
+"""Async SQLAlchemy engine/session management and startup DB verification."""
 
 import logging
-from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    AsyncEngine,
-    create_async_engine,
-)
 from sqlalchemy import text
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
-from app.config.settings import get_settings
-
-settings = get_settings()
 logger = logging.getLogger(__name__)
 
-# Create async engine
-engine: AsyncEngine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    poolclass=NullPool,  # For serverless environments - doesn't support pool_size
-)
 
-# Create session factory
-async_session_maker = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
-# Base class for all models
-Base = declarative_base()
+class Base(DeclarativeBase):
+    """Declarative base for all ORM models."""
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session for dependency injection."""
-    async with async_session_maker() as session:
+settings = None
+
+
+def _get_engine():
+    global settings
+    if settings is None:
+        from app.config.settings import get_settings
+
+        settings = get_settings()
+
+    return create_async_engine(
+        settings.database_url,
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_recycle=1800,
+    )
+
+
+engine = None
+async_session_maker = None
+
+
+def _ensure_engine():
+    global engine, async_session_maker
+    if engine is None:
+        engine = _get_engine()
+        async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return engine
+
+
+def get_async_session_maker() -> async_sessionmaker:
+    """Return the process-wide async session factory."""
+    _ensure_engine()
+    assert async_session_maker is not None
+    return async_session_maker
+
+
+async def get_db_session():
+    """
+    Dependency that provides a transactional database session.
+    Ensures the session is closed after request completion.
+    """
+    session_maker = get_async_session_maker()
+    async with session_maker() as session:
         try:
             yield session
-        finally:
-            await session.close()
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
-async def init_db():
+async def init_db() -> None:
     """
-    Initialize database connectivity and verify migration state.
+    Startup verification gate.
 
-    Migration-first policy:
-    - Schema changes must be applied via Alembic, not create_all().
+    The app refuses to start against an unmigrated or unreachable database.
+    Schema creation happens exclusively through Alembic migrations — this
+    function never creates or alters tables.
     """
-    async with engine.begin() as conn:
-        try:
-            # Keep stack lightweight: enable pgvector in Postgres when allowed.
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        except Exception as e:
-            # Some managed DB roles may not have extension permissions.
-            logger.warning(f"Could not initialize pgvector extension: {str(e)}")
-
-        # Verify Alembic has been applied.
-        try:
-            result = await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
-            version = result.scalar_one_or_none()
-            if not version:
-                raise RuntimeError("Alembic version table exists but has no revision.")
-            logger.info(f"Database migration revision: {version}")
-        except Exception as e:
-            raise RuntimeError(
-                "Database is not migrated. Run `alembic -c alembic.ini upgrade head` before starting the app."
-            ) from e
-
-
-async def close_db():
-    """Close database connection."""
-    await engine.dispose()
+    _ensure_engine()
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+        logger.info("Database migration state verified")
+    except Exception as e:
+        logger.error(f"Database not initialized. Run 'python init_db.py' first. Error: {e}")
+        raise RuntimeError(f"Database not initialized: {e}") from e

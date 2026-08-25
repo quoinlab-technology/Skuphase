@@ -1,6 +1,7 @@
 """Dependency injection utilities."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -17,6 +18,25 @@ from app.services.auth_service import AuthService
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
+
+
+def _token_predates_credential_change(payload: dict, user) -> bool:
+    """True when the JWT was issued before the user's last credential change."""
+    valid_after = getattr(user, "token_valid_after", None)
+    if not valid_after:
+        return False
+    issued_at = payload.get("iat")
+    if not issued_at:
+        return True
+    if isinstance(issued_at, (int, float)):
+        return datetime.fromtimestamp(issued_at, tz=timezone.utc) < valid_after
+    try:
+        issued_dt = datetime.fromisoformat(str(issued_at))
+        if issued_dt.tzinfo is None:
+            issued_dt = issued_dt.replace(tzinfo=timezone.utc)
+        return issued_dt < valid_after
+    except ValueError:
+        return True
 
 
 async def get_current_user(
@@ -57,6 +77,12 @@ async def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive",
+            )
+        if _token_predates_credential_change(payload, user):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token revoked by credential change. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         return CurrentUser(
@@ -119,6 +145,12 @@ async def get_current_user_from_refresh_token(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is inactive",
+            )
+        if _token_predates_credential_change(payload, user):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token revoked by credential change. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         return CurrentUser(

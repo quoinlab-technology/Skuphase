@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
-from app.models.document import SchoolDocument
 from app.models.exam import Exam
 from app.models.user import User
 
@@ -28,8 +27,8 @@ async def ops_health(
     """Return service and database health."""
     try:
         await db.execute(select(1))
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"database_unhealthy: {exc}") from exc
+    except Exception:
+        raise HTTPException(status_code=503, detail="database_unhealthy")
 
     return {
         "status": "healthy",
@@ -43,8 +42,8 @@ async def ops_health(
 @router.get(
     "/stats",
     response_model=dict,
-    summary="Queue and generation stats",
-    description="School-scoped processing and exam status counters for ops visibility.",
+    summary="Generation stats",
+    description="School-scoped exam status counters for ops visibility.",
     tags=["Operations"],
 )
 async def ops_stats(
@@ -58,57 +57,14 @@ async def ops_stats(
     school_id = current_user.school_id
     since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
-    documents_pending_result = await db.execute(
-        select(func.count())
-        .select_from(SchoolDocument)
-        .where(
-            and_(
-                SchoolDocument.school_id == school_id,
-                SchoolDocument.processing_status.in_(["pending", "in_progress"]),
-            )
-        )
+    status_counts_result = await db.execute(
+        select(Exam.status, func.count())
+        .where(Exam.school_id == school_id)
+        .group_by(Exam.status)
     )
-    documents_failed_result = await db.execute(
-        select(func.count())
-        .select_from(SchoolDocument)
-        .where(
-            and_(
-                SchoolDocument.school_id == school_id,
-                SchoolDocument.processing_status == "failed",
-            )
-        )
-    )
-    exams_generating_result = await db.execute(
-        select(func.count())
-        .select_from(Exam)
-        .where(
-            and_(
-                Exam.school_id == school_id,
-                Exam.status == "draft",
-            )
-        )
-    )
-    exams_under_review_result = await db.execute(
-        select(func.count())
-        .select_from(Exam)
-        .where(
-            and_(
-                Exam.school_id == school_id,
-                Exam.status == "under_review",
-            )
-        )
-    )
-    exams_approved_result = await db.execute(
-        select(func.count())
-        .select_from(Exam)
-        .where(
-            and_(
-                Exam.school_id == school_id,
-                Exam.status == "approved",
-            )
-        )
-    )
-    exams_failed_24h_result = await db.execute(
+    status_counts = {row[0]: row[1] for row in status_counts_result.all()}
+
+    failed_24h_result = await db.execute(
         select(func.count())
         .select_from(Exam)
         .where(
@@ -123,14 +79,10 @@ async def ops_stats(
     return {
         "school_id": str(school_id),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "documents": {
-            "pending_or_in_progress": documents_pending_result.scalar_one(),
-            "failed_total": documents_failed_result.scalar_one(),
-        },
         "exams": {
-            "generating_draft": exams_generating_result.scalar_one(),
-            "under_review": exams_under_review_result.scalar_one(),
-            "approved": exams_approved_result.scalar_one(),
-            "failed_last_24h": exams_failed_24h_result.scalar_one(),
+            "generating_draft": status_counts.get("draft", 0),
+            "under_review": status_counts.get("under_review", 0),
+            "approved": status_counts.get("approved", 0),
+            "failed_last_24h": failed_24h_result.scalar_one(),
         },
     }

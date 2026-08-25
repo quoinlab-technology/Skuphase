@@ -1,4 +1,4 @@
-"""Exam generation and management API endpoints."""
+﻿"""Exam generation and management API endpoints."""
 
 import asyncio
 import uuid
@@ -7,22 +7,23 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update
 
 from app.core.dependencies import get_current_user
+from app.core.permissions import require_llm_permission, is_workspace_admin
+from app.core.workflow import MUTABLE_STATUSES
 from app.core.database import get_db_session, async_session_maker
 from app.config.settings import get_settings
 from app.models.user import User
-from app.models.exam import Exam, Question, ExamContext
-from app.models.document import SchoolDocument
+from app.models.exam import Exam, Question
 from app.models.question import ExamAuditComment
 from app.models.proposal import ExamGenerationProposal
 from app.models.quality import ExamQualitySnapshot
 from app.models.question_bank import QuestionBankItem
 from app.models.usage_log import UsageLog
-from app.models.asset import LearningAsset, QuestionAssetRef
 from app.schemas.exam import (
     GenerateFromProposalRequest,
     ExamGenerationProposalCreateRequest,
@@ -40,18 +41,24 @@ from app.schemas.exam import (
     QuestionResponse,
     ExamRegenerationRequest,
     ExamExportRequest,
+    ExamExportResponse,
     ExamAuditCommentCreateRequest,
     ExamAuditCommentResponse,
     ExamRefineFromCommentsRequest,
 )
+from app.services.curriculum_service import CurriculumService
 from app.services.exam_generator import ExamGenerator
 from app.services.exam_quality_report import ExamQualityReportService
 from app.services.export_service import ExportService
+from app.services.job_queue import enqueue_generation_job
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 router = APIRouter()
+
+# Regex-validated export filename component.
+_EXPORT_FILE_PATTERN = re.compile(r"^[0-9a-f]{32}\.pdf$")
 
 
 def _can_submit_audit_comment(role: str) -> bool:
@@ -62,104 +69,6 @@ def _can_submit_audit_comment(role: str) -> bool:
 def _can_submit_proposal(role: str) -> bool:
     """Teacher/auditor/admin can submit generation proposals."""
     return role in {"teacher", "auditor", "school_admin"}
-
-
-async def _validate_and_fetch_assets(
-    db: AsyncSession,
-    school_id: uuid.UUID,
-    asset_ids: Optional[List[uuid.UUID]],
-    require_ai_usable: bool,
-) -> Dict[uuid.UUID, LearningAsset]:
-    """Validate selected assets belong to school and satisfy policy requirements."""
-    if not asset_ids:
-        return {}
-
-    unique_ids: Set[uuid.UUID] = set(asset_ids)
-    query = select(LearningAsset).where(
-        and_(
-            LearningAsset.school_id == school_id,
-            LearningAsset.id.in_(unique_ids),
-            LearningAsset.is_active.is_(True),
-        )
-    )
-    if require_ai_usable:
-        query = query.where(
-            and_(
-                LearningAsset.is_ai_usable.is_(True),
-                LearningAsset.processing_status == "approved",
-            )
-        )
-    result = await db.execute(query)
-    assets = list(result.scalars().all())
-    found = {asset.id: asset for asset in assets}
-    missing = unique_ids - set(found.keys())
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid or unavailable asset IDs: {[str(item) for item in missing]}",
-        )
-    return found
-
-
-async def _fetch_question_asset_map(
-    db: AsyncSession,
-    question_ids: List[uuid.UUID],
-) -> Dict[uuid.UUID, List[uuid.UUID]]:
-    """Build question_id -> asset_id list mapping."""
-    if not question_ids:
-        return {}
-    result = await db.execute(
-        select(QuestionAssetRef).where(QuestionAssetRef.question_id.in_(question_ids))
-    )
-    mapping: Dict[uuid.UUID, List[uuid.UUID]] = {}
-    for row in result.scalars().all():
-        mapping.setdefault(row.question_id, []).append(row.asset_id)
-    return mapping
-
-
-async def _build_export_asset_payload(
-    db: AsyncSession,
-    school_id: uuid.UUID,
-    question_ids: List[uuid.UUID],
-) -> Dict[str, List[dict]]:
-    """Return question_id -> export-ready asset metadata."""
-    if not question_ids:
-        return {}
-
-    refs_result = await db.execute(
-        select(QuestionAssetRef).where(QuestionAssetRef.question_id.in_(question_ids))
-    )
-    refs = list(refs_result.scalars().all())
-    if not refs:
-        return {}
-
-    asset_ids = list({ref.asset_id for ref in refs})
-    assets_result = await db.execute(
-        select(LearningAsset).where(
-            and_(
-                LearningAsset.school_id == school_id,
-                LearningAsset.id.in_(asset_ids),
-                LearningAsset.is_active.is_(True),
-            )
-        )
-    )
-    assets_by_id = {item.id: item for item in assets_result.scalars().all()}
-
-    payload: Dict[str, List[dict]] = {}
-    for ref in refs:
-        asset = assets_by_id.get(ref.asset_id)
-        if not asset:
-            continue
-        payload.setdefault(str(ref.question_id), []).append(
-            {
-                "asset_id": str(asset.id),
-                "reference_code": asset.reference_code,
-                "title": asset.title,
-                "file_path": asset.file_path,
-            }
-        )
-
-    return payload
 
 
 async def _run_exam_preflight(
@@ -190,32 +99,6 @@ async def _run_exam_preflight(
             "issues": issues,
             "warnings": warnings,
         }
-
-    question_ids = [item.id for item in questions]
-    ref_result = await db.execute(
-        select(QuestionAssetRef).where(QuestionAssetRef.question_id.in_(question_ids))
-    )
-    refs = list(ref_result.scalars().all())
-    refs_by_question: Dict[uuid.UUID, List[QuestionAssetRef]] = {}
-    asset_ids: Set[uuid.UUID] = set()
-    for ref in refs:
-        refs_by_question.setdefault(ref.question_id, []).append(ref)
-        asset_ids.add(ref.asset_id)
-
-    assets_by_id: Dict[uuid.UUID, LearningAsset] = {}
-    if asset_ids:
-        assets_result = await db.execute(
-            select(LearningAsset).where(
-                and_(
-                    LearningAsset.id.in_(asset_ids),
-                    LearningAsset.school_id == exam.school_id,
-                )
-            )
-        )
-        assets = list(assets_result.scalars().all())
-        assets_by_id = {asset.id: asset for asset in assets}
-
-    unresolved_pattern = re.compile(r"asset_ref\s*[:=]\s*([A-Za-z0-9_\-]+)", re.IGNORECASE)
 
     def _formula_issues_from_text(
         text: str,
@@ -294,65 +177,6 @@ async def _run_exam_preflight(
         return local_issues
 
     for question in questions:
-        question_refs = refs_by_question.get(question.id, [])
-        matches = unresolved_pattern.findall(question.question_text or "")
-        if matches and not question_refs:
-            issues.append(
-                {
-                    "code": "unresolved_asset_reference",
-                    "question_id": str(question.id),
-                    "question_number": question.question_number,
-                    "message": "Question text includes asset_ref marker but no linked asset.",
-                }
-            )
-
-        for ref in question_refs:
-            asset = assets_by_id.get(ref.asset_id)
-            if asset is None:
-                issues.append(
-                    {
-                        "code": "broken_asset_link",
-                        "question_id": str(question.id),
-                        "question_number": question.question_number,
-                        "asset_id": str(ref.asset_id),
-                        "message": "Question has linked asset that no longer exists.",
-                    }
-                )
-                continue
-            if not asset.is_active:
-                issues.append(
-                    {
-                        "code": "inactive_asset",
-                        "question_id": str(question.id),
-                        "question_number": question.question_number,
-                        "asset_id": str(asset.id),
-                        "reference_code": asset.reference_code,
-                        "message": "Question uses an inactive archived asset.",
-                    }
-                )
-            if asset.processing_status == "rejected":
-                issues.append(
-                    {
-                        "code": "rejected_asset",
-                        "question_id": str(question.id),
-                        "question_number": question.question_number,
-                        "asset_id": str(asset.id),
-                        "reference_code": asset.reference_code,
-                        "message": "Question uses a rejected asset.",
-                    }
-                )
-            if asset.processing_status == "needs_review":
-                warnings.append(
-                    {
-                        "code": "asset_needs_review",
-                        "question_id": str(question.id),
-                        "question_number": question.question_number,
-                        "asset_id": str(asset.id),
-                        "reference_code": asset.reference_code,
-                        "message": "Question uses asset still marked needs_review.",
-                    }
-                )
-
         formula_fields: List[tuple[str, str]] = [("question_text", question.question_text or "")]
         if question.explanation:
             formula_fields.append(("explanation", question.explanation))
@@ -430,67 +254,6 @@ async def _log_usage(
 
 
 # ============================================================================
-# BACKGROUND TASK PROCESSING
-# ============================================================================
-
-async def generate_exam_background(
-    exam_id: uuid.UUID,
-    request_data: dict,
-    school_id: uuid.UUID,
-    created_by_user_id: uuid.UUID,
-):
-    """
-    Background task to generate an exam.
-
-    This runs asynchronously after the HTTP response is sent.
-    """
-    attempts = max(1, settings.background_retry_attempts)
-    base_delay = max(0.5, float(settings.background_retry_base_delay_seconds))
-
-    for attempt in range(1, attempts + 1):
-        async with async_session_maker() as db:
-            try:
-                logger.info(
-                    "Starting background exam generation for %s (attempt %s/%s)",
-                    exam_id,
-                    attempt,
-                    attempts,
-                )
-
-                request = ExamGenerationRequest(**request_data)
-                generator = ExamGenerator()
-                exam = await generator.generate_exam(
-                    request=request,
-                    school_id=school_id,
-                    created_by_user_id=created_by_user_id,
-                    db=db,
-                    exam_id=exam_id,
-                )
-
-                logger.info("Background exam generation completed: %s", exam.id)
-                return
-
-            except Exception as e:
-                logger.error(
-                    "Background exam generation failed for %s (attempt %s/%s): %s",
-                    exam_id,
-                    attempt,
-                    attempts,
-                    str(e),
-                )
-                if attempt >= attempts:
-                    try:
-                        result = await db.execute(select(Exam).where(Exam.id == exam_id))
-                        exam = result.scalar_one_or_none()
-                        if exam:
-                            exam.status = "failed"
-                            await db.commit()
-                    except Exception as update_error:
-                        logger.error(f"Failed to update exam status: {str(update_error)}")
-                    return
-
-        await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
-# ============================================================================
 # EXAM GENERATION ENDPOINT
 # ============================================================================
 
@@ -504,61 +267,51 @@ async def generate_exam_background(
 )
 async def generate_exam(
     request: ExamGenerationRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ExamGenerationResponse:
     """
-    Generate an exam based on curriculum documents.
-    
+    Generate an exam from official scheme-of-work objectives.
+
     This endpoint:
-    1. Validates the request and documents
+    1. Validates the request
     2. Creates a draft exam record
-    3. Starts background generation (RAG + LLM)
+    3. Enqueues a durable background generation job (LLM)
     4. Returns immediately with exam ID
     5. Client can poll GET /exams/{id} to check status
-    
-    Processing happens asynchronously:
-    - Status updates: draft → completed/failed
-    - Check exam.status to track progress
-    
+
     Returns:
         202 Accepted with exam ID and polling endpoint
     """
     try:
-        # Only admins can trigger LLM generation calls (cost control).
-        if current_user.role != "school_admin":
+        # Only workspace admins trigger LLM generation calls (cost control).
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can generate exams",
+                detail="Only school administrators or individual teachers can generate exams",
             )
-        
-        # Verify documents exist and belong to school
-        for doc_id in request.document_ids:
-            # Check if document exists and belongs to school
-            query = select(SchoolDocument).where(
-                and_(
-                    SchoolDocument.id == doc_id,
-                    SchoolDocument.school_id == current_user.school_id
-                )
+
+        warnings: List[str] = []
+        if request.term and request.selected_weeks:
+            scheme_data = await CurriculumService.get_objectives_for_weeks(
+                class_level=request.grade_level,
+                subject_name=request.subject,
+                term=request.term,
+                selected_weeks=request.selected_weeks,
+                db=db,
             )
-            result = await db.execute(query)
-            if not result.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Document {doc_id} not found or access denied",
+            if not scheme_data:
+                class_list = await CurriculumService.get_all_classes(db)
+                available = ", ".join(class_list)
+                warnings.append(
+                    f"No official NERDC scheme data found for {request.grade_level} "
+                    f"{request.subject} {request.term}. Generating from general "
+                    f"curriculum knowledge instead. Available classes: {available}"
                 )
 
-        await _validate_and_fetch_assets(
-            db=db,
-            school_id=current_user.school_id,
-            asset_ids=request.asset_ids,
-            require_ai_usable=True,
-        )
-        
         # Check rate limit (10 exams per day per school)
         from datetime import datetime, timedelta
-        
+
         one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
         rate_limit_query = select(func.count()).where(
             and_(
@@ -568,7 +321,7 @@ async def generate_exam(
         )
         rate_limit_result = await db.execute(rate_limit_query)
         daily_count = rate_limit_result.scalar()
-        
+
         if daily_count >= 10:
             raise HTTPException(
                 status_code=429,
@@ -583,34 +336,35 @@ async def generate_exam(
             created_by_user_id=current_user.user_id,
             subject=request.subject,
             grade_level=request.grade_level,
-            status="draft",  # Will be updated by background task
+            status="draft",  # Will be updated by the job worker
             workflow_state="generation_requested",
             llm_call_count=1,
             llm_call_limit=3,
-            total_marks=0,  # Will be updated by background task
+            total_marks=0,  # Will be updated by the job worker
             duration_minutes=request.duration_minutes,
         )
-        
+
         db.add(exam)
         await db.commit()
-        
-        # Add background task
-        background_tasks.add_task(
-            generate_exam_background,
+
+        # Enqueue a durable, restart-safe job (survives deploys/restarts).
+        await enqueue_generation_job(
+            session=db,
             exam_id=exam_id,
-            request_data=request.dict(),
+            request_data=request.model_dump(mode="json"),
             school_id=current_user.school_id,
             created_by_user_id=current_user.user_id,
         )
-        
+
         return ExamGenerationResponse(
-            message="Exam generation started in background",
+            message="Exam generation queued",
             exam_id=exam_id,
             status="generating",
             poll_endpoint=f"/api/v1/exams/{exam_id}",
             estimated_time_seconds=30,
+            warnings=warnings or None,
         )
-        
+
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -643,17 +397,6 @@ async def submit_manual_exam(
             status_code=403,
             detail="Only school administrators and teachers can submit manual exams",
         )
-
-    requested_asset_ids: Set[uuid.UUID] = set()
-    for question_data in request.questions:
-        if question_data.asset_ids:
-            requested_asset_ids.update(question_data.asset_ids)
-    await _validate_and_fetch_assets(
-        db=db,
-        school_id=current_user.school_id,
-        asset_ids=list(requested_asset_ids),
-        require_ai_usable=False,
-    )
 
     exam = Exam(
         id=uuid.uuid4(),
@@ -695,17 +438,6 @@ async def submit_manual_exam(
             diagram_svg=question_data.diagram_svg,
         )
         db.add(question)
-        if question_data.asset_ids:
-            for order, asset_id in enumerate(question_data.asset_ids, start=1):
-                db.add(
-                    QuestionAssetRef(
-                        question_id=question.id,
-                        asset_id=asset_id,
-                        usage_type="required",
-                        display_order=order,
-                        is_mandatory=True,
-                    )
-                )
 
     await _log_usage(
         db=db,
@@ -726,10 +458,6 @@ async def submit_manual_exam(
         .order_by(Question.question_number)
     )
     questions = question_result.scalars().all()
-    question_asset_map = await _fetch_question_asset_map(
-        db=db,
-        question_ids=[item.id for item in questions],
-    )
 
     return ExamResponse(
         id=exam.id,
@@ -757,7 +485,6 @@ async def submit_manual_exam(
                 marking_scheme=q.marking_scheme,
                 sub_parts=q.sub_parts,
                 diagram_svg=q.diagram_svg,
-                asset_refs=question_asset_map.get(q.id, []),
             )
             for q in questions
         ],
@@ -813,6 +540,9 @@ async def save_exam_questions_to_bank(
     for question in questions:
         item = QuestionBankItem(
             school_id=current_user.school_id,
+            # SECURITY: school-contributed rows must NEVER be marked platform;
+            # platform rows are injected into every school's prompts.
+            owner_type="school",
             source_exam_id=exam.id,
             source_question_id=question.id,
             created_by_user_id=current_user.user_id,
@@ -941,26 +671,11 @@ async def create_generation_proposal(
     if not _can_submit_proposal(current_user.role):
         raise HTTPException(status_code=403, detail="You are not allowed to submit proposals")
 
-    for doc_id in request.document_ids:
-        query = select(SchoolDocument).where(
-            and_(
-                SchoolDocument.id == doc_id,
-                SchoolDocument.school_id == current_user.school_id,
-            )
-        )
-        result = await db.execute(query)
-        if not result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {doc_id} not found or access denied",
-            )
-
     proposal = ExamGenerationProposal(
         school_id=current_user.school_id,
         requested_by_user_id=current_user.user_id,
         subject=request.subject,
         grade_level=request.grade_level,
-        document_ids=[str(doc_id) for doc_id in request.document_ids],
         term=request.term,
         selected_weeks=request.selected_weeks or [],
         desired_outcomes=request.desired_outcomes,
@@ -1012,15 +727,14 @@ async def list_generation_proposals(
 async def generate_exam_from_proposal(
     proposal_id: uuid.UUID,
     request: GenerateFromProposalRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ExamGenerationResponse:
-    """Create draft exam and background task from queued proposal."""
-    if current_user.role != "school_admin":
+    """Create draft exam and durable generation job from queued proposal."""
+    if not is_workspace_admin(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Only school administrators can generate exams from proposals",
+            detail="Only school administrators or individual teachers can generate exams from proposals",
         )
 
     proposal_result = await db.execute(
@@ -1036,21 +750,6 @@ async def generate_exam_from_proposal(
         raise HTTPException(status_code=404, detail="Proposal not found")
     if proposal.status != "open":
         raise HTTPException(status_code=400, detail="Proposal is not open")
-
-    proposal_document_ids = [uuid.UUID(doc_id) for doc_id in (proposal.document_ids or [])]
-    for doc_id in proposal_document_ids:
-        query = select(SchoolDocument).where(
-            and_(
-                SchoolDocument.id == doc_id,
-                SchoolDocument.school_id == current_user.school_id,
-            )
-        )
-        result = await db.execute(query)
-        if not result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {doc_id} not found or access denied",
-            )
 
     # Curriculum-first alignment: admin override wins, else fall back to the
     # teacher's proposal values. getattr() keeps older callers/tests that build
@@ -1091,7 +790,6 @@ async def generate_exam_from_proposal(
     generation_request = ExamGenerationRequest(
         subject=proposal.subject,
         grade_level=proposal.grade_level,
-        document_ids=proposal_document_ids,
         term=effective_term,
         selected_weeks=effective_weeks,
         sections=request.sections,
@@ -1122,8 +820,8 @@ async def generate_exam_from_proposal(
 
     await db.commit()
 
-    background_tasks.add_task(
-        generate_exam_background,
+    await enqueue_generation_job(
+        session=db,
         exam_id=exam_id,
         request_data=generation_request.model_dump(mode="json"),
         school_id=current_user.school_id,
@@ -1131,7 +829,7 @@ async def generate_exam_from_proposal(
     )
 
     return ExamGenerationResponse(
-        message="Exam generation from proposal started in background",
+        message="Exam generation from proposal queued",
         exam_id=exam_id,
         status="generating",
         poll_endpoint=f"/api/v1/exams/{exam_id}",
@@ -1190,27 +888,33 @@ async def list_exams(
         # Execute query
         result = await db.execute(query)
         exams = result.scalars().all()
-        
-        # Get question counts for each exam
-        exam_list = []
-        for exam in exams:
-            question_count_result = await db.execute(
-                select(func.count()).where(Question.exam_id == exam.id)
+
+        # Single grouped query for question counts (avoids N+1)
+        exam_ids = [exam.id for exam in exams]
+        counts_by_exam: Dict[uuid.UUID, int] = {}
+        if exam_ids:
+            counts_result = await db.execute(
+                select(Question.exam_id, func.count())
+                .where(Question.exam_id.in_(exam_ids))
+                .group_by(Question.exam_id)
             )
-            question_count = question_count_result.scalar()
-            
-            exam_list.append(
-                ExamListItem(
-                    id=exam.id,
-                    subject=exam.subject,
-                    grade_level=exam.grade_level,
-                    status=exam.status,
-                    total_marks=exam.total_marks,
-                    question_count=question_count,
-                    created_at=exam.created_at,
-                )
+            counts_by_exam = {
+                row[0]: row[1] for row in counts_result.all()
+            }
+
+        exam_list = [
+            ExamListItem(
+                id=exam.id,
+                subject=exam.subject,
+                grade_level=exam.grade_level,
+                status=exam.status,
+                total_marks=exam.total_marks,
+                question_count=counts_by_exam.get(exam.id, 0),
+                created_at=exam.created_at,
             )
-        
+            for exam in exams
+        ]
+
         return ExamListResponse(total=total, exams=exam_list)
         
     except Exception as e:
@@ -1257,11 +961,11 @@ async def get_exam_quality_report(
     if not questions:
         raise HTTPException(status_code=400, detail="Exam has no questions for analysis")
 
-    context_result = await db.execute(
-        select(ExamContext).where(ExamContext.exam_id == exam_id)
+    # Coverage signal: overlap between question keywords and the exam's own
+    # curriculum metadata (subject/topic vocabulary).
+    context_text = " ".join(
+        filter(None, [exam.subject, *(getattr(q, "topic", None) for q in questions)])
     )
-    contexts = context_result.scalars().all()
-    context_text = "\n".join((ctx.extracted_context or "") for ctx in contexts)
 
     report = ExamQualityReportService.build_report(
         subject=exam.subject,
@@ -1382,11 +1086,7 @@ async def get_exam(
             .order_by(Question.question_number)
         )
         questions = questions_result.scalars().all()
-        question_asset_map = await _fetch_question_asset_map(
-            db=db,
-            question_ids=[item.id for item in questions],
-        )
-        
+
         # Convert to response schema
         question_responses = [
             QuestionResponse(
@@ -1404,7 +1104,6 @@ async def get_exam(
                 marking_scheme=q.marking_scheme,
                 sub_parts=q.sub_parts,
                 diagram_svg=q.diagram_svg,
-                asset_refs=question_asset_map.get(q.id, []),
             )
             for q in questions
         ]
@@ -1464,13 +1163,13 @@ async def update_exam(
     School data isolation: Only updates exam if it belongs to the user's school.
     """
     try:
-        # Verify user has admin role
-        if current_user.role != "school_admin":
+        # Verify user is a workspace admin
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can update exams",
+                detail="Only school administrators or individual teachers can update exams",
             )
-        
+
         # Get exam with school isolation
         result = await db.execute(
             select(Exam).where(
@@ -1481,21 +1180,33 @@ async def update_exam(
             )
         )
         exam = result.scalar_one_or_none()
-        
+
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found")
-        
-        # Update fields
+
+        # Approved exams are immutable; approval only via the approve endpoint.
+        if exam.workflow_state == "approved":
+            raise HTTPException(
+                status_code=409,
+                detail="Approved exams cannot be modified",
+            )
+
+        # Update fields (status restricted to draft/under_review by schema)
         if update_request.status is not None:
+            if update_request.status not in MUTABLE_STATUSES:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Illegal status change; use the governed approval endpoint",
+                )
             exam.status = update_request.status
         if update_request.instructions is not None:
             exam.instructions = update_request.instructions
         if update_request.duration_minutes is not None:
             exam.duration_minutes = update_request.duration_minutes
-        
+
         await db.commit()
         await db.refresh(exam)
-        
+
         # Get questions for response
         questions_result = await db.execute(
             select(Question)
@@ -1503,11 +1214,7 @@ async def update_exam(
             .order_by(Question.question_number)
         )
         questions = questions_result.scalars().all()
-        question_asset_map = await _fetch_question_asset_map(
-            db=db,
-            question_ids=[item.id for item in questions],
-        )
-        
+
         question_responses = [
             QuestionResponse(
                 id=q.id,
@@ -1524,7 +1231,6 @@ async def update_exam(
                 marking_scheme=q.marking_scheme,
                 sub_parts=q.sub_parts,
                 diagram_svg=q.diagram_svg,
-                asset_refs=question_asset_map.get(q.id, []),
             )
             for q in questions
         ]
@@ -1775,10 +1481,10 @@ async def refine_exam(
     Refine selected questions (or all exam questions) and persist history.
     """
     try:
-        if current_user.role != "school_admin":
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can refine exams",
+                detail="Only school administrators or individual teachers can refine exams",
             )
 
         exam_result = await db.execute(
@@ -1851,10 +1557,10 @@ async def refine_exam_from_comments(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """Batch review comments and send one combined refinement prompt to LLM."""
-    if current_user.role != "school_admin":
+    if not is_workspace_admin(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Only school administrators can refine exams from comments",
+            detail="Only school administrators or individual teachers can refine exams from comments",
         )
 
     exam_result = await db.execute(
@@ -1869,10 +1575,8 @@ async def refine_exam_from_comments(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    await _consume_llm_call_budget(exam, db)
-    exam.workflow_state = "refinement_requested"
-    await db.commit()
-
+    # Gather + validate comments BEFORE consuming LLM budget so a guaranteed
+    # 400 path can never burn a call.
     comments_query = select(ExamAuditComment).where(
         and_(
             ExamAuditComment.exam_id == exam_id,
@@ -1902,6 +1606,11 @@ async def refine_exam_from_comments(
 
     if request.additional_feedback:
         feedback_parts.append(f"Admin guidance: {request.additional_feedback}")
+
+    # Budget is consumed only now: comments exist and feedback was built.
+    await _consume_llm_call_budget(exam, db)
+    exam.workflow_state = "refinement_requested"
+    await db.commit()
 
     generator = ExamGenerator()
     result = await generator.refine_exam(
@@ -1961,10 +1670,10 @@ async def approve_exam(
     Approve an exam that belongs to the current school.
     """
     try:
-        if current_user.role != "school_admin":
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can approve exams",
+                detail="Only school administrators or individual teachers can approve exams",
             )
 
         result = await db.execute(
@@ -2033,9 +1742,9 @@ async def approve_exam(
 
 @router.post(
     "/{exam_id}/export",
-    response_model=dict,
+    response_model=ExamExportResponse,
     summary="Export exam",
-    description="Export an exam to PDF (MVP).",
+    description="Export an exam to PDF (MVP) and return a download URL.",
     tags=["Exams"],
 )
 async def export_exam(
@@ -2043,15 +1752,15 @@ async def export_exam(
     request: ExamExportRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> ExamExportResponse:
     """
     Export exam to PDF (MVP).
     """
     try:
-        if current_user.role != "school_admin":
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can export exams",
+                detail="Only school administrators or individual teachers can export exams",
             )
 
         if request.format.lower() != "pdf":
@@ -2091,17 +1800,14 @@ async def export_exam(
         if not questions:
             raise HTTPException(status_code=400, detail="Exam has no questions to export")
 
-        question_assets = await _build_export_asset_payload(
-            db=db,
-            school_id=current_user.school_id,
-            question_ids=[q.id for q in questions],
-        )
-
-        file_path = ExportService.export_exam_pdf(
+        file_name = await asyncio.to_thread(
+            ExportService.export_exam_pdf,
             exam=exam,
-            questions=questions,
+            questions=list(questions),
             include_answers=request.include_answers,
-            question_assets=question_assets,
+        )
+        download_url = (
+            f"/api/v1/exams/{exam_id}/exports/{file_name}"
         )
 
         await _log_usage(
@@ -2118,12 +1824,11 @@ async def export_exam(
         )
         await db.commit()
 
-        return {
-            "message": "Exam exported successfully",
-            "exam_id": str(exam_id),
-            "format": "pdf",
-            "file_path": file_path,
-        }
+        return ExamExportResponse(
+            message="Exam exported successfully",
+            file_name=file_name,
+            download_url=download_url,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -2133,6 +1838,64 @@ async def export_exam(
             status_code=500,
             detail=f"Failed to export exam: {str(e)}",
         )
+
+
+@router.get(
+    "/{exam_id}/exports/{file_name}",
+    summary="Download an exported exam PDF",
+    description="Stream a previously generated PDF export for this exam.",
+    tags=["Exams"],
+)
+async def download_export(
+    exam_id: uuid.UUID,
+    file_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Serve an exported PDF with tenant + filename validation."""
+    if not _EXPORT_FILE_PATTERN.match(file_name or ""):
+        raise HTTPException(status_code=400, detail="Invalid export file name")
+
+    result = await db.execute(
+        select(Exam.id).where(
+            and_(
+                Exam.id == exam_id,
+                Exam.school_id == current_user.school_id,
+            )
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    file_path = ExportService.export_path(exam_id, file_name)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Export not found — run export again")
+
+    return FileResponse(path=str(file_path), media_type="application/pdf", filename=file_name)
+
+
+@router.get(
+    "/{exam_id}/exports",
+    response_model=list[str],
+    summary="List exported PDFs for an exam",
+    tags=["Exams"],
+)
+async def list_exports(
+    exam_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """List generated export files for this exam (tenant-scoped)."""
+    result = await db.execute(
+        select(Exam.id).where(
+            and_(
+                Exam.id == exam_id,
+                Exam.school_id == current_user.school_id,
+            )
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    return ExportService.list_exports(exam_id)
 
 
 # ============================================================================
@@ -2161,11 +1924,11 @@ async def delete_exam(
     School data isolation: Only deletes exam if it belongs to the user's school.
     """
     try:
-        # Verify user has admin role
-        if current_user.role != "school_admin":
+        # Verify user is a workspace admin
+        if not is_workspace_admin(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators can delete exams",
+                detail="Only school administrators or individual teachers can delete exams",
             )
         
         # Get exam with school isolation

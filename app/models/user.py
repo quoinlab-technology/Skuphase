@@ -35,14 +35,16 @@ class User(BaseModel):
     # Invitation tracking
     invited_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     invitation_accepted_at = Column(DateTime(timezone=True), nullable=True)
-    
+
+    # JWTs issued before this instant are rejected (set on credential changes).
+    token_valid_after = Column(DateTime(timezone=True), nullable=True)
+
     last_login = Column(DateTime(timezone=True))
     
     # Relationships
     school = relationship("School", back_populates="users")
     exams = relationship("Exam", back_populates="created_by")
     usage_logs = relationship("UsageLog", back_populates="user")
-    learning_assets = relationship("LearningAsset", back_populates="uploaded_by")
     audit_comments = relationship(
         "ExamAuditComment",
         foreign_keys="ExamAuditComment.author_user_id",

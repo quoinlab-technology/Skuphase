@@ -64,6 +64,7 @@ async def list_users(
     """
     List all staff and teachers registered in the current school workspace.
     """
+    require_school_admin(current_user)
     try:
         return await UserService.list_users(
             school_id=current_user.school_id,

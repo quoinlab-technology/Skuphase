@@ -1,3 +1,5 @@
+"""Tests for the curriculum-first exam generator (post-RAG removal)."""
+
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,13 +11,12 @@ from app.schemas.exam import ExamGenerationRequest, SectionConfig
 from app.services.exam_generator import ExamGenerator
 
 
-@pytest.mark.asyncio
-async def test_retrieve_context_passes_selected_document_ids_to_rag():
-    doc_id = uuid.uuid4()
-    request = ExamGenerationRequest(
-        subject="Biology",
-        grade_level="SSS 1",
-        document_ids=[doc_id],
+def _request(subject: str = "Basic Science", grade: str = "Primary 4") -> ExamGenerationRequest:
+    return ExamGenerationRequest(
+        subject=subject,
+        grade_level=grade,
+        term="First Term",
+        selected_weeks=[1],
         sections=[
             SectionConfig(
                 section_number=1,
@@ -29,33 +30,37 @@ async def test_retrieve_context_passes_selected_document_ids_to_rag():
         ],
     )
 
-    with patch("app.services.exam_generator.EmbeddingService"), patch(
-        "app.services.exam_generator.get_llm_service"
-    ):
-        generator = ExamGenerator()
-        generator.rag_service.search = AsyncMock(
-            return_value=[
-                {
-                    "chunk_id": str(uuid.uuid4()),
-                    "document_id": str(doc_id),
-                    "chunk_index": 0,
-                    "content": "Photosynthesis is the process...",
-                    "similarity_score": 0.91,
-                    "chunk_metadata": {},
-                }
-            ]
-        )
 
-        db = AsyncMock()
-        await generator.retrieve_context(
-            school_id=uuid.uuid4(),
-            document_ids=request.document_ids,
-            subject=request.subject,
-            db=db,
-        )
+def _make_generator() -> ExamGenerator:
+    with patch("app.services.exam_generator.get_llm_service"):
+        return ExamGenerator()
 
-        call_kwargs = generator.rag_service.search.call_args.kwargs
-        assert call_kwargs["document_ids"] == [doc_id]
+
+@pytest.mark.asyncio
+async def test_retrieve_context_is_sql_only_and_tenant_free():
+    """retrieve_context must not accept or use document/RAG context anymore."""
+    import inspect
+
+    signature = inspect.signature(ExamGenerator.retrieve_context)
+    assert "document_ids" not in signature.parameters
+    assert "school_id" not in signature.parameters
+
+    generator = _make_generator()
+    db = AsyncMock()
+    db.commit = AsyncMock()
+    # CurriculumService + few-shot both hit the DB; empty results are fine.
+    db.execute = AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])))
+
+    context = await generator.retrieve_context(
+        subject="Basic Science",
+        grade_level="Primary 4",
+        term="First Term",
+        selected_weeks=[1],
+        db=db,
+    )
+
+    assert "combined_context" in context
+    assert context["has_scheme_data"] is False
 
 
 @pytest.mark.asyncio
@@ -63,24 +68,8 @@ async def test_store_exam_regeneration_issues_delete_for_old_questions():
     exam_id = uuid.uuid4()
     school_id = uuid.uuid4()
     user_id = uuid.uuid4()
-    doc_id = uuid.uuid4()
 
-    request = ExamGenerationRequest(
-        subject="Physics",
-        grade_level="SSS 2",
-        document_ids=[doc_id],
-        sections=[
-            SectionConfig(
-                section_number=1,
-                section_title="SECTION A",
-                question_type="multiple_choice",
-                num_questions=1,
-                marks_per_question=2,
-                instruction_type="answer_all",
-                sub_part_style="none",
-            )
-        ],
-    )
+    request = _request(subject="Physics", grade="Primary 5")
 
     parsed_exam = {
         "sections": [
@@ -92,9 +81,16 @@ async def test_store_exam_regeneration_issues_delete_for_old_questions():
                         "type": "multiple_choice",
                         "question": "What is force?",
                         "marks": 2,
-                        "options": ["A", "B", "C", "D"],
+                        "options": ["A. push", "B. pull", "C. lift", "D. drop"],
                         "correct_answer": "A",
-                    }
+                    },
+                    {
+                        "type": "multiple_choice",
+                        "question": "Which is a unit of force?",
+                        "marks": 2,
+                        "options": ["A. newton", "B. metre", "C. litre", "D. gram"],
+                        "correct_answer": "A",
+                    },
                 ],
             }
         ]
@@ -110,20 +106,16 @@ async def test_store_exam_regeneration_issues_delete_for_old_questions():
     )
     db.execute = AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: existing_exam))
 
-    with patch("app.services.exam_generator.EmbeddingService"), patch(
-        "app.services.exam_generator.get_llm_service"
-    ):
-        generator = ExamGenerator()
-        await generator.store_exam(
-            parsed_exam=parsed_exam,
-            request=request,
-            school_id=school_id,
-            created_by_user_id=user_id,
-            rag_context={"document_ids": [doc_id], "combined_context": "ctx", "chunks": []},
-            llm_response={"tokens_used": 10, "cost": 0.0, "provider": "grok", "content": "{}"},
-            db=db,
-            exam_id=exam_id,
-        )
+    generator = _make_generator()
+    await generator.store_exam(
+        parsed_exam=parsed_exam,
+        request=request,
+        school_id=school_id,
+        created_by_user_id=user_id,
+        llm_response={"tokens_used": 10, "cost": 0.0, "provider": "groq", "content": "{}"},
+        db=db,
+        exam_id=exam_id,
+    )
 
     assert any(
         isinstance(call.args[0], Delete)

@@ -31,7 +31,6 @@ class ExamGenerationProposal(BaseModel):
 
     subject = Column(String(100), nullable=False)
     grade_level = Column(String(50), nullable=False)
-    document_ids = Column(JSON, nullable=False, default=list)  # optional supplements
     desired_outcomes = Column(Text, nullable=False)
     custom_instructions = Column(Text, nullable=True)
     draft_questions = Column(Text, nullable=True)

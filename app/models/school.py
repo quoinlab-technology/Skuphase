@@ -25,12 +25,6 @@ class School(BaseModel):
     users = relationship("User", back_populates="school", cascade="all, delete-orphan")
     subscriptions = relationship("SchoolSubscription", back_populates="school", cascade="all, delete-orphan")
     settings = relationship("SchoolSettings", back_populates="school", uselist=False, cascade="all, delete-orphan")
-    documents = relationship("SchoolDocument", back_populates="school", cascade="all, delete-orphan")
-    learning_assets = relationship(
-        "LearningAsset",
-        back_populates="school",
-        cascade="all, delete-orphan",
-    )
     exams = relationship("Exam", back_populates="school", cascade="all, delete-orphan")
     usage_logs = relationship("UsageLog", back_populates="school", cascade="all, delete-orphan")
     

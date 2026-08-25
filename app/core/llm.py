@@ -1,4 +1,4 @@
-"""LLM service for exam generation using Grok API with OpenRouter fallback."""
+﻿"""LLM service for exam generation using Groq API with OpenRouter fallback."""
 
 import logging
 from typing import Optional, Dict, Any, List
@@ -17,16 +17,16 @@ class LLMService:
     """
     LLM service abstraction for exam generation.
     
-    Primary: Grok API (cost-effective, OpenAI-compatible)
+    Primary: Groq API (cost-effective, OpenAI-compatible)
     Fallback: OpenRouter (multiple models)
     
-    Grok Rate Limits (Developer Plan):
+    Groq Rate Limits (Developer Plan):
     - llama-3.3-70b-versatile: 30 RPM, 1K RPD, 12K TPM, 100K TPD
     - llama-3.1-8b-instant: 30 RPM, 14.4K RPD, 6K TPM, 500K TPD
     """
     
-    # Grok models with rate limits
-    GROK_MODELS = {
+    # Groq models with rate limits
+    GROQ_MODELS = {
         "llama-3.3-70b-versatile": {
             "rpm": 30,  # Requests per minute
             "rpd": 1000,  # Requests per day
@@ -44,35 +44,35 @@ class LLMService:
     }
     
     # Default model for exam generation
-    DEFAULT_GROK_MODEL = "llama-3.3-70b-versatile"
+    DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
     
     def __init__(
         self,
-        grok_api_key: Optional[str] = None,
-        grok_base_url: Optional[str] = None,
+        groq_api_key: Optional[str] = None,
+        groq_base_url: Optional[str] = None,
         openrouter_api_key: Optional[str] = None,
     ):
         """
         Initialize LLM service.
         
         Args:
-            grok_api_key: Grok API key (uses env var if not provided)
-            grok_base_url: Grok base URL (uses env var if not provided)
+            groq_api_key: Groq API key (uses env var if not provided)
+            groq_base_url: Groq base URL (uses env var if not provided)
             openrouter_api_key: OpenRouter API key for fallback
         """
-        # Initialize Grok client (OpenAI-compatible)
-        self.grok_api_key = grok_api_key or settings.grok_api_key
-        self.grok_base_url = grok_base_url or settings.grok_base_url
+        # Initialize Groq client (OpenAI-compatible)
+        self.groq_api_key = groq_api_key or settings.groq_api_key
+        self.groq_base_url = groq_base_url or settings.groq_base_url
         
-        if self.grok_api_key:
-            self.grok_client = AsyncOpenAI(
-                api_key=self.grok_api_key,
-                base_url=self.grok_base_url,
+        if self.groq_api_key:
+            self.groq_client = AsyncOpenAI(
+                api_key=self.groq_api_key,
+                base_url=self.groq_base_url,
             )
-            logger.info(f"✅ Grok API client initialized: {self.grok_base_url}")
+            logger.info(f"âœ… Groq API client initialized: {self.groq_base_url}")
         else:
-            self.grok_client = None
-            logger.warning("⚠️ Grok API key not provided")
+            self.groq_client = None
+            logger.warning("âš ï¸ Groq API key not provided")
         
         # Initialize OpenRouter client for fallback
         self.openrouter_api_key = openrouter_api_key or getattr(settings, 'openrouter_api_key', None)
@@ -82,10 +82,10 @@ class LLMService:
                 api_key=self.openrouter_api_key,
                 base_url="https://openrouter.ai/api/v1",
             )
-            logger.info("✅ OpenRouter fallback client initialized")
+            logger.info("âœ… OpenRouter fallback client initialized")
         else:
             self.openrouter_client = None
-            logger.warning("⚠️ OpenRouter API key not provided (no fallback)")
+            logger.warning("âš ï¸ OpenRouter API key not provided (no fallback)")
         
         # Rate limiting tracking (simple in-memory for MVP)
         self._request_times: List[datetime] = []
@@ -100,14 +100,14 @@ class LLMService:
         use_fallback_on_error: bool = True,
     ) -> Dict[str, Any]:
         """
-        Generate text using LLM (Grok primary, OpenRouter fallback).
+        Generate text using LLM (Groq primary, OpenRouter fallback).
         
         Args:
             prompt: The prompt to send to the LLM
             model: Model to use (default: llama-3.3-70b-versatile)
             temperature: Sampling temperature (0-1)
             max_tokens: Maximum tokens to generate
-            use_fallback_on_error: Use OpenRouter if Grok fails
+            use_fallback_on_error: Use OpenRouter if Groq fails
             
         Returns:
             Dict with:
@@ -115,22 +115,22 @@ class LLMService:
                 - model: Model used
                 - tokens_used: Total tokens consumed
                 - cost: Estimated cost in USD
-                - provider: "grok" or "openrouter"
+                - provider: "groq" or "openrouter"
                 
         Raises:
             ValueError: If generation fails
         """
-        model = model or self.DEFAULT_GROK_MODEL
+        model = model or self.DEFAULT_GROQ_MODEL
         
-        # Try Grok first
-        if self.grok_client:
+        # Try Groq first
+        if self.groq_client:
             try:
                 # Check rate limits
                 await self._check_rate_limits(model)
                 
-                logger.info(f"Generating with Grok model: {model}")
+                logger.info(f"Generating with Groq model: {model}")
                 
-                response = await self.grok_client.chat.completions.create(
+                response = await self.groq_client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=temperature,
@@ -142,28 +142,28 @@ class LLMService:
                 tokens_used = response.usage.total_tokens
                 
                 # Calculate cost
-                cost = self._calculate_cost(model, tokens_used, "grok")
+                cost = self._calculate_cost(model, tokens_used, "groq")
                 
                 # Track usage
                 self._track_usage(tokens_used)
                 
-                logger.info(f"✅ Grok generation successful: {tokens_used} tokens, ${cost:.4f}")
+                logger.info(f"âœ… Groq generation successful: {tokens_used} tokens, ${cost:.4f}")
                 
                 return {
                     "content": content,
                     "model": model,
                     "tokens_used": tokens_used,
                     "cost": cost,
-                    "provider": "grok",
+                    "provider": "groq",
                 }
                 
             except Exception as e:
-                logger.error(f"❌ Grok generation failed: {str(e)}")
+                logger.error(f"âŒ Groq generation failed: {str(e)}")
                 
                 if not use_fallback_on_error or not self.openrouter_client:
-                    raise ValueError(f"Grok generation failed: {str(e)}")
+                    raise ValueError(f"Groq generation failed: {str(e)}")
                 
-                logger.warning("⚠️ Falling back to OpenRouter...")
+                logger.warning("âš ï¸ Falling back to OpenRouter...")
         
         # Fallback to OpenRouter
         if self.openrouter_client:
@@ -181,7 +181,7 @@ class LLMService:
                 tokens_used = response.usage.total_tokens
                 cost = self._calculate_cost("llama-3.1-70b", tokens_used, "openrouter")
                 
-                logger.info(f"✅ OpenRouter generation successful: {tokens_used} tokens, ${cost:.4f}")
+                logger.info(f"âœ… OpenRouter generation successful: {tokens_used} tokens, ${cost:.4f}")
                 
                 return {
                     "content": content,
@@ -192,7 +192,7 @@ class LLMService:
                 }
                 
             except Exception as e:
-                logger.error(f"❌ OpenRouter generation failed: {str(e)}")
+                logger.error(f"âŒ OpenRouter generation failed: {str(e)}")
                 raise ValueError(f"All LLM providers failed: {str(e)}")
         
         raise ValueError("No LLM provider available")
@@ -207,10 +207,10 @@ class LLMService:
         Raises:
             ValueError: If rate limit exceeded
         """
-        if model not in self.GROK_MODELS:
+        if model not in self.GROQ_MODELS:
             return
         
-        limits = self.GROK_MODELS[model]
+        limits = self.GROQ_MODELS[model]
         now = datetime.now()
         
         # Clean old request times (older than 1 minute)
@@ -222,10 +222,10 @@ class LLMService:
         # Check RPM (Requests Per Minute)
         if len(self._request_times) >= limits["rpm"]:
             wait_time = 60 - (now - self._request_times[0]).total_seconds()
-            logger.warning(f"⚠️ Rate limit approaching: {len(self._request_times)}/{limits['rpm']} RPM")
+            logger.warning(f"âš ï¸ Rate limit approaching: {len(self._request_times)}/{limits['rpm']} RPM")
             
             if wait_time > 0:
-                logger.info(f"⏳ Waiting {wait_time:.1f}s for rate limit...")
+                logger.info(f"â³ Waiting {wait_time:.1f}s for rate limit...")
                 await asyncio.sleep(wait_time)
         
         # Track this request
@@ -247,13 +247,13 @@ class LLMService:
         Args:
             model: Model used
             tokens: Total tokens consumed
-            provider: "grok" or "openrouter"
+            provider: "groq" or "openrouter"
             
         Returns:
             Estimated cost in USD
         """
-        if provider == "grok" and model in self.GROK_MODELS:
-            cost_per_1k = self.GROK_MODELS[model]["cost_per_1k_tokens"]
+        if provider == "groq" and model in self.GROQ_MODELS:
+            cost_per_1k = self.GROQ_MODELS[model]["cost_per_1k_tokens"]
             return (tokens / 1000) * cost_per_1k
         elif provider == "openrouter":
             # OpenRouter pricing (approximate)
@@ -266,15 +266,15 @@ class LLMService:
         Get rate limit information for a model.
         
         Args:
-            model: Model to get limits for (default: DEFAULT_GROK_MODEL)
+            model: Model to get limits for (default: DEFAULT_GROQ_MODEL)
             
         Returns:
             Dict with rate limit information
         """
-        model = model or self.DEFAULT_GROK_MODEL
+        model = model or self.DEFAULT_GROQ_MODEL
         
-        if model in self.GROK_MODELS:
-            return self.GROK_MODELS[model]
+        if model in self.GROQ_MODELS:
+            return self.GROQ_MODELS[model]
         
         return {}
     

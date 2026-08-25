@@ -1,48 +1,97 @@
-from types import SimpleNamespace
+"""Export service tests — word-wrap, download naming, answer key."""
+
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 from app.services.export_service import ExportService
 
 
-def test_export_exam_pdf_creates_file(tmp_path):
-    exam = SimpleNamespace(
-        id="exam-1",
-        subject="Biology",
-        grade_level="SSS 1",
+def _exam():
+    return SimpleNamespace(
+        id=uuid4(),
+        subject="Basic Science",
+        grade_level="Primary 4",
         duration_minutes=90,
-        total_marks=20,
-        instructions="Answer all questions.",
+        total_marks=7,
+        instructions=(
+            "Answer ALL questions in section A.\n"
+            "Answer any TWO questions in section B."
+        ),
     )
-    questions = [
+
+
+def _questions():
+    long_text = (
+        "A farmer in Kano planted cassava and maize on the same plot of land "
+        "during the rainy season. Explain TWO benefits the farmer gets from "
+        "planting the two crops together, and mention ONE problem that may "
+        "arise if the crops are planted too close to each other."
+    )
+    return [
         SimpleNamespace(
             question_number=1,
-            question_text="Define photosynthesis.",
-            marks=5,
-            options=None,
-            correct_answer=None,
-            marking_scheme=["Definition", "Process", "Products"],
+            type="multiple_choice",
+            question_text="Which of these is a living thing?",
+            marks=2,
+            options=["A. goat", "B. stone", "C. water", "D. chair"],
+            correct_answer="A",
+            explanation="A goat grows, feeds and moves by itself.",
+            marking_scheme=None,
         ),
         SimpleNamespace(
             question_number=2,
-            question_text="Which organelle performs photosynthesis?",
-            marks=2,
-            options=["A. Nucleus", "B. Chloroplast", "C. Ribosome", "D. Mitochondria"],
-            correct_answer="B",
-            marking_scheme=None,
+            type="essay",
+            question_text=long_text,
+            marks=5,
+            options=None,
+            correct_answer=None,
+            explanation=None,
+            marking_scheme=["Two benefits", "One problem"],
         ),
     ]
 
+
+def test_export_exam_pdf_creates_wrapped_file(tmp_path):
+    exam = _exam()
     original_dir = ExportService.EXPORT_DIR
     ExportService.EXPORT_DIR = Path(tmp_path)
     try:
-        file_path = ExportService.export_exam_pdf(
+        file_name = ExportService.export_exam_pdf(
             exam=exam,
-            questions=questions,
+            questions=_questions(),
             include_answers=True,
         )
+        created_path = ExportService.exam_dir(exam.id) / file_name
     finally:
         ExportService.EXPORT_DIR = original_dir
 
-    path = Path(file_path)
-    assert path.exists()
-    assert path.suffix == ".pdf"
+    assert created_path.exists()
+    assert created_path.suffix == ".pdf"
+    # New naming contract: 32-hex UUID name (downloadable via router).
+    assert len(Path(file_name).stem) == 32
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(created_path))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    # A5 regression: no truncation at 120 chars — full question present.
+    assert "planted too close" in text
+    assert "Answer: A" in text  # include_answers renders the key
+    assert "Marking scheme:" in text
+    assert "Page" not in ""
+
+
+def test_export_path_rejects_bad_names():
+    exam_id = uuid4()
+    try:
+        ExportService.export_path(exam_id, "../../.env")
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised
+
+    good = f"{uuid4().hex}.pdf"
+    path = ExportService.export_path(exam_id, good)
+    assert str(path).endswith(good)

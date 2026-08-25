@@ -1,11 +1,16 @@
-"""Authentication and identity API routes."""
+﻿"""Authentication and identity API routes."""
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import (
+    is_locked_out as _login_locked_out,
+    record_failure as _login_failure,
+    record_success as _login_success,
+)
 from app.services.auth_service import AuthService
 from app.schemas.auth import (
     SchoolRegistrationRequest,
@@ -65,14 +70,24 @@ async def register_individual_teacher(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: UserLogin,
+    http_request: Request,
     db: AsyncSession = Depends(get_db_session),
 ):
     """
     Authenticate user and return JWT access and refresh tokens.
     """
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    if _login_locked_out(request.email, client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts. Try again later.",
+        )
     try:
-        return await AuthService.login(request.email, request.password, db)
+        result = await AuthService.login(request.email, request.password, db)
+        _login_success(request.email, client_ip)
+        return result
     except ValueError as e:
+        _login_failure(request.email, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except Exception as e:
         logger.error(f"Login error: {str(e)}")

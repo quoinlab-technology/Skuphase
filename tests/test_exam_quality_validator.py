@@ -1,4 +1,4 @@
-import uuid
+﻿import uuid
 
 import pytest
 
@@ -57,7 +57,7 @@ def test_quality_validator_accepts_valid_exam_shape():
         ]
     }
 
-    result = validator.validate(parsed_exam=parsed_exam, request=request, rag_context={"chunks": []})
+    result = validator.validate(parsed_exam=parsed_exam, request=request)
     assert result.errors == []
     assert result.metrics["generated_question_total"] == 2
     assert result.metrics["generated_marks_total"] == 4
@@ -90,7 +90,7 @@ def test_quality_validator_rejects_mcq_without_options():
     }
 
     with pytest.raises(ValueError, match="quality validation"):
-        validator.validate_or_raise(parsed_exam=parsed_exam, request=request, rag_context={"chunks": []})
+        validator.validate_or_raise(parsed_exam=parsed_exam, request=request)
 
 
 def test_quality_validator_flags_non_local_context_warning():
@@ -121,5 +121,5 @@ def test_quality_validator_flags_non_local_context_warning():
         ]
     }
 
-    result = validator.validate(parsed_exam=parsed_exam, request=request, rag_context={"chunks": []})
+    result = validator.validate(parsed_exam=parsed_exam, request=request)
     assert any("non-local context" in warning.lower() for warning in result.warnings)

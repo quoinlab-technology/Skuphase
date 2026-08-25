@@ -16,6 +16,13 @@ from app.core.security import (
     create_access_token,
     decode_token,
 )
+from app.config.settings import get_settings
+from app.services.mailer import send_email
+from app.utils.email_templates import (
+    build_invite_email,
+    build_reset_password_email,
+    build_verify_email,
+)
 from app.schemas.auth import (
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
@@ -283,13 +290,13 @@ class AuthService:
             "user_id": str(user.id),
             "school_id": str(user.school_id),
             "token_type": "refresh",
-        }, expires_delta=timedelta(days=30))
+        }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": 3600,
+            "expires_in": get_settings().access_token_expire_minutes * 60,
             "user": UserResponse(
                 user_id=user.id,
                 full_name=user.full_name,
@@ -335,13 +342,13 @@ class AuthService:
                 "user_id": str(user.id),
                 "school_id": str(user.school_id),
                 "token_type": "refresh",
-            }, expires_delta=timedelta(days=30))
+            }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
             return {
                 "access_token": new_access_token,
                 "refresh_token": new_refresh_token,
                 "token_type": "bearer",
-                "expires_in": 3600,
+                "expires_in": get_settings().access_token_expire_minutes * 60,
             }
         except Exception as e:
             raise ValueError(f"Token refresh failed: {str(e)}")
@@ -357,13 +364,28 @@ class AuthService:
 
         reset_token = secrets.token_urlsafe(32)
         user.reset_password_token = reset_token
-        user.reset_password_token_expires_at = utc_now() + timedelta(hours=2)
+        user.reset_password_token_expires_at = utc_now() + timedelta(hours=1)
         await db.commit()
 
         logger.info(f"Password reset token created for user {email}")
+
+        base_url = get_settings().app_base_url.rstrip("/")
+        reset_url = f"{base_url}/reset-password?token={reset_token}"
+        delivered = await send_email(
+            to=email,
+            subject="Reset your SkuPhase password",
+            html=build_reset_password_email(reset_url),
+        )
+        if not delivered:
+            logger.warning(
+                "Password reset email could not be delivered to %s "
+                "(token persisted; expires in 1 hour)",
+                email,
+            )
+
+        # SECURITY: the token is NEVER returned in the HTTP response.
         return {
-            "message": "Password reset instructions have been sent.",
-            "reset_token": reset_token,  # Included for API client integration
+            "message": "If this email is registered, password reset instructions have been sent."
         }
 
     @staticmethod
@@ -387,6 +409,9 @@ class AuthService:
         user.hashed_password = hash_password(password)
         user.reset_password_token = None
         user.reset_password_token_expires_at = None
+        # Invalidate any JWTs issued before this credential change.
+        if hasattr(user, "token_valid_after"):
+            user.token_valid_after = utc_now()
         await db.commit()
 
         return {"message": "Password reset successfully. You can now login."}
@@ -427,10 +452,22 @@ class AuthService:
         user.verification_token_expires_at = utc_now() + timedelta(days=3)
         await db.commit()
 
-        return {
-            "message": "A new verification link has been sent.",
-            "verification_token": token,
-        }
+        base_url = get_settings().app_base_url.rstrip("/")
+        verify_url = f"{base_url}/verify-email?token={token}"
+        delivered = await send_email(
+            to=email,
+            subject="Verify your SkuPhase email",
+            html=build_verify_email(verify_url),
+        )
+        if not delivered:
+            logger.warning(
+                "Verification email could not be delivered to %s "
+                "(token persisted; expires in 3 days)",
+                email,
+            )
+
+        # SECURITY: the token is NEVER returned in the HTTP response.
+        return {"message": "A new verification link has been sent."}
 
     @staticmethod
     async def accept_invitation(
@@ -459,6 +496,9 @@ class AuthService:
         user.invitation_accepted_at = utc_now()
         user.verification_token = None
         user.verification_token_expires_at = None
+        # First credential set invalidates any tokens issued before activation.
+        if hasattr(user, "token_valid_after"):
+            user.token_valid_after = utc_now()
         await db.commit()
 
         return {

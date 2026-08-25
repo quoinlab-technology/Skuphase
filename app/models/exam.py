@@ -1,6 +1,6 @@
-"""Exam and question models."""
+﻿"""Exam and question models."""
 
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, DateTime, Boolean, Float 
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
 
@@ -36,7 +36,6 @@ class Exam(BaseModel):
     school = relationship("School", back_populates="exams")
     created_by = relationship("User", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
-    context = relationship("ExamContext", back_populates="exam", cascade="all, delete-orphan")
     audit_comments = relationship(
         "ExamAuditComment",
         back_populates="exam",
@@ -89,31 +88,6 @@ class Question(BaseModel):
         back_populates="question",
         cascade="all, delete-orphan",
     )
-    asset_refs = relationship(
-        "QuestionAssetRef",
-        back_populates="question",
-        cascade="all, delete-orphan",
-    )
-    
+
     def __repr__(self) -> str:
         return f"<Question(id={self.id}, exam_id={self.exam_id}, type={self.type})>"
-
-
-class ExamContext(BaseModel):
-    """Links generated exam to source documents for citations."""
-    
-    __tablename__ = "exam_context"
-    
-    exam_id = Column(UUID(as_uuid=True), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
-    document_id = Column(UUID(as_uuid=True), ForeignKey("school_documents.id", ondelete="CASCADE"), nullable=False)
-    
-    relevance_score = Column(Float)
-    extracted_context = Column(Text)  # Actual text retrieved from document
-    context_type = Column(String(50))  # curriculum_reference, past_paper_pattern, lesson_note_alignment
-    
-    # Relationships
-    exam = relationship("Exam", back_populates="context")
-    document = relationship("SchoolDocument", back_populates="exam_context")
-    
-    def __repr__(self) -> str:
-        return f"<ExamContext(exam_id={self.exam_id}, document_id={self.document_id})>"

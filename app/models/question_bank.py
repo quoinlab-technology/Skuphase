@@ -10,10 +10,13 @@ from app.models.base import BaseModel
 class QuestionBankItem(BaseModel):
     """Reusable question bank item.
 
-    Tenancy model (curriculum-first):
-    - Platform-owned questions (from past-paper ingestion) have ``owner_type='platform'``
-      and ``school_id IS NULL`` — they belong to the SHARED corpus.
-    - School-contributed questions have ``owner_type='school'`` and a real ``school_id``.
+    Tenancy model (curriculum-first, no auto-sharing):
+    - Platform-owned questions are ingested ONLY via the admin ingestion
+      script: ``owner_type='platform'`` with ``school_id IS NULL``. They form
+      the shared few-shot corpus used by ExamGenerator.
+    - School-contributed questions have ``owner_type='school'`` and a real
+      ``school_id``; they are visible only to their school and are NEVER
+      injected into other schools' prompts.
     """
 
     __tablename__ = "question_bank_items"
@@ -24,7 +27,9 @@ class QuestionBankItem(BaseModel):
         ForeignKey("schools.id", ondelete="CASCADE"),
         nullable=True,  # NULL for platform-owned questions
     )
-    owner_type = Column(String(20), nullable=False, default="platform")  # platform | school
+    # platform | school — no default on purpose: every creation site must
+    # state ownership explicitly (regression guard for cross-tenant leaks).
+    owner_type = Column(String(20), nullable=False)
 
     source_exam_id = Column(
         UUID(as_uuid=True),
@@ -68,11 +73,6 @@ class QuestionBankItem(BaseModel):
     diagram_svg = Column(Text, nullable=True)
 
     is_active = Column(Boolean, nullable=False, default=True)
-
-    # --- Optional pgvector embedding (upgraded by migration 0011) ---------
-    # Starts as JSON (a plain float array) in the Python model; migration 0011
-    # re-types it to VECTOR(1024) when pgvector is installed on the server.
-    embedding = Column(JSON, nullable=True)
 
     school = relationship("School")
     source_exam = relationship("Exam")

@@ -67,29 +67,22 @@ class SectionConfig(BaseModel):
 
 class ExamGenerationRequest(BaseModel):
     """Request schema for generating an exam."""
-    
+
     subject: str = Field(..., min_length=1, max_length=100, description="Subject name")
-    grade_level: str = Field(..., description="Grade level (e.g., Primary 4, JSS 1, SSS 2)")
+    grade_level: str = Field(..., description="Grade level (e.g., Primary 4)")
     term: Optional[str] = Field(None, description="Term (First Term, Second Term, Third Term)")
     selected_weeks: Optional[List[int]] = Field(None, description="Selected Scheme of Work weeks (e.g. [1, 2, 3, 4])")
-    document_ids: Optional[List[UUID]] = Field(
-        default_factory=list,
-        description="Optional document IDs for supplementary RAG context",
-    )
-    asset_ids: Optional[List[UUID]] = Field(
-        None,
-        description="Optional approved visual/formula asset IDs available for question references",
-    )
-    
+
     sections: List[SectionConfig] = Field(..., min_length=1, max_length=5, description="Exam sections")
-    
+
     duration_minutes: Optional[int] = Field(120, ge=30, le=300, description="Exam duration in minutes")
     custom_instructions: Optional[str] = Field(None, max_length=1000, description="Teacher's custom instructions")
-    include_diagrams: bool = Field(False, description="Include diagrams in questions")
-    enable_katex: bool = Field(True, description="Format math/chemistry formulas using KaTeX ($...)")
-    
-    difficulty_distribution: Optional[Dict[str, float]] = Field(None, description="Difficulty distribution")
-    bloom_distribution: Optional[Dict[str, float]] = Field(None, description="Bloom's taxonomy distribution")
+    include_diagrams: bool = Field(False, description="Allow compact markdown/mermaid visual blocks in questions")
+
+    difficulty_distribution: Optional[Dict[str, float]] = Field(
+        None,
+        description='Requested difficulty mix, e.g. {"easy": 0.4, "medium": 0.4, "hard": 0.2}',
+    )
     
     @field_validator("sections")
     @classmethod
@@ -141,16 +134,18 @@ class ExamGenerationRequest(BaseModel):
 
 class ExamUpdateRequest(BaseModel):
     """Request schema for updating an exam."""
-    
-    status: Optional[str] = Field(None, description="Exam status: draft, under_review, approved")
+
+    status: Optional[str] = Field(None, description="Exam status: draft, under_review")
     instructions: Optional[str] = Field(None, max_length=2000, description="Exam instructions")
     duration_minutes: Optional[int] = Field(None, ge=30, le=300, description="Exam duration")
-    
+
     @field_validator("status")
     @classmethod
     def validate_status(cls, v):
         if v is not None:
-            allowed = ["draft", "under_review", "approved"]
+            # "approved" is intentionally unreachable here: approval must go
+            # through the governed approve endpoint (preflight + workflow).
+            allowed = ["draft", "under_review"]
             if v not in allowed:
                 raise ValueError(f"status must be one of {allowed}")
         return v
@@ -186,12 +181,11 @@ class QuestionResponse(BaseModel):
     
     # Short answer/Essay fields
     marking_scheme: Optional[List[str]] = None
-    sub_parts: Optional[List[SubPartResponse]] = None
-    
+    sub_parts: Optional[List[dict]] = None
+
     # Diagram
     diagram_svg: Optional[str] = None
-    asset_refs: Optional[List[UUID]] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -252,12 +246,16 @@ class ExamListResponse(BaseModel):
 
 class ExamGenerationResponse(BaseModel):
     """Response schema for exam generation request (background task)."""
-    
+
     message: str
     exam_id: UUID
     status: str
     poll_endpoint: str
     estimated_time_seconds: int
+    warnings: Optional[List[str]] = Field(
+        default=None,
+        description="Curriculum coverage notices (e.g. missing scheme-of-work data)",
+    )
 
 
 class ExamRegenerationRequest(BaseModel):
@@ -272,6 +270,14 @@ class ExamExportRequest(BaseModel):
 
     format: str = Field(default="pdf", description="Export format (pdf only for MVP)")
     include_answers: bool = Field(default=False, description="Include answers/marking hints")
+
+
+class ExamExportResponse(BaseModel):
+    """Response schema for exam export."""
+
+    message: str
+    file_name: str
+    download_url: str
 
 
 class ExamAuditCommentCreateRequest(BaseModel):
@@ -323,10 +329,6 @@ class ExamGenerationProposalCreateRequest(BaseModel):
 
     subject: str = Field(..., min_length=1, max_length=100)
     grade_level: str = Field(..., min_length=1, max_length=50)
-    document_ids: List[UUID] = Field(
-        default_factory=list,
-        description="Optional supplementary documents (curriculum-first: not required)",
-    )
     term: Optional[str] = Field(
         default=None,
         description="Term (First Term, Second Term, Third Term)",
@@ -354,7 +356,6 @@ class ExamGenerationProposalResponse(BaseModel):
     used_at: Optional[datetime] = None
     subject: str
     grade_level: str
-    document_ids: List[UUID]
     term: Optional[str] = None
     selected_weeks: Optional[List[int]] = None
     desired_outcomes: str
@@ -399,7 +400,6 @@ class ManualQuestionInput(BaseModel):
     marking_scheme: Optional[List[str]] = None
     sub_parts: Optional[List[SubPartResponse]] = None
     diagram_svg: Optional[str] = None
-    asset_ids: Optional[List[UUID]] = None
 
 
 class ManualExamSubmissionRequest(BaseModel):
