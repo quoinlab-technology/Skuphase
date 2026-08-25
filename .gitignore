@@ -1,0 +1,27 @@
+# Secrets & environment
+.env
+.env.local
+*.env
+.sesskey
+
+# User data on disk
+uploads/
+exports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Tooling / IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

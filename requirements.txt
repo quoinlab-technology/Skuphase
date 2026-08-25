@@ -1,0 +1,161 @@
+# =============================================================================
+# EduPrompt AI - Python Dependencies
+# Python 3.11+ required
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# WEB FRAMEWORK
+# -----------------------------------------------------------------------------
+fastapi==0.109.0              # Modern async web framework
+uvicorn[standard]==0.27.0     # ASGI server with WebSocket support
+python-multipart==0.0.6       # For file uploads
+python-fasthtml==0.8.0        # FastHTML for server-rendered UI
+
+# -----------------------------------------------------------------------------
+# DATABASE
+# -----------------------------------------------------------------------------
+sqlalchemy[asyncio]==2.0.25   # ORM with async support
+asyncpg==0.29.0               # Async PostgreSQL driver
+psycopg2-binary==2.9.9        # Sync PostgreSQL driver (for migrations)
+alembic==1.13.1               # Database migrations
+
+# -----------------------------------------------------------------------------
+# CACHE & QUEUE
+# -----------------------------------------------------------------------------
+# Redis client (removed for MVP; Postgres-only rate-limits)
+# redis==5.0.1                # Redis client
+# hiredis==2.3.2              # Fast Redis parser
+
+# -----------------------------------------------------------------------------
+# AUTHENTICATION & SECURITY
+# -----------------------------------------------------------------------------
+pyjwt==2.8.0                  # JWT token handling - REMOVED (using python-jose instead)
+passlib[bcrypt]==1.7.4        # Password hashing
+bcrypt==4.0.1                 # bcrypt hashing (compatible with passlib 1.7.4)
+python-jose[cryptography]==3.3.0  # JWT encoding/decoding
+cryptography==42.0.2          # Cryptographic operations
+
+# -----------------------------------------------------------------------------
+# VALIDATION & SERIALIZATION
+# -----------------------------------------------------------------------------
+pydantic==2.5.3               # Data validation
+pydantic-settings==2.1.0      # Settings management
+email-validator==2.1.0        # Email validation
+
+# -----------------------------------------------------------------------------
+# LLM PROVIDERS
+# -----------------------------------------------------------------------------
+openai==1.10.0                # OpenAI/Grok API client (OpenAI-compatible)
+anthropic==0.18.0             # Anthropic Claude API client
+# litellm==1.17.0             # Optional: Multi-provider abstraction
+tiktoken==0.6.0               # Token counting for context management
+
+# -----------------------------------------------------------------------------
+# EMBEDDINGS (Local) - BGE-M3 (1024-dim, multilingual retrieval SOTA)
+# -----------------------------------------------------------------------------
+sentence-transformers==2.2.2  # Local embeddings (BGE-M3 / all-MiniLM-L6-v2)
+torch>=1.13.0                 # PyTorch for sentence-transformers
+numpy>=1.24.0                 # Numerical operations
+
+# -----------------------------------------------------------------------------
+# OCR (Local) - PaddleOCR (Baidu, Apache-2.0) preferred; pytesseract fallback
+# -----------------------------------------------------------------------------
+paddleocr==2.7.3              # Layout-aware OCR for scanned Nigerian past papers
+paddlepaddle==2.6.1           # PaddleOCR runtime (CPU build)
+pytesseract==0.3.10           # OCR fallback
+opencv-python-headless==4.9.0  # Image pre/post-processing for OCR
+
+# -----------------------------------------------------------------------------
+# HTTP CLIENTS
+# -----------------------------------------------------------------------------
+httpx==0.26.0                 # Modern async HTTP client
+aiohttp==3.9.1                # Alternative async HTTP client
+
+# -----------------------------------------------------------------------------
+# FILE EXPORT
+# -----------------------------------------------------------------------------
+# PDF Generation
+weasyprint==61.0              # HTML to PDF converter
+pillow==10.2.0                # Image processing (required by WeasyPrint)
+
+# Word Document Generation
+python-docx==1.1.0            # Create/modify Word documents
+
+# SVG Handling
+svglib==1.5.1                 # SVG to PDF conversion
+reportlab==4.0.9              # PDF generation toolkit
+
+# -----------------------------------------------------------------------------
+# DATA PROCESSING
+# -----------------------------------------------------------------------------
+jinja2==3.1.3                 # Template engine for prompts
+python-dateutil==2.8.2        # Date/time utilities
+pytz==2024.1                  # Timezone handling
+
+# -----------------------------------------------------------------------------
+# MONITORING & LOGGING
+# -----------------------------------------------------------------------------
+sentry-sdk[fastapi]==1.40.0   # Error tracking
+structlog==24.1.0             # Structured logging
+python-json-logger==2.0.7     # JSON log formatting
+
+# -----------------------------------------------------------------------------
+# UTILITIES
+# -----------------------------------------------------------------------------
+python-dotenv==1.0.1          # Environment variable management
+pyyaml==6.0.1                 # YAML parsing
+click==8.1.7                  # CLI utilities
+rich==13.7.0                  # Beautiful terminal output
+
+# -----------------------------------------------------------------------------
+# TESTING (Development)
+# -----------------------------------------------------------------------------
+pytest==8.0.0                 # Testing framework
+pytest-asyncio==0.23.4        # Async test support
+pytest-cov==4.1.0             # Coverage reports
+httpx==0.26.0                 # Test client for FastAPI
+faker==22.6.0                 # Fake data generation
+factory-boy==3.3.0            # Test fixtures
+
+# -----------------------------------------------------------------------------
+# CODE QUALITY (Development)
+# -----------------------------------------------------------------------------
+ruff==0.2.1                   # Fast Python linter
+black==24.1.1                 # Code formatter
+mypy==1.8.0                   # Type checker
+pre-commit==3.6.0             # Git hooks
+
+# -----------------------------------------------------------------------------
+# DEPLOYMENT
+# -----------------------------------------------------------------------------
+gunicorn==21.2.0              # Production WSGI server
+supervisor==4.2.5             # Process manager
+
+# =============================================================================
+# INSTALLATION INSTRUCTIONS
+# =============================================================================
+#
+# Development setup:
+#   python -m venv venv
+#   source venv/bin/activate  # On Windows: venv\Scripts\activate
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# Production setup:
+#   pip install -r requirements.txt --no-dev
+#
+# Update dependencies:
+#   pip install --upgrade -r requirements.txt
+#
+# =============================================================================
+
+# =============================================================================
+# VERSION NOTES
+# =============================================================================
+# 
+# FastAPI 0.109.0: Latest stable with all async features
+# SQLAlchemy 2.0: Major rewrite with better async support
+# Pydantic 2.5: Significant performance improvements over v1
+# Python 3.11+: Required for performance and type hinting features
+#
+# =============================================================================
