@@ -1,353 +1,109 @@
-# SkuPhase - Quick Start Guide
+# SkuPhase
 
-## Phase 1: Foundation & Infrastructure
+Curriculum-first AI exam generation for Nigerian primary schools.
+Coverage: **Pre-Nursery – Primary 6** (NERDC scheme of work). JSS/SSS data is
+planned but not yet ingested.
 
-**Status:** 🚀 In Development  
-**Current Stage:** Week 1 - Database & Authentication (COMPLETED)
+## How it works
 
-### What's been implemented:
+```
+Teacher picks class → subject → term → weeks
+        ↓
+Official NERDC scheme-of-work objectives   (indexed SQL lookup)
+Curated few-shot past-question examples    (SQL lookup, platform corpus only)
+        ↓
+Single LLM call  (Groq llama-3.3-70b primary, OpenRouter fallback)
+        ↓
+Deterministic quality validator → persisted exam → review workflow → PDF export
+```
 
-✅ **FastAPI Application Setup**
-- Main app with CORS and middleware
-- Health check and root endpoints
-- OpenAPI documentation enabled
+**No ML runs on the server.** Embeddings, RAG, vector search and OCR were
+deliberately removed (owner decision). The shared question corpus is seeded by
+the owner via a local script; school-contributed questions never leave their
+school's scope.
 
-✅ **Configuration System**
-- Environment-based settings
-- All required env variables defined
-- .env.example template
+## Architecture as built
 
-✅ **Database Layer**
-- SQLAlchemy async ORM setup
-- PostgreSQL connection pooling
-- Database initialization and cleanup
+- **Backend**: FastAPI, ~55 API operations under `/api/v1/` (auth, users,
+  schools, exams, ops, curriculum)
+- **DB**: PostgreSQL + SQLAlchemy 2 async + Alembic (single squashed baseline:
+  `0001_baseline_squash`)
+- **Jobs**: Postgres-backed durable queue (`generation_jobs`) with an in-app
+  asyncio worker (`FOR UPDATE SKIP LOCKED`) — survives restarts, safe with
+  multiple app instances. Transient provider errors retry with backoff;
+  validation/parse failures fail fast without burning extra LLM calls.
+- **Storage**: local disk under `exports/exams/{exam_id}/`; downloads go
+  through tenant-checked endpoints. Upload subsystem intentionally removed in
+  v1 (returns as a clean module later).
+- **Email**: provider abstraction — Gmail SMTP (App Password) today, Resend by
+  flipping `MAIL_PROVIDER=resend` once the domain is verified.
 
-✅ **Authentication System**
-- JWT token generation and validation
-- Password hashing with bcrypt
-- Password strength validation
-- Token refresh functionality
+## Roles & access (dual mode)
 
-✅ **Database Models**
-- School (tenant)
-- User (with school association)
-- Plan and Subscription
-- Exam and Question
-- SchoolDocument and DocumentChunk (RAG)
-- UsageLog (billing/rate limiting)
+| Action | School admin | Individual teacher | Teacher/auditor (school staff) |
+|---|---|---|---|
+| Propose generation | ✓ | n/a (direct) | ✓ |
+| Generate / refine / export / delete | ✓ | ✓ (own workspace) | ✗ (proposals only) |
+| Submit final draft | ✓ | ✓ (self-approve) | own exams only |
+| Approve | ✓ | ✓ (self) | ✗ |
+| Browse/save question bank | ✓ | ✓ | teacher ✓ |
 
-✅ **API Endpoints**
-- POST `/api/v1/auth/register` - School registration with admin
-- POST `/api/v1/auth/login` - User login
-- POST `/api/v1/auth/refresh-token` - Token refresh
-- GET `/api/v1/auth/me` - Get current user
-- POST `/api/v1/auth/logout` - Logout
+Manual exam submission (`POST /exams/manual-submit`) lets teachers write
+papers without any AI involvement.
 
-✅ **Security**
-- HTTPBearer authentication
-- Current user dependency injection
-- School-based data isolation ready
+## Quick start
 
----
+```powershell
+git clone <repo> && cd skuphase
+.\scripts\bootstrap_dev.ps1      # docker postgres, .env, deps, migrate, seed
+venv\Scripts\python.exe run_server.py
+```
 
-## Local Development Setup
+Manual path: copy `.env.example` → `.env`, fill secrets, then
+`alembic upgrade head`, seed curriculum, `run_server.py`.
 
-### 1. Create Virtual Environment
+### Environment notes
+
+- `DATABASE_URL` must use the asyncpg driver:
+  `postgresql+asyncpg://user:pass@host:5432/db`
+- `CORS_ORIGINS` accepts a JSON array or comma-separated string.
+- LLM vars are `GROQ_API_KEY` / `GROQ_BASE_URL` (Groq, not "Grok").
+- Email MVP: create a Gmail App Password (2FA required), set `SMTP_USER` /
+  `SMTP_PASSWORD`. Limit ≈500 sends/day — fine for pilots.
+
+## Seeding & curation
 
 ```bash
-cd c:\Users\Meshell\Desktop\Backends\SkuPhase
-python -m venv venv
-source venv/Scripts/activate  # On Windows: venv\Scripts\activate
+# Curriculum (3,081 week rows, committed at data/)
+python -m app.scripts.seed_curriculum_postgres --check   # offline dry-run
+python -m app.scripts.seed_curriculum_postgres           # bulk upsert
+
+# Platform few-shot corpus (owner-curated ONLY — see CP4 policy in
+# AUDIT_REMEDIATION_PLAN.md §1; do NOT ingest verbatim WAEC/NECO papers)
+python -m app.scripts.ingest_platform_questions --input my_items.json --dry-run
+python -m app.scripts.ingest_platform_questions --input my_items.json
 ```
 
-### 2. Install Dependencies
+## Ops runbook
+
+- **Supabase free tier**: pauses after ~1 week idle. `.github/workflows/
+  keepalive.yml` pings `/api/v1/ops/health` every 2 days (set repo secret
+  `SKUPHASE_HEALTH_URL`). Watch the 500 MB size ceiling.
+- **Backups**: no PITR on free tier — `backup.yml` dumps nightly to private
+  artifacts (set `SKUPHASE_BACKUP_DATABASE_URL`). Restore:
+  `gunzip -c dump.sql.gz | psql "$DATABASE_URL"`.
+- **Deploy**: `uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2`.
+  Migrations run once per environment (`init_db.py` refuses unmigrated DBs).
+
+## Development
 
 ```bash
-pip install -r requirements.txt
+pytest tests -q          # unit suite (no DB needed)
+ruff check app tests
 ```
 
-### 3. Setup Environment Variables
+Integration tests against real Postgres: set `TEST_DATABASE_URL`, run a
+scratch DB, `pytest -m integration`.
 
-```bash
-# Copy example to .env
-cp .env.example .env
-
-# Edit .env with your values:
-# - DATABASE_URL (PostgreSQL connection)
-# - SUPABASE credentials
-# - JWT_SECRET_KEY (generate: openssl rand -hex 16)
-# - Google OAuth credentials
-# - LLM API keys
-```
-
-### 4. Initialize Database
-
-```bash
-# Migration-first setup (recommended and required)
-alembic -c alembic.ini upgrade head
-
-# Optional seed helper (applies migrations + seeds default plans)
-python init_db.py
-```
-
-### 5. Run Development Server
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**API Documentation:** http://localhost:8000/docs
-
----
-
-## Testing Phase 1 Endpoints
-
-### 1. Register a School
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "school_name": "Test School Lagos",
-    "contact_email": "admin@testschool.edu.ng",
-    "contact_phone": "+2348012345678",
-    "address": "123 Education Road, Lagos",
-    "plan_id": "uuid-of-starter-plan",
-    "admin_user": {
-      "full_name": "Adebayo Folake",
-      "email": "admin@testschool.edu.ng",
-      "password": "TestPass123!"
-    }
-  }'
-```
-
-### 2. Login
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@testschool.edu.ng",
-    "password": "TestPass123!"
-  }'
-```
-
-### 3. Get Current User
-
-```bash
-curl -X GET http://localhost:8000/api/v1/auth/me \
-  -H "Authorization: Bearer <access_token>"
-```
-
-### 4. Refresh Token
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/refresh-token \
-  -H "Authorization: Bearer <refresh_token>"
-```
-
----
-
-## Next Steps (Week 2)
-
-- [ ] Create Alembic migrations
-- [ ] Add User management endpoints (invite, list, update roles)
-- [ ] Add School settings endpoints
-- [ ] Implement Google OAuth callback
-- [ ] Add tests for auth endpoints
-
----
-
-## Project Structure
-
-```
-SkuPhase/
-├── app/
-│   ├── __init__.py
-│   ├── main.py                 ✅ FastAPI app
-│   │
-│   ├── api/
-│   │   └── v1/
-│   │       └── auth_router.py  ✅ Auth endpoints
-│   │
-│   ├── core/
-│   │   ├── database.py         ✅ DB connection
-│   │   ├── security.py         ✅ JWT, password
-│   │   └── dependencies.py     ✅ Dependency injection
-│   │
-│   ├── models/                 ✅ All database models
-│   ├── schemas/                ✅ Request/response schemas
-│   ├── services/               ✅ Business logic
-│   ├── config/                 ✅ Settings
-│   └── utils/                  (For prompts, helpers)
-│
-├── migrations/                 (TODO: Alembic setup)
-├── tests/                      (TODO: Test suite)
-├── requirements.txt            ✅ Dependencies
-├── .env.example                ✅ Environment template
-└── README.md                   (This file)
-```
-
----
-
-## Database Schema
-
-**Core Tables Created:**
-
-```
-Schools (tenant)
-  ├─ Users (with school_id FK)
-  ├─ SchoolSubscriptions → Plans
-  ├─ SchoolSettings
-  ├─ SchoolDocuments (RAG source)
-  │   └─ DocumentChunks (with embeddings)
-  ├─ Exams
-  │   ├─ Questions
-  │   └─ ExamContext → SchoolDocuments
-  └─ UsageLogs
-```
-
----
-
-## Key Implementation Details
-
-### School-First Tenancy
-Every user has a `school_id`. All queries must filter by school_id to ensure data isolation.
-
-```python
-# ✅ CORRECT
-query = select(User).filter(
-    User.id == user_id,
-    User.school_id == current_user.school_id
-)
-
-# ❌ WRONG
-query = select(User).filter(User.id == user_id)
-```
-
-### JWT Token Structure
-```json
-{
-  "user_id": "uuid",
-  "school_id": "uuid",
-  "email": "user@school.ng",
-  "role": "school_admin|teacher",
-  "token_type": "access|refresh",
-  "exp": 1234567890,
-  "iat": 1234567890
-}
-```
-
-### Password Requirements
-- Minimum 8 characters
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one digit
-- At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
-
----
-
-## Environment Variables
-
-**Required:**
-- `DATABASE_URL` - PostgreSQL connection string
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
-- `JWT_SECRET_KEY` - Min 32 characters
-- `GROK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_EMBEDDING_API_KEY`
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-
-**Optional:**
-- `APP_ENV` - development|staging|production (default: development)
-- `DEBUG` - true|false (default: false)
-- `LOG_LEVEL` - DEBUG|INFO|WARNING|ERROR (default: INFO)
-- `CORS_ORIGINS` - Comma-separated list
-
----
-
-## Troubleshooting
-
-### Database Connection Error
-```
-psycopg2.OperationalError: could not connect to server
-```
-✅ Check DATABASE_URL in .env  
-✅ Ensure PostgreSQL is running  
-✅ Verify credentials
-
-### JWT Secret Key Error
-```
-ValueError: JWT_SECRET_KEY must be at least 32 characters
-```
-✅ Generate: `openssl rand -hex 16` (gives 32 chars)
-
-### Port Already in Use
-```
-OSError: [Errno 98] Address already in use
-```
-✅ Change PORT in .env or command line:
-```bash
-uvicorn app.main:app --port 8001
-```
-
-### Import Errors
-```
-ModuleNotFoundError: No module named 'app'
-```
-✅ Ensure you're in the SkuPhase directory  
-✅ Virtual environment is activated  
-✅ Run: `pip install -e .`
-
----
-
-## Quick Reference
-
-### API Endpoints Summary
-```
-POST   /api/v1/auth/register        Register school + admin
-POST   /api/v1/auth/login           User login
-POST   /api/v1/auth/refresh-token   Refresh JWT token
-GET    /api/v1/auth/me              Get current user
-POST   /api/v1/auth/logout          Logout user
-
-GET    /health                      Health check
-GET    /                            Root info
-GET    /docs                        OpenAPI docs
-GET    /redoc                       ReDoc docs
-```
-
-### Database Models
-- `School` - Tenant entity
-- `User` - Staff members (teacher, admin)
-- `Plan` - Subscription tiers
-- `SchoolSubscription` - School → Plan link
-- `SchoolSettings` - Branding, LLM provider prefs
-- `SchoolDocument` - Uploaded curriculum (RAG)
-- `DocumentChunk` - Text chunks with embeddings
-- `Exam` - Generated exams
-- `Question` - Individual questions
-- `ExamContext` - Exam → Document citations
-- `UsageLog` - Billing/rate limiting
-
----
-
-## Next Milestone: Phase 2 (Week 3-4)
-
-Document Management & RAG Foundation:
-- [ ] Document upload endpoints
-- [ ] Text extraction (PDF, DOCX, OCR)
-- [ ] Embedding generation (OpenAI)
-- [ ] Vector storage in pgvector
-- [ ] Semantic search implementation
-
----
-
-## Support
-
-For issues or questions:
-1. Check QUICK_REFERENCE.md
-2. Review DEVELOPMENT_GUIDELINES.md
-3. Check IMPLEMENTATION_ROADMAP.md
-
----
-
-**Happy coding!** 🚀
+See `AUDIT_REMEDIATION_PLAN.md` for the security/completeness audit this code
+line implements and the decisions behind it.

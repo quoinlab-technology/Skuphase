@@ -1,0 +1,28 @@
+name: Weekly DB backup
+
+# Supabase free tier has no PITR. Nightly-ish logical dump uploaded as a
+# private workflow artifact (30-day retention) — the real tail-risk net.
+on:
+  schedule:
+    - cron: "0 3 * * *"  # daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.SKUPHASE_BACKUP_DATABASE_URL }}  # postgres:// (sync driver)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          DUMP_FILE="skuphase_$(date -u +%Y%m%d_%H%M%S).sql.gz"
+          pg_dump "$DATABASE_URL" --no-owner --clean --if-exists | gzip > "$DUMP_FILE"
+          echo "DUMP_FILE=$DUMP_FILE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DUMP_FILE }}
+          path: ${{ env.DUMP_FILE }}
+          retention-days: 30

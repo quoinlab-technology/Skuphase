@@ -39,11 +39,13 @@ class Plan(BaseModel):
 
 class SchoolSubscription(BaseModel):
     """Links a school to a plan with billing information."""
-    
+
     __tablename__ = "school_subscriptions"
-    
+
     school_id = Column(UUID(as_uuid=True), ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
-    plan_id = Column(UUID(as_uuid=True), ForeignKey("plans.id", ondelete="RESTRICT"), nullable=False)
+    # Nullable by design (audit A3): NULL means "unmanaged / free tier" and is
+    # created automatically at registration. Billing attaches a plan later.
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("plans.id", ondelete="RESTRICT"), nullable=True)
     
     status = Column(String(20), default="active")  # active, suspended, cancelled, trial
     start_date = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

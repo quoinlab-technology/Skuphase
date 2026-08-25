@@ -1,0 +1,17 @@
+name: Keep-alive ping
+
+# Supabase free-tier databases pause after ~1 week of inactivity.
+# This workflow touches the DB via the public health endpoint every 2 days.
+on:
+  schedule:
+    - cron: "0 6 */2 * *"  # every 2 days at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping ops health endpoint
+        run: |
+          curl -sS --max-time 30 --fail "${{ secrets.SKUPHASE_HEALTH_URL }}" \
+            || curl -sS --max-time 30 "${{ secrets.SKUPHASE_HEALTH_URL }}"

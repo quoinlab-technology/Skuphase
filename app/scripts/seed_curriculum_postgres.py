@@ -1,11 +1,13 @@
 """
 PostgreSQL Curriculum & Scheme of Work Seeder.
-Reads the normalized NERDC dataset and populates the PostgreSQL database.
+
+Reads the normalized NERDC dataset (committed at ``data/``) and populates
+PostgreSQL using bulk ON CONFLICT upserts (idempotent, fast).
 
 Usage:
     python -m app.scripts.seed_curriculum_postgres                     # default path
     python -m app.scripts.seed_curriculum_postgres --input path.json
-    python -m app.scripts.seed_curriculum_postgres --check             # dry-run, no writes
+    python -m app.scripts.seed_curriculum_postgres --check             # dry-run, no DB
 """
 
 from __future__ import annotations
@@ -14,141 +16,153 @@ import argparse
 import asyncio
 import json
 import logging
+from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
-# NOTE: app.core.database is imported LAZILY inside seed_curriculum_from_json.
-# Importing it at module load requires DATABASE_URL to be configured, which
-# breaks the fully-offline --check mode.
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INPUT = r"C:\Users\DELL\Desktop\FastStrap\pdf_process\nerdc_scheme_database.final.json"
+DEFAULT_INPUT = Path(__file__).resolve().parents[2] / "data" / "nerdc_scheme_database.final.json"
 
-
-async def _summary(records: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Build a counts summary grouped by (class_level, subject)."""
-    from collections import Counter
-    counts: Counter = Counter()
-    for r in records:
-        counts[(r["class_level"], r["subject"], r["term"])] += 1
-    return dict(counts)
+BATCH_SIZE = 500
 
 
 async def _print_summary(records: List[Dict[str, Any]], label: str) -> None:
-    summary = await _summary(records)
+    counts: Counter = Counter()
+    for r in records:
+        counts[(r["class_level"], r["subject"], r["term"])] += 1
     print(f"\n[{label}] {len(records)} scheme-of-work rows:")
-    for (cls, subj, term), cnt in sorted(summary.items()):
+    for (cls, subj, term), cnt in sorted(counts.items()):
         print(f"  {cls:14s} {subj:35s} {term:12s} -> {cnt} weeks")
 
 
-async def seed_curriculum_from_json(json_path: Path, check_only: bool = False) -> int:
-    """Load normalized NERDC dataset into PostgreSQL.
+def _rows(records: List[Dict[str, Any]]):
+    """Build deduplicated curriculum + scheme row payloads."""
+    curriculums: Dict[tuple, Dict[str, Any]] = {}
+    schemes: List[Dict[str, Any]] = []
+    seen_scheme_keys = set()
 
-    Returns the number of new scheme-of-work week rows inserted (0 if check_only).
-    """
+    for r in records:
+        key = (r["board"], r["class_level"], r["subject"].lower())
+        if key not in curriculums:
+            curriculums[key] = {
+                "country": r.get("country", "NG"),
+                "board": r["board"],
+                "class_level": r["class_level"],
+                "subject_name": r["subject"],
+            }
+
+        scheme_key = (key, r["term"], r["week"])
+        if scheme_key in seen_scheme_keys:
+            continue
+        seen_scheme_keys.add(scheme_key)
+        topic = r["topic"]
+        if len(topic) > 255:
+            # 14 legacy rows exceed varchar(255); keep them, truncated.
+            logger.warning("Truncating topic longer than 255 chars (week %s)", r["week"])
+            topic = topic[:255]
+        schemes.append(
+            {
+                "board": r["board"],
+                "class_level": r["class_level"],
+                "subject_key": r["subject"].lower(),
+                "term": r["term"],
+                "week_number": r["week"],
+                "topic": topic,
+                "subtopics": json.dumps(r.get("subtopics", [])),
+                "raw_content": r.get("raw_text"),
+                "is_exam_or_break": bool(r.get("is_exam_or_break", False)),
+            }
+        )
+    return curriculums, schemes
+
+
+async def seed_curriculum_from_json(json_path: Path, check_only: bool = False) -> int:
+    """Load the normalized NERDC dataset into PostgreSQL via bulk upserts."""
     if not json_path.exists():
         raise FileNotFoundError(f"Dataset not found at {json_path}")
 
     logger.info("Reading dataset from %s ...", json_path)
-    with open(json_path, "r", encoding="utf-8") as f:
-        records: List[Dict[str, Any]] = json.load(f)
+    records: List[Dict[str, Any]] = json.loads(json_path.read_text(encoding="utf-8"))
+    logger.info("Loaded %s rows.", len(records))
 
-    logger.info("Loaded %s rows. Initializing database...", len(records))
+    await _print_summary(records, "DRY-RUN CHECK" if check_only else "SEED SUMMARY")
+    if check_only:
+        logger.info("Check-only mode — no writes performed.")
+        return 0
 
-    # Lazy imports — require a configured DATABASE_URL (and a migrated DB).
-    from sqlalchemy import select
-    from app.core.database import async_session_maker
+    from sqlalchemy import select, func
+    from app.core.database import get_async_session_maker
     from app.models.curriculum import Curriculum, SchemeOfWork
 
-    async with async_session_maker() as db:
-        # Check existing curriculums and build an in-memory lookup.
-        existing_currs = (await db.execute(select(Curriculum))).scalars().all()
-        curr_map: Dict[tuple, Any] = {
-            (c.board, c.class_level, c.subject_name.lower()): c.id
-            for c in existing_currs
-        }
+    curriculums, schemes = _rows(records)
+    session_maker = get_async_session_maker()
 
-        # 1. Seed Curriculums (platform-owned, shared, no school_id)
-        new_curriculums = 0
-        for r in records:
-            key = (r["board"], r["class_level"], r["subject"].lower())
-            if key not in curr_map:
-                curr = Curriculum(
-                    country=r.get("country", "NG"),
-                    board=r["board"],
-                    class_level=r["class_level"],
-                    subject_name=r["subject"],
-                    category=None,
-                )
-                db.add(curr)
-                await db.flush()
-                curr_map[key] = curr.id
-                new_curriculums += 1
-
-        logger.info(
-            "Curriculum subjects ready. New subjects created: %s, Total: %s",
-            new_curriculums,
-            len(curr_map),
-        )
-
-        if check_only:
-            await _print_summary(records, "DRY-RUN CHECK")
-            logger.info("Check-only mode — no writes performed.")
-            return 0
-
-        # 2. Seed / upsert Scheme of Work weeks
-        logger.info("Seeding scheme of work weekly records...")
-        inserted_weeks = 0
-        batch_size = 200
-
-        for idx, r in enumerate(records):
-            key = (r["board"], r["class_level"], r["subject"].lower())
-            curr_id = curr_map[key]
-
-            existing_week = await db.execute(
-                select(SchemeOfWork).where(
-                    SchemeOfWork.curriculum_id == curr_id,
-                    SchemeOfWork.term == r["term"],
-                    SchemeOfWork.week_number == r["week"],
+    inserted_weeks = 0
+    async with session_maker() as db:
+        # 1. Bulk-upsert curriculums on the unique lookup index.
+        curriculum_values = list(curriculums.values())
+        for i in range(0, len(curriculum_values), BATCH_SIZE):
+            batch = curriculum_values[i : i + BATCH_SIZE]
+            stmt = (
+                pg_insert(Curriculum)
+                .values(batch)
+                .on_conflict_do_update(
+                    index_elements=["board", "class_level", "subject_name"],
+                    set_={
+                        "country": pg_insert(Curriculum).excluded.country,
+                        "updated_at": func.now(),
+                    },
                 )
             )
-            scheme_obj = existing_week.scalar_one_or_none()
+            await db.execute(stmt)
 
-            if scheme_obj is None:
-                db.add(
-                    SchemeOfWork(
-                        curriculum_id=curr_id,
-                        term=r["term"],
-                        week_number=r["week"],
-                        topic=r["topic"],
-                        subtopics=r.get("subtopics", []),
-                        raw_content=r.get("raw_text"),
-                        is_exam_or_break=r.get("is_exam_or_break", False),
-                    )
+        # Map (board, class, lower(subject)) -> curriculum_id
+        result = await db.execute(select(Curriculum))
+        curr_map = {
+            (c.board, c.class_level, c.subject_name.lower()): c.id for c in result.scalars()
+        }
+
+        # 2. Bulk-upsert scheme weeks on the unique (curriculum_id, term, week).
+        for i in range(0, len(schemes), BATCH_SIZE):
+            batch = []
+            for row in schemes[i : i + BATCH_SIZE]:
+                row = dict(row)
+                curriculum_id = curr_map[
+                    (row.pop("board"), row.pop("class_level"), row.pop("subject_key"))
+                ]
+                row["curriculum_id"] = curriculum_id
+                batch.append(row)
+
+            stmt = (
+                pg_insert(SchemeOfWork)
+                .values(batch)
+                .on_conflict_do_update(
+                    index_elements=["curriculum_id", "term", "week_number"],
+                    set_={
+                        "topic": pg_insert(SchemeOfWork).excluded.topic,
+                        "subtopics": pg_insert(SchemeOfWork).excluded.subtopics,
+                        "raw_content": pg_insert(SchemeOfWork).excluded.raw_content,
+                        "is_exam_or_break": pg_insert(SchemeOfWork).excluded.is_exam_or_break,
+                        "updated_at": func.now(),
+                    },
                 )
-                inserted_weeks += 1
-            else:
-                scheme_obj.topic = r["topic"]
-                scheme_obj.subtopics = r.get("subtopics", [])
-                scheme_obj.is_exam_or_break = r.get("is_exam_or_break", False)
-
-            if (idx + 1) % batch_size == 0:
-                await db.commit()
-                logger.info("Processed %s/%s records...", idx + 1, len(records))
+            )
+            await db.execute(stmt)
+            inserted_weeks += len(batch)
+            logger.info("Upserted %s/%s week rows...", min(i + BATCH_SIZE, len(schemes)), len(schemes))
 
         await db.commit()
-        logger.info(
-            "Successfully seeded %s new scheme of work week records into PostgreSQL!",
-            inserted_weeks,
-        )
-        await _print_summary(records, "SEED SUMMARY")
-        return inserted_weeks
+
+    logger.info("Seeding complete: %s curriculum subjects, %s week rows.", len(curriculums), inserted_weeks)
+    return inserted_weeks
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Seed NERDC curriculum into PostgreSQL")
-    parser.add_argument("--input", default=DEFAULT_INPUT, help="Path to normalized JSON")
+    parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to normalized JSON")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -158,9 +172,8 @@ async def main() -> None:
 
     path = Path(args.input)
 
-    # Fully offline check: validate the data file + print a summary. No DB
-    # connection, no migration requirement — useful before wiring up Postgres.
     if args.check:
+        # Fully offline check: no DB connection required.
         if not path.exists():
             raise FileNotFoundError(f"Dataset not found at {path}")
         records = json.loads(path.read_text(encoding="utf-8"))
@@ -169,8 +182,13 @@ async def main() -> None:
         return
 
     inserted = await seed_curriculum_from_json(path, check_only=False)
-    logger.info("Done. New scheme-of-work weeks inserted: %s", inserted)
+    logger.info("Done. Week rows upserted: %s", inserted)
 
 
 if __name__ == "__main__":
+    import sys as _sys
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
     asyncio.run(main())

@@ -369,13 +369,20 @@ Unresolved count after plan: **0**.
 | CP | Question | Status |
 |----|----------|--------|
 | CP1 | Documents+Assets subsystem: remove entirely (Option A) or keep dormant (B)? | ✅ APPROVED — Option A (D10) |
-| CP2 | Dev DB: disposable re-seed or preserve+stamp? | ✅ APPROVED — disposable re-seed (D11) |
-| CP3 | Copy curriculum dataset JSON into repo for reproducible seeding? | ⏳ pending — see plain-English §4b |
-| CP4 | Past-question stance per §1 (original-gen + curated safe sources, no paraphrase pipeline)? | ⏳ pending — see §4b |
-| CP5 | `difficulty_distribution`: wire into prompt+validator (kept) or drop? | ⏳ pending — see §4b |
-| CP6 | Delete stale docs/root scripts/`pages/`? | ⏳ pending — see §4b |
-| CP7 | Email provider | ✅ ANSWERED — Gmail SMTP now, Resend-ready abstraction (D9) |
-| CP8 | Rename GROK_* → GROQ_* env vars | ✅ APPROVED (D12) |
+| CP2 | Dev DB: disposable re-seed or preserve+stamp? | ✅ APPROVED — fresh `skuphase_dev_fresh` created, old db kept as cold backup (D11) |
+| CP3 | Copy curriculum dataset JSON into repo for reproducible seeding? | ✅ APPROVED — `data/nerdc_scheme_database.final.json` committed |
+| CP4 | Past-question stance per §1 (original-gen + curated safe sources, no paraphrase pipeline)? | ✅ APPROVED as recommended |
+| CP5 | `difficulty_distribution`: wire into prompt+validator (kept) or drop? | ✅ APPROVED — keep + wired into prompt |
+| CP6 | Delete stale docs/root scripts/`pages/`? | ✅ APPROVED — deleted |
+| CP7 | Email provider | ✅ Gmail SMTP live via abstraction; Resend = one env var (D9) |
+| CP8 | Rename GROK_* → GROQ_* env vars | ✅ DONE incl. local .env (D12) |
+
+**Implementation status: COMPLETE.** All work packages WP1.1–WP5.2 delivered;
+migration drill verified against real Postgres (upgrade ×2 / downgrade / seed
+= 90 subjects + 3,081 week rows); test suite 45/45 green; import smoke OK.
+Note: original WP1.3 (upload hardening) became moot when CP1 deleted the
+upload endpoints — the spec is preserved in §2/WP1.3 for the future
+materials-upload module.
 
 ---
 
