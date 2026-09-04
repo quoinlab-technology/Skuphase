@@ -20,6 +20,15 @@ VALID_WORKFLOW_TRANSITIONS: Dict[str, Set[str]] = {
     "approved": set(),
 }
 
+# States from which an LLM refinement may be requested. `generation_requested`
+# and `failed` exams have no (final) questions to refine; `approved` is terminal
+# and immutable.
+REFINABLE_STATES = {"teacher_review", "final_submitted_by_teacher"}
+
+# States from which a teacher may submit the final draft. Re-submitting from
+# `final_submitted_by_teacher` is an idempotent no-op allowed for UX.
+SUBMITTABLE_STATES = {"teacher_review", "final_submitted_by_teacher"}
+
 EXAM_STATUSES = {"draft", "under_review", "approved", "failed"}
 
 # Statuses that may be set directly via the generic update endpoint.

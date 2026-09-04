@@ -138,9 +138,32 @@ class ExamQualityValidator:
                         errors.append(
                             f"Section {req_section.section_number} question {idx} must have >= 4 options."
                         )
-                    if answer not in {"A", "B", "C", "D"}:
+                    if answer not in {"A", "B", "C", "D", "E"}:
                         errors.append(
-                            f"Section {req_section.section_number} question {idx} must use A-D correct_answer."
+                            f"Section {req_section.section_number} question {idx} must use A-E correct_answer."
+                        )
+                elif q_type == "true_false":
+                    options = q.get("options")
+                    answer = q.get("correct_answer")
+                    if not isinstance(options, list) or len(options) < 2:
+                        errors.append(
+                            f"Section {req_section.section_number} question {idx} must have 2 options (True/False)."
+                        )
+                    if answer not in {"A", "B"}:
+                        errors.append(
+                            f"Section {req_section.section_number} question {idx} must use A/B correct_answer (A=True, B=False)."
+                        )
+
+                # Sub-parts: when present, their marks must sum to the question total.
+                sub_parts = q.get("sub_parts")
+                if isinstance(sub_parts, list) and sub_parts and isinstance(marks, int) and marks > 0:
+                    sub_total = sum(
+                        (sp.get("marks") or 0) for sp in sub_parts if isinstance(sp, dict)
+                    )
+                    if sub_total != marks:
+                        errors.append(
+                            f"Section {req_section.section_number} question {idx} sub-part marks "
+                            f"{sub_total} do not sum to question marks {marks}."
                         )
 
         expected_question_total = sum(s.num_questions for s in request.sections)
@@ -161,7 +184,7 @@ class ExamQualityValidator:
             for q in section.get("questions", [])
             if isinstance(q, dict)
         )
-        if question_text_blob:
+        if question_text_blob and (getattr(request, "language", "English") or "English").lower() == "english":
             us_hits = [token for token in US_BIAS_TOKENS if token in question_text_blob]
             ng_hits = [token for token in NIGERIA_CONTEXT_TOKENS if token in question_text_blob]
             if us_hits:
@@ -184,6 +207,37 @@ class ExamQualityValidator:
                     "Difficulty distribution requested but missing levels in output: "
                     + ", ".join(missing_diff)
                 )
+
+        # Anti-hallucination passage grounding: in comprehension sections every
+        # question must share content words with the teacher-supplied passage.
+        from app.services.exam_quality_report import ExamQualityReportService
+
+        for section in sections:
+            passage = section.get("passage") if isinstance(section, dict) else None
+            if not passage or not (passage.get("body") or "").strip():
+                continue
+            body_words = set(ExamQualityReportService._keywords(passage.get("body") or ""))
+            if not body_words:
+                continue
+            for idx, q in enumerate(section.get("questions", []), start=1):
+                if not isinstance(q, dict):
+                    continue
+                combo = f"{q.get('question') or ''} {q.get('correct_answer') or ''}"
+                q_words = set(ExamQualityReportService._keywords(combo))
+                if not q_words:
+                    continue
+                overlap = len(q_words & body_words) / float(len(q_words))
+                if overlap < 0.35:
+                    errors.append(
+                        f"Section {section.get('section_number')} question {idx}: weak grounding "
+                        "in the passage — the answer is not clearly stated. Rewrite to be "
+                        "answerable from the passage."
+                    )
+                elif overlap < 0.5:
+                    warnings.append(
+                        f"Section {section.get('section_number')} question {idx}: "
+                        f"low passage overlap ({overlap:.0%}); verify it is answerable."
+                    )
 
         metrics = {
             "generated_question_total": generated_question_total,

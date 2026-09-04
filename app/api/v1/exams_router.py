@@ -1,4 +1,4 @@
-﻿"""Exam generation and management API endpoints."""
+"""Exam generation and management API endpoints."""
 
 import asyncio
 import uuid
@@ -6,19 +6,24 @@ import logging
 import json
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, update
+from sqlalchemy import select, and_, func
 
 from app.core.dependencies import get_current_user
 from app.core.permissions import require_llm_permission, is_workspace_admin
-from app.core.workflow import MUTABLE_STATUSES
-from app.core.database import get_db_session, async_session_maker
+from app.core.workflow import (
+    MUTABLE_STATUSES,
+    REFINABLE_STATES,
+    SUBMITTABLE_STATES,
+    can_transition,
+)
+from app.core.database import get_db_session
 from app.config.settings import get_settings
 from app.models.user import User
-from app.models.exam import Exam, Question
+from app.models.exam import Exam, Question, ExamPassage
 from app.models.question import ExamAuditComment
 from app.models.proposal import ExamGenerationProposal
 from app.models.quality import ExamQualitySnapshot
@@ -31,6 +36,7 @@ from app.schemas.exam import (
     ManualExamSubmissionRequest,
     QuestionBankSaveRequest,
     QuestionBankItemResponse,
+    QuestionBankItemCreateRequest,
     QuestionBankItemUpdateRequest,
     ExamGenerationRequest,
     ExamGenerationResponse,
@@ -45,6 +51,7 @@ from app.schemas.exam import (
     ExamAuditCommentCreateRequest,
     ExamAuditCommentResponse,
     ExamRefineFromCommentsRequest,
+    ExamPassageResponse,
 )
 from app.services.curriculum_service import CurriculumService
 from app.services.exam_generator import ExamGenerator
@@ -345,9 +352,11 @@ async def generate_exam(
         )
 
         db.add(exam)
-        await db.commit()
+        await db.flush()
 
-        # Enqueue a durable, restart-safe job (survives deploys/restarts).
+        # Enqueue the durable, restart-safe job in the SAME transaction so a
+        # crash between the two writes can never leave an orphaned draft.
+        # The request-scoped db dependency commits exam + job atomically.
         await enqueue_generation_job(
             session=db,
             exam_id=exam_id,
@@ -411,6 +420,7 @@ async def submit_manual_exam(
         total_marks=sum(q.marks for q in request.questions),
         duration_minutes=request.duration_minutes,
         instructions=request.instructions,
+        language=(request.language or "English"),
     )
     db.add(exam)
     await db.flush()
@@ -466,9 +476,11 @@ async def submit_manual_exam(
         subject=exam.subject,
         grade_level=exam.grade_level,
         status=exam.status,
+        workflow_state=(getattr(exam, "workflow_state", None) or "final_submitted_by_teacher"),
         total_marks=exam.total_marks,
         duration_minutes=exam.duration_minutes,
         instructions=exam.instructions,
+        language=(getattr(exam, "language", None) or "English"),
         questions=[
             QuestionResponse(
                 id=q.id,
@@ -560,6 +572,10 @@ async def save_exam_questions_to_bank(
             sub_parts=question.sub_parts,
             diagram_svg=question.diagram_svg,
             is_active=True,
+            # Owner curation queue (D-NEW-1): school rows start pending and
+            # only app/scripts/promote_bank_items.py (owner-run) can promote
+            # them into the shared platform corpus.
+            review_status="pending",
         )
         db.add(item)
 
@@ -584,6 +600,7 @@ async def list_question_bank_items(
     topic: Optional[str] = Query(None, description="Filter by topic"),
     query_text: Optional[str] = Query(None, description="Free-text search on question text"),
     include_inactive: bool = Query(False, description="Include inactive items"),
+    review_status: Optional[str] = Query(None, description="Filter by review status (pending/approved/rejected)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
@@ -602,12 +619,58 @@ async def list_question_bank_items(
         query = query.where(QuestionBankItem.grade_level == grade_level)
     if topic:
         query = query.where(QuestionBankItem.topic == topic)
+    if review_status:
+        query = query.where(QuestionBankItem.review_status == review_status)
     if query_text:
         query = query.where(QuestionBankItem.question_text.ilike(f"%{query_text}%"))
 
     query = query.order_by(QuestionBankItem.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+@router.post(
+    "/question-bank/items",
+    response_model=QuestionBankItemResponse,
+    status_code=201,
+    summary="Add question to bank",
+    description="Manually create a reusable bank question.",
+    tags=["Exams"],
+)
+async def create_question_bank_item(
+    request: QuestionBankItemCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> QuestionBankItemResponse:
+    """Manually add question to bank (matching Question-Bank3.png)."""
+    if current_user.role not in {"teacher", "school_admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only teachers or school administrators can add questions to the bank",
+        )
+
+    item = QuestionBankItem(
+        school_id=current_user.school_id,
+        owner_type="school",
+        created_by_user_id=current_user.id,
+        subject=request.subject,
+        grade_level=request.grade_level,
+        topic=request.topic,
+        difficulty=request.difficulty or "medium",
+        question_type=request.question_type or "multiple_choice",
+        question_text=request.question_text,
+        marks=request.marks,
+        options=request.options,
+        correct_answer=request.correct_answer,
+        explanation=request.explanation,
+        marking_scheme=request.marking_scheme,
+        is_active=True,
+        review_status="approved",
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
 
 
 @router.patch(
@@ -818,8 +881,8 @@ async def generate_exam_from_proposal(
     proposal.used_by_user_id = current_user.user_id
     proposal.used_at = datetime.now(timezone.utc)
 
-    await db.commit()
-
+    # Exam + proposal flip + job enqueue commit atomically via the
+    # request-scoped db dependency (no orphaned drafts on crash).
     await enqueue_generation_job(
         session=db,
         exam_id=exam_id,
@@ -837,10 +900,59 @@ async def generate_exam_from_proposal(
     )
 
 
+@router.post(
+    "/generation-proposals/{proposal_id}/reject",
+    response_model=ExamGenerationProposalResponse,
+    summary="Reject generation proposal (admin)",
+    description=(
+        "Admin declines a teacher/auditor proposal without generating an exam. "
+        "The proposal status becomes 'rejected' and can no longer be generated."
+    ),
+    tags=["Exams"],
+)
+async def reject_generation_proposal(
+    proposal_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> ExamGenerationProposal:
+    """Mark an open proposal as rejected (audit #5: this endpoint did not
+    exist, so the modal's Reject button posted to the generate route and
+    silently generated an exam instead)."""
+    if not is_workspace_admin(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only school administrators or individual teachers can reject proposals",
+        )
+
+    proposal_result = await db.execute(
+        select(ExamGenerationProposal).where(
+            and_(
+                ExamGenerationProposal.id == proposal_id,
+                ExamGenerationProposal.school_id == current_user.school_id,
+            )
+        )
+    )
+    proposal = proposal_result.scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.status not in {"open", "accepted"}:
+        raise HTTPException(status_code=400, detail="Proposal is not open for rejection")
+
+    proposal.status = "rejected"
+    await db.commit()
+    await db.refresh(proposal)
+    return proposal
+
+
 # ============================================================================
 # LIST EXAMS ENDPOINT
 # ============================================================================
 
+@router.get(
+    "",
+    response_model=ExamListResponse,
+    include_in_schema=False,
+)
 @router.get(
     "/",
     response_model=ExamListResponse,
@@ -1087,6 +1199,13 @@ async def get_exam(
         )
         questions = questions_result.scalars().all()
 
+        passages_result = await db.execute(
+            select(ExamPassage)
+            .where(ExamPassage.exam_id == exam_id)
+            .order_by(ExamPassage.section_number)
+        )
+        passages = list(passages_result.scalars().all())
+
         # Convert to response schema
         question_responses = [
             QuestionResponse(
@@ -1115,10 +1234,13 @@ async def get_exam(
             subject=exam.subject,
             grade_level=exam.grade_level,
             status=exam.status,
+workflow_state=(getattr(exam, "workflow_state", None) or "teacher_review"),
             total_marks=exam.total_marks,
             duration_minutes=exam.duration_minutes,
             instructions=exam.instructions,
+            language=(getattr(exam, "language", None) or "English"),
             questions=question_responses,
+            passages=[ExamPassageResponse.model_validate(p) for p in passages] or None,
             created_at=exam.created_at,
             updated_at=exam.updated_at,
         )
@@ -1207,6 +1329,13 @@ async def update_exam(
         await db.commit()
         await db.refresh(exam)
 
+        passages_result = await db.execute(
+            select(ExamPassage)
+            .where(ExamPassage.exam_id == exam_id)
+            .order_by(ExamPassage.section_number)
+        )
+        passages = list(passages_result.scalars().all())
+
         # Get questions for response
         questions_result = await db.execute(
             select(Question)
@@ -1245,7 +1374,9 @@ async def update_exam(
             total_marks=exam.total_marks,
             duration_minutes=exam.duration_minutes,
             instructions=exam.instructions,
+            language=(getattr(exam, "language", None) or "English"),
             questions=question_responses,
+            passages=[ExamPassageResponse.model_validate(p) for p in passages] or None,
             created_at=exam.created_at,
             updated_at=exam.updated_at,
         )
@@ -1433,6 +1564,15 @@ async def submit_exam_final(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
+    if exam.workflow_state not in SUBMITTABLE_STATES:
+        raise HTTPException(
+            status_code=(409 if exam.workflow_state == "approved" else 400),
+            detail=(
+                "Exam cannot be submitted as final from its current state "
+                f"(workflow_state={exam.workflow_state})."
+            ),
+        )
+
     if current_user.role == "teacher" and exam.created_by_user_id != current_user.user_id:
         raise HTTPException(
             status_code=403,
@@ -1498,6 +1638,15 @@ async def refine_exam(
         exam = exam_result.scalar_one_or_none()
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found")
+
+        if exam.workflow_state not in REFINABLE_STATES:
+            raise HTTPException(
+                status_code=(409 if exam.workflow_state == "approved" else 400),
+                detail=(
+                    "Exam cannot be refined from its current state "
+                    f"(workflow_state={exam.workflow_state})."
+                ),
+            )
 
         await _consume_llm_call_budget(exam, db)
         exam.workflow_state = "refinement_requested"
@@ -1574,6 +1723,15 @@ async def refine_exam_from_comments(
     exam = exam_result.scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
+
+    if exam.workflow_state not in REFINABLE_STATES:
+        raise HTTPException(
+            status_code=(409 if exam.workflow_state == "approved" else 400),
+            detail=(
+                "Exam cannot be refined from its current state "
+                f"(workflow_state={exam.workflow_state})."
+            ),
+        )
 
     # Gather + validate comments BEFORE consuming LLM budget so a guaranteed
     # 400 path can never burn a call.
@@ -1736,6 +1894,87 @@ async def approve_exam(
         )
 
 
+@router.post(
+    "/{exam_id}/reject",
+    response_model=dict,
+    summary="Reject exam (send back to teacher)",
+    description=(
+        "Admin declines the teacher's final submission. The exam transitions "
+        "back to teacher_review so the teacher can refine and resubmit. "
+        "Optionally pass ?feedback= to leave a comment explaining why."
+    ),
+    tags=["Exams"],
+)
+async def reject_exam(
+    exam_id: uuid.UUID,
+    feedback: Optional[str] = Query(None, max_length=2000, description="Optional rejection note for the teacher"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Send a submitted exam back to teacher_review (governed transition)."""
+    try:
+        if not is_workspace_admin(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Only school administrators or individual teachers can reject exams",
+            )
+
+        result = await db.execute(
+            select(Exam).where(
+                and_(
+                    Exam.id == exam_id,
+                    Exam.school_id == current_user.school_id,
+                )
+            )
+        )
+        exam = result.scalar_one_or_none()
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
+
+        if not can_transition(exam.workflow_state, "teacher_review"):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot reject an exam in workflow_state={exam.workflow_state}. "
+                    "Only submitted exams can be sent back for review."
+                ),
+            )
+
+        exam.workflow_state = "teacher_review"
+        exam.status = "under_review"
+        if feedback:
+            await _log_usage(
+                db=db,
+                school_id=current_user.school_id,
+                user_id=current_user.user_id,
+                action="exam_rejection_feedback",
+                metadata={"exam_id": str(exam_id), "feedback": feedback},
+            )
+        await _log_usage(
+            db=db,
+            school_id=current_user.school_id,
+            user_id=current_user.user_id,
+            action="exam_rejection",
+            metadata={"exam_id": str(exam_id)},
+        )
+        await db.commit()
+
+        return {
+            "message": "Exam sent back to the teacher for review",
+            "exam_id": str(exam_id),
+            "workflow_state": "teacher_review",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to reject exam: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reject exam: {str(e)}",
+        )
+
+
 # ============================================================================
 # EXPORT EXAM ENDPOINT
 # ============================================================================
@@ -1800,11 +2039,19 @@ async def export_exam(
         if not questions:
             raise HTTPException(status_code=400, detail="Exam has no questions to export")
 
+        passages_result = await db.execute(
+            select(ExamPassage)
+            .where(ExamPassage.exam_id == exam_id)
+            .order_by(ExamPassage.section_number)
+        )
+        passages = list(passages_result.scalars().all())
+
         file_name = await asyncio.to_thread(
             ExportService.export_exam_pdf,
             exam=exam,
             questions=list(questions),
             include_answers=request.include_answers,
+            passages=passages,
         )
         download_url = (
             f"/api/v1/exams/{exam_id}/exports/{file_name}"
@@ -1850,6 +2097,7 @@ async def download_export(
     exam_id: uuid.UUID,
     file_name: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """Serve an exported PDF with tenant + filename validation."""
     if not _EXPORT_FILE_PATTERN.match(file_name or ""):
@@ -1882,6 +2130,7 @@ async def download_export(
 async def list_exports(
     exam_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ) -> list[str]:
     """List generated export files for this exam (tenant-scoped)."""
     result = await db.execute(

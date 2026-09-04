@@ -29,5 +29,6 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/skuphase
-          SECRET_KEY: ci-test-secret-key
+          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-chars-long
+          GROQ_API_KEY: ci-test-groq-key
         run: pytest -q

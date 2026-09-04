@@ -53,6 +53,24 @@ async def invite_user(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to invite user: {str(e)}")
 
 
+@router.get("", include_in_schema=False, response_model=UserListResponse)
+async def list_users_no_slash(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    is_active: Optional[bool] = Query(None, description="Filter by active/inactive status"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Alias for /api/v1/users (no trailing slash) -> delegates to list_users."""
+    return await list_users(
+        skip=skip,
+        limit=limit,
+        is_active=is_active,
+        current_user=current_user,
+        db=db,
+    )
+
+
 @router.get("/", response_model=UserListResponse)
 async def list_users(
     skip: int = Query(0, ge=0),

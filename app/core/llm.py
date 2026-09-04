@@ -1,4 +1,4 @@
-﻿"""LLM service for exam generation using Groq API with OpenRouter fallback."""
+"""LLM service for exam generation using Groq API with OpenRouter fallback."""
 
 import logging
 from typing import Optional, Dict, Any, List
@@ -68,11 +68,13 @@ class LLMService:
             self.groq_client = AsyncOpenAI(
                 api_key=self.groq_api_key,
                 base_url=self.groq_base_url,
+                timeout=settings.llm_timeout_seconds,
+                max_retries=1,
             )
-            logger.info(f"âœ… Groq API client initialized: {self.groq_base_url}")
+            logger.info(f"✅ Groq API client initialized: {self.groq_base_url}")
         else:
             self.groq_client = None
-            logger.warning("âš ï¸ Groq API key not provided")
+            logger.warning("⚠️ Groq API key not provided")
         
         # Initialize OpenRouter client for fallback
         self.openrouter_api_key = openrouter_api_key or getattr(settings, 'openrouter_api_key', None)
@@ -81,11 +83,13 @@ class LLMService:
             self.openrouter_client = AsyncOpenAI(
                 api_key=self.openrouter_api_key,
                 base_url="https://openrouter.ai/api/v1",
+                timeout=settings.llm_timeout_seconds,
+                max_retries=1,
             )
-            logger.info("âœ… OpenRouter fallback client initialized")
+            logger.info("✅ OpenRouter fallback client initialized")
         else:
             self.openrouter_client = None
-            logger.warning("âš ï¸ OpenRouter API key not provided (no fallback)")
+            logger.warning("⚠️ OpenRouter API key not provided (no fallback)")
         
         # Rate limiting tracking (simple in-memory for MVP)
         self._request_times: List[datetime] = []
@@ -147,7 +151,7 @@ class LLMService:
                 # Track usage
                 self._track_usage(tokens_used)
                 
-                logger.info(f"âœ… Groq generation successful: {tokens_used} tokens, ${cost:.4f}")
+                logger.info(f"✅ Groq generation successful: {tokens_used} tokens, ${cost:.4f}")
                 
                 return {
                     "content": content,
@@ -181,7 +185,7 @@ class LLMService:
                 tokens_used = response.usage.total_tokens
                 cost = self._calculate_cost("llama-3.1-70b", tokens_used, "openrouter")
                 
-                logger.info(f"âœ… OpenRouter generation successful: {tokens_used} tokens, ${cost:.4f}")
+                logger.info(f"✅ OpenRouter generation successful: {tokens_used} tokens, ${cost:.4f}")
                 
                 return {
                     "content": content,
@@ -222,10 +226,10 @@ class LLMService:
         # Check RPM (Requests Per Minute)
         if len(self._request_times) >= limits["rpm"]:
             wait_time = 60 - (now - self._request_times[0]).total_seconds()
-            logger.warning(f"âš ï¸ Rate limit approaching: {len(self._request_times)}/{limits['rpm']} RPM")
+            logger.warning(f"⚠️ Rate limit approaching: {len(self._request_times)}/{limits['rpm']} RPM")
             
             if wait_time > 0:
-                logger.info(f"â³ Waiting {wait_time:.1f}s for rate limit...")
+                logger.info(f"⏳ Waiting {wait_time:.1f}s for rate limit...")
                 await asyncio.sleep(wait_time)
         
         # Track this request

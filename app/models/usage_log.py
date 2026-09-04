@@ -17,7 +17,7 @@ class UsageLog(BaseModel):
     
     action = Column(String(50), nullable=False)  # exam_generation, refinement, export, document_upload
     tokens_used = Column(Integer, default=0)
-    cost = Column(Float, default=0.0)  # Cost in Naira
+    cost = Column(Float, default=0.0)  # Estimated LLM cost in USD
     provider = Column(String(50))  # grok, openrouter
     
     log_metadata = Column(Text)  # JSON metadata

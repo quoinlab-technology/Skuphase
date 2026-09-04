@@ -2,11 +2,18 @@
 
 Design:
 - ``enqueue_generation_job`` inserts a pending row in the caller's session.
-- A single asyncio worker (started in the app lifespan) polls every few
-  seconds using ``FOR UPDATE SKIP LOCKED`` so multiple app instances are safe.
+- An asyncio worker (started in the app lifespan) polls every few seconds.
+  Jobs are claimed atomically via ``UPDATE ... WHERE id IN (SELECT ... FOR
+  UPDATE SKIP LOCKED) RETURNING`` — multiple app instances can never claim
+  the same job, and there is no window between selecting and running it.
+- In-process concurrency is bounded by ``WORKER_CONCURRENCY`` (default 3);
+  horizontal scaling comes from running more app instances.
 - Transient provider errors re-queue with exponential backoff; permanent
   validation/parse failures mark job + exam failed without retrying
   (retries never multiply LLM cost for deterministic errors).
+- Housekeeping on every poll: stale ``running`` jobs (crash/restart recovery)
+  are reaped, and orphan drafts (``generation_requested`` with no job row for
+  30+ minutes) are marked failed so no exam is stuck "generating" forever.
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 from sqlalchemy import select, update
 
@@ -28,7 +35,11 @@ logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 2.0
 _BATCH_SIZE = 5
-_STALE_RUNNING_MINUTES = 10
+# Reap threshold for jobs stuck 'running'. Must stay comfortably ABOVE the
+# per-call LLM timeout (settings.llm_timeout_seconds, default 120s) so an
+# in-flight provider call is never reaped while still running.
+_STALE_RUNNING_MINUTES = 5
+_ORPHAN_EXAM_MINUTES = 30
 
 # Error substrings that are worth retrying; everything else is permanent.
 _TRANSIENT_MARKERS = (
@@ -83,31 +94,96 @@ async def enqueue_generation_job(
     return job.id
 
 
-async def _process_one(job_id: uuid.UUID) -> None:
-    """Run one queued generation attempt with its own short sessions."""
-    from app.core.database import get_async_session_maker
+async def _claim_jobs(session_maker) -> Sequence[Any]:
+    """Atomically claim due jobs + run queue housekeeping.
+
+    Returns claimed rows of (id, exam_id, school_id, request_data, attempts).
+    Claiming uses UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED)
+    RETURNING so the lock, the status flip and the read happen in one
+    statement/transaction — no double-claim window between instances.
+    """
+    async with session_maker() as db:
+        now = utc_now()
+        stale_cutoff = now - timedelta(minutes=_STALE_RUNNING_MINUTES)
+
+        # Reap jobs stuck 'running' after a crash/restart.
+        await db.execute(
+            update(GenerationJob)
+            .where(
+                GenerationJob.status == "running",
+                GenerationJob.updated_at < stale_cutoff,
+            )
+            .values(status="pending", updated_at=now)
+        )
+
+        # Fail orphaned drafts: exams in generation_requested with no job row
+        # for 30+ minutes can never proceed (enqueue crash, manual insert...).
+        orphan_cutoff = now - timedelta(minutes=_ORPHAN_EXAM_MINUTES)
+        await db.execute(
+            update(Exam)
+            .where(
+                Exam.status == "draft",
+                Exam.workflow_state == "generation_requested",
+                Exam.created_at < orphan_cutoff,
+                ~Exam.id.in_(select(GenerationJob.exam_id)),
+            )
+            .values(status="failed", updated_at=now)
+        )
+
+        subq = (
+            select(GenerationJob.id)
+            .where(
+                GenerationJob.status == "pending",
+                GenerationJob.run_at <= now,
+            )
+            .order_by(GenerationJob.created_at)
+            .limit(_BATCH_SIZE)
+            .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        claim = (
+            update(GenerationJob)
+            .where(GenerationJob.id.in_(subq))
+            .values(status="running", updated_at=utc_now())
+            .returning(
+                GenerationJob.id,
+                GenerationJob.exam_id,
+                GenerationJob.school_id,
+                GenerationJob.request_data,
+                GenerationJob.attempts,
+            )
+        )
+        result = await db.execute(claim)
+        rows = result.all()
+        await db.commit()
+        return rows
+
+
+async def _process_one(
+    session_maker,
+    *,
+    job_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    school_id: uuid.UUID,
+    request_data: Dict[str, Any],
+    claimed_attempts: int,
+) -> None:
+    """Run one claimed generation attempt with its own short sessions."""
     from app.services.exam_generator import ExamGenerator
 
-    session_maker = get_async_session_maker()
+    request_data = dict(request_data)
+    created_by = uuid.UUID(request_data.pop("__created_by_user_id"))
+    attempts = (claimed_attempts or 0) + 1
 
     async with session_maker() as db:
-        result = await db.execute(
+        job_row = (await db.execute(
             select(GenerationJob).where(GenerationJob.id == job_id)
-        )
-        job = result.scalar_one_or_none()
-        if job is None or job.status not in {"pending", "running"}:
-            return
-
-        exam_id = job.exam_id
-        school_id = job.school_id
-        request_data = dict(job.request_data)
-        created_by = uuid.UUID(request_data.pop("__created_by_user_id"))
-        attempts = (job.attempts or 0) + 1
-
-        job.attempts = attempts
-        job.status = "running"
-        job.updated_at = utc_now()
-        await db.commit()
+        )).scalar_one_or_none()
+        if job_row is not None:
+            job_row.attempts = attempts
+            job_row.updated_at = utc_now()
+            await db.commit()
+        max_attempts = job_row.max_attempts if job_row is not None else 3
 
     try:
         request = ExamGenerationRequest(**request_data)
@@ -140,7 +216,7 @@ async def _process_one(job_id: uuid.UUID) -> None:
             attempts,
             exc,
         )
-        retryable = _is_transient(exc) and attempts < 3
+        retryable = _is_transient(exc) and attempts < max(1, max_attempts)
         async with session_maker() as db:
             job_row = (await db.execute(
                 select(GenerationJob).where(GenerationJob.id == job_id)
@@ -174,42 +250,29 @@ async def _process_one(job_id: uuid.UUID) -> None:
 
 
 async def _worker_loop(stop_event: asyncio.Event) -> None:
-    """Poll for due jobs and execute them sequentially per batch."""
+    """Poll for due jobs and execute claimed batches with bounded concurrency."""
     from app.core.database import get_async_session_maker
 
     session_maker = get_async_session_maker()
+    concurrency = max(1, int(get_settings().worker_concurrency))
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _guarded(row) -> None:
+        async with semaphore:
+            await _process_one(
+                session_maker,
+                job_id=row[0],
+                exam_id=row[1],
+                school_id=row[2],
+                request_data=dict(row[3] or {}),
+                claimed_attempts=row[4],
+            )
 
     while not stop_event.is_set():
         try:
-            now = utc_now()
-            stale_cutoff = now - timedelta(minutes=_STALE_RUNNING_MINUTES)
-
-            async with session_maker() as db:
-                # Reap jobs stuck 'running' after a crash/restart.
-                await db.execute(
-                    update(GenerationJob)
-                    .where(
-                        GenerationJob.status == "running",
-                        GenerationJob.updated_at < stale_cutoff,
-                    )
-                    .values(status="pending", updated_at=utc_now())
-                )
-
-                result = await db.execute(
-                    select(GenerationJob.id)
-                    .where(
-                        GenerationJob.status == "pending",
-                        GenerationJob.run_at <= now,
-                    )
-                    .order_by(GenerationJob.created_at)
-                    .limit(_BATCH_SIZE)
-                    .with_for_update(skip_locked=True)
-                )
-                job_ids = [row[0] for row in result.all()]
-                await db.commit()
-
-            for job_id in job_ids:
-                await _process_one(job_id)
+            rows = await _claim_jobs(session_maker)
+            if rows:
+                await asyncio.gather(*[_guarded(row) for row in rows])
 
         except Exception:
             logger.exception("Job worker loop iteration failed")

@@ -74,6 +74,13 @@ class QuestionBankItem(BaseModel):
 
     is_active = Column(Boolean, nullable=False, default=True)
 
+    # Owner curation queue: platform rows are 'approved' by definition;
+    # school-contributed rows start 'pending' and only an explicit owner
+    # promotion (app/scripts/promote_bank_items.py) flips them to
+    # owner_type='platform' — school rows can never enter the shared
+    # few-shot corpus without that manual owner action.
+    review_status = Column(String(20), nullable=False, default="approved")
+
     school = relationship("School")
     source_exam = relationship("Exam")
     source_question = relationship("Question")

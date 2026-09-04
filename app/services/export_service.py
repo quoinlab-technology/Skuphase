@@ -60,10 +60,15 @@ class ExportService:
         exam: Exam,
         questions: List[Question],
         include_answers: bool = False,
+        passages: list | None = None,
     ) -> str:
         """
         Export exam to a fully word-wrapped PDF and return the file NAME.
         Download via GET /api/v1/exams/{exam_id}/exports/{file_name}.
+
+        ``passages`` (optional) is a list of ExamPassage-like objects used for
+        comprehension sections; each passage renders once, above the first
+        question that references it.
         """
         try:
             from reportlab.lib.pagesizes import A4
@@ -152,9 +157,38 @@ class ExportService:
         story.append(Spacer(1, 4 * mm))
 
         current_section = None
+        rendered_passage_ids: set = set()
+        passage_meta: dict = {}
+        for p in (passages or []):
+            pid = getattr(p, "id", None)
+            if pid is None:
+                continue
+            p_title = getattr(p, "title", None) or ""
+            p_body = getattr(p, "body", "") or ""
+            p_section = getattr(p, "section_number", None) or ""
+            passage_meta[str(pid)] = (p_title, p_body, p_section)
+
         for q in questions:
             if q.question_text and getattr(q, "section_title", None):
                 pass  # sections are flattened onto questions by numbering only
+
+            pid = str(getattr(q, "passage_id", "") or "")
+            if pid in passage_meta and pid not in rendered_passage_ids:
+                rendered_passage_ids.add(pid)
+                p_title, p_body, p_section = passage_meta[pid]
+                section_label = f"Section {p_section}: " if p_section else ""
+                story.append(
+                    Paragraph(
+                        f"<b>{esc(section_label)}Read the passage and answer the questions that follow.</b>",
+                        question_style,
+                    )
+                )
+                if p_title:
+                    story.append(Paragraph(f"<b>{esc(p_title)}</b>", question_style))
+                for para in p_body.splitlines():
+                    if para.strip():
+                        story.append(Paragraph(esc(para), question_style))
+                story.append(Spacer(1, 3 * mm))
 
             marks_bit = f"&nbsp;&nbsp;<b>[{q.marks}]</b>" if q.marks else ""
             story.append(

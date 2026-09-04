@@ -152,6 +152,12 @@ async def get_current_user_from_refresh_token(
                 detail="Token revoked by credential change. Please log in again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        if payload.get("gen", 1) != (getattr(user, "token_generation", 1) or 1):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token revoked by logout. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         return CurrentUser(
             user_id=user.id,

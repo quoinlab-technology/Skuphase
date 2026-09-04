@@ -21,35 +21,20 @@ class CurriculumService:
 
     @staticmethod
     async def get_all_classes(db: AsyncSession, board: str = "NERDC") -> List[str]:
-        """Get distinct available class levels ordered from Pre-Nursery to Primary 6."""
+        """Get distinct available class levels ordered by ``level_order``.
+
+        Ordering is DATA-DRIVEN (curriculums.level_order, seeded by
+        ``seed_curriculum_postgres``) so adding JSS/SSS later requires data
+        only — no code change (audit D-NEW-2).
+        """
         stmt = (
             select(Curriculum.class_level)
             .where(Curriculum.board == board)
-            .distinct()
+            .group_by(Curriculum.class_level)
+            .order_by(func.coalesce(func.min(Curriculum.level_order), 99))
         )
         result = await db.execute(stmt)
-        raw_classes = [r[0] for r in result.fetchall()]
-
-        # Sort logically
-        order_map = {
-            "Pre-Nursery": 1,
-            "Nursery 1": 2,
-            "Nursery 2": 3,
-            "Nursery 3": 4,
-            "Primary 1": 5,
-            "Primary 2": 6,
-            "Primary 3": 7,
-            "Primary 4": 8,
-            "Primary 5": 9,
-            "Primary 6": 10,
-            "JSS 1": 11,
-            "JSS 2": 12,
-            "JSS 3": 13,
-            "SSS 1": 14,
-            "SSS 2": 15,
-            "SSS 3": 16,
-        }
-        return sorted(raw_classes, key=lambda c: order_map.get(c, 99))
+        return [r[0] for r in result.fetchall()]
 
     @staticmethod
     async def get_subjects_by_class(

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, delete
 
-from app.models.exam import Exam, Question
+from app.models.exam import Exam, Question, ExamPassage
 from app.models.question import QuestionRefinement
 from app.schemas.exam import ExamGenerationRequest, SectionConfig
 from app.services.exam_quality_validator import ExamQualityValidator
@@ -19,6 +19,21 @@ from app.services.few_shot_selector import FewShotSelector
 from app.core.llm import get_llm_service
 
 logger = logging.getLogger(__name__)
+
+
+def _attach_authoritative_passages(parsed, sections):
+    """Attach the teacher-supplied passage to each parsed section.
+
+    The LLM never rewrites the passage; the authoritative requested text wins.
+    The validator uses it for anti-hallucination grounding and store_exam
+    persists it.
+    """
+    by_number = {s.section_number: s for s in sections}
+    for sec in parsed.get("sections", []):
+        cfg = by_number.get(sec.get("section_number"))
+        if cfg and getattr(cfg, "passage", None):
+            sec["passage"] = {"title": cfg.passage.title or "", "body": cfg.passage.body}
+
 
 
 def utc_now() -> datetime:
@@ -229,6 +244,7 @@ class ExamGenerator:
 
         difficulty_block = self._build_difficulty_instructions(request.difficulty_distribution)
         primary_layout_block = self._build_primary_layout_instructions(request)
+        language_block = self._build_language_instructions(request.language)
 
         # Build base prompt
         prompt = f"""You are an expert Nigerian school examiner creating high-quality exam questions for {request.subject} at {request.grade_level} level.
@@ -274,6 +290,8 @@ Duration: {request.duration_minutes} minutes
 {difficulty_block}
 
 {self._build_custom_instructions(request.custom_instructions)}
+
+{language_block}
 
 {primary_layout_block}
 
@@ -367,6 +385,17 @@ SECTION {section.section_number}: {section.section_title}
             if section.marks_per_question:
                 inst += f"• Marks per Question: {section.marks_per_question}\n"
             
+            # Teacher-supplied reading passage (comprehension sections).
+            if section.passage:
+                p = section.passage
+                inst += "\nREADING PASSAGE (teacher-supplied):\n"
+                inst += f"Title: {p.title or '(no title)'}\n"
+                inst += f"{p.body}\n"
+                inst += "\u2022 Base EVERY question in this section on the passage above.\n"
+                inst += "\u2022 Every answer MUST be directly findable in the passage text alone.\n"
+            if section.allow_sub_parts and section.question_type in ("short_answer", "essay"):
+                inst += "\u2022 Split each question into sub-parts (a), (b)... whose marks "
+                inst += "sum exactly to the question's total marks.\n"
             instructions.append(inst)
         
         return "\n".join(instructions)
@@ -425,6 +454,21 @@ PRIMARY EXAM RENDERING RULES
 4. Keep each visual block compact and classroom-friendly.
 5. Do not invent image links; use provided asset_ref when visuals are required.
 """
+
+    def _build_language_instructions(self, language):
+        """Return prompt guidance for non-English language-of-instruction papers."""
+        if not language or language.strip().lower() == "english":
+            return ""
+        lang = language.strip()
+        return (
+            "LANGUAGE OF INSTRUCTION: " + lang + "\n"
+            "\u2022 ALL questions, options, correct answers, explanations and "
+            "marking schemes MUST be written in " + lang + ".\n"
+            "\u2022 Keep British-English exam conventions, but the working language "
+            "is " + lang + ".\n"
+            "\u2022 Do NOT translate questions back to English unless explicitly "
+            "required by the subject.\n"
+        )
 
     def _build_json_example(self, sections: List[SectionConfig]) -> str:
         """Build JSON example based on sections."""
@@ -510,6 +554,8 @@ PRIMARY EXAM RENDERING RULES
             if total_questions != expected_questions:
                 logger.warning(f"Expected {expected_questions} questions, got {total_questions}")
 
+            _attach_authoritative_passages(data, sections)
+
             self._validate_markdown_blocks(data)
 
             logger.info(f"✅ Parsed exam: {len(data['sections'])} sections, {total_questions} questions")
@@ -576,9 +622,11 @@ PRIMARY EXAM RENDERING RULES
                     exam.status = "under_review"
                     exam.workflow_state = "teacher_review"
                     exam.updated_at = utc_now()
+                    exam.language = request.language
 
                     # If this is a re-generation, clear old questions
                     await db.execute(delete(Question).where(Question.exam_id == exam_id))
+                    await db.execute(delete(ExamPassage).where(ExamPassage.exam_id == exam_id))
                 else:
                     logger.warning(f"Exam {exam_id} not found for update, creating new.")
                     exam = Exam(
@@ -592,6 +640,7 @@ PRIMARY EXAM RENDERING RULES
                         total_marks=total_marks,
                         duration_minutes=request.duration_minutes,
                         instructions=self._build_exam_instructions(request.sections),
+                        language=request.language,
                         created_at=utc_now(),
                         updated_at=utc_now(),
                     )
@@ -609,6 +658,7 @@ PRIMARY EXAM RENDERING RULES
                     total_marks=total_marks,
                     duration_minutes=request.duration_minutes,
                     instructions=self._build_exam_instructions(request.sections),
+                        language=request.language,
                     created_at=utc_now(),
                     updated_at=utc_now(),
                 )
@@ -616,6 +666,25 @@ PRIMARY EXAM RENDERING RULES
             
             
             await db.flush()
+            # Persist teacher-supplied passages (authoritative) and map each
+            # section number to its passage id so questions can link below.
+            passage_ids_by_section = {}
+            for section in parsed_exam["sections"]:
+                passage = section.get("passage")
+                if not passage or not (passage.get("body") or "").strip():
+                    continue
+                exam_passage = ExamPassage(
+                    id=uuid.uuid4(),
+                    exam_id=exam.id,
+                    title=((passage.get("title") or "")[:500] or None),
+                    body=passage.get("body", ""),
+                    section_number=int(section.get("section_number", 1)),
+                    created_at=utc_now(),
+                    updated_at=utc_now(),
+                )
+                db.add(exam_passage)
+                passage_ids_by_section[int(section.get("section_number", 1))] = exam_passage.id
+
             
             # Create questions (batch)
             question_number = 1
@@ -637,6 +706,7 @@ PRIMARY EXAM RENDERING RULES
                         marking_scheme=q_data.get("marking_scheme"),
                         sub_parts=q_data.get("sub_parts"),
                         diagram_svg=q_data.get("diagram_svg"),
+                        passage_id=passage_ids_by_section.get(section.get("section_number")),
                         created_at=utc_now(),
                         updated_at=utc_now(),
                     )
@@ -660,6 +730,8 @@ PRIMARY EXAM RENDERING RULES
         instructions = []
         
         for section in sections:
+            if section.passage:
+                instructions.append(f"{section.section_title}: Read the passage, then answer the questions that follow.")
             if section.instruction_type == "answer_all":
                 instructions.append(f"{section.section_title}: Answer ALL questions")
             elif section.instruction_type == "answer_any_n":

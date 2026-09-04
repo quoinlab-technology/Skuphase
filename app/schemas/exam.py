@@ -6,12 +6,24 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
+class PassageSpec(BaseModel):
+    """A reading/comprehension passage accompanying a section's questions.
+
+    The teacher supplies the passage text; the LLM writes only the questions,
+    grounded against it. Using the authoritative requested passage (not an LLM
+    copy) keeps comprehension sections hallucination-resistant.
+    """
+
+    title: str = Field(default="", max_length=200, description="Passage title/heading")
+    body: str = Field(..., min_length=40, max_length=4000, description="Passage text")
+
+
 class SectionConfig(BaseModel):
     """Configuration for a single exam section."""
     
     section_number: int = Field(..., ge=1, description="Section number (1, 2, 3...)")
     section_title: str = Field(..., description="Section title (e.g., 'SECTION A: OBJECTIVES')")
-    question_type: str = Field(..., description="Question type: multiple_choice, short_answer, essay")
+    question_type: str = Field(..., description="Question type: multiple_choice, short_answer, essay, true_false")
     num_questions: int = Field(..., ge=1, le=100, description="Number of questions in this section")
     marks_per_question: Optional[int] = Field(None, ge=1, description="Marks per question (if uniform)")
     
@@ -27,7 +39,15 @@ class SectionConfig(BaseModel):
         description="Sub-part numbering: none, roman (i,ii,iii), letter (a,b,c), number (1,2,3)"
     )
     sub_parts_per_question: Optional[int] = Field(None, ge=1, le=10, description="Sub-parts per question")
-    
+    allow_sub_parts: bool = Field(
+        False,
+        description="Spread theory/short-answer questions into (a)/(b) sub-parts with summing marks",
+    )
+    passage: Optional[PassageSpec] = Field(
+        None,
+        description="Reading passage all questions in this section must be answered from",
+    )
+
     @field_validator("instruction_type")
     @classmethod
     def validate_instruction_type(cls, v):
@@ -47,7 +67,7 @@ class SectionConfig(BaseModel):
     @field_validator("question_type")
     @classmethod
     def validate_question_type(cls, v):
-        allowed = ["multiple_choice", "short_answer", "essay"]
+        allowed = ["multiple_choice", "short_answer", "essay", "true_false"]
         if v not in allowed:
             raise ValueError(f"question_type must be one of {allowed}")
         return v
@@ -78,6 +98,11 @@ class ExamGenerationRequest(BaseModel):
     duration_minutes: Optional[int] = Field(120, ge=30, le=300, description="Exam duration in minutes")
     custom_instructions: Optional[str] = Field(None, max_length=1000, description="Teacher's custom instructions")
     include_diagrams: bool = Field(False, description="Allow compact markdown/mermaid visual blocks in questions")
+    language: str = Field(
+        "English",
+        max_length=30,
+        description="Language of instruction for questions/answers (English, Igbo, Yoruba, Hausa...)",
+    )
 
     difficulty_distribution: Optional[Dict[str, float]] = Field(
         None,
@@ -186,6 +211,9 @@ class QuestionResponse(BaseModel):
     # Diagram
     diagram_svg: Optional[str] = None
 
+    # Comprehension passage link
+    passage_id: Optional[UUID] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -201,7 +229,7 @@ class SectionResponse(BaseModel):
 
 class ExamResponse(BaseModel):
     """Response schema for a complete exam."""
-    
+
     id: UUID
     school_id: UUID
     created_by_user_id: Optional[UUID] = None
@@ -209,18 +237,33 @@ class ExamResponse(BaseModel):
     subject: str
     grade_level: str
     status: str
+    workflow_state: str = "teacher_review"  # FRONTEND_SPEC §3.1 badge/action mapping
     total_marks: int
     
     duration_minutes: Optional[int] = None
     instructions: Optional[str] = None
+    language: str = "English"
     
     sections: Optional[List[SectionResponse]] = None
     questions: Optional[List[QuestionResponse]] = None  # Flat list for backward compatibility
+    passages: Optional[List["ExamPassageResponse"]] = None
     
     created_at: datetime
     updated_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExamPassageResponse(BaseModel):
+    """Response schema for a reading passage attached to an exam section."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    exam_id: UUID
+    title: Optional[str] = None
+    body: str
+    section_number: int
 
 
 class ExamListItem(BaseModel):
@@ -388,7 +431,7 @@ class ManualQuestionInput(BaseModel):
     """Teacher-provided question payload for manual submission."""
 
     question_number: int = Field(..., ge=1)
-    type: str = Field(..., description="multiple_choice, short_answer, essay")
+    type: str = Field(..., description="multiple_choice, short_answer, essay, true_false")
     question_text: str = Field(..., min_length=3)
     marks: int = Field(..., ge=1, le=100)
     difficulty: Optional[str] = None
@@ -409,6 +452,11 @@ class ManualExamSubmissionRequest(BaseModel):
     grade_level: str = Field(..., min_length=1, max_length=50)
     duration_minutes: Optional[int] = Field(120, ge=30, le=300)
     instructions: Optional[str] = Field(default=None, max_length=2000)
+    language: str = Field(
+        "English",
+        max_length=30,
+        description="Language of instruction (English, Igbo, Yoruba, Hausa...)",
+    )
     questions: List[ManualQuestionInput] = Field(..., min_length=1, max_length=200)
 
 
@@ -448,6 +496,7 @@ class QuestionBankItemResponse(BaseModel):
     sub_parts: Optional[List[dict]] = None
     diagram_svg: Optional[str] = None
     is_active: bool
+    review_status: str = "approved"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -467,3 +516,20 @@ class QuestionBankItemUpdateRequest(BaseModel):
     sub_parts: Optional[List[dict]] = None
     diagram_svg: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class QuestionBankItemCreateRequest(BaseModel):
+    """Manual addition of a reusable question to the school question bank."""
+
+    subject: str = Field(..., min_length=2, max_length=100)
+    grade_level: str = Field(..., min_length=2, max_length=50)
+    topic: Optional[str] = Field(default=None, max_length=255)
+    difficulty: Optional[str] = Field(default="medium", max_length=20)
+    question_type: str = Field(default="multiple_choice", max_length=30)
+    question_text: str = Field(..., min_length=3, max_length=5000)
+    marks: int = Field(default=1, ge=1, le=100)
+    options: Optional[List[str]] = None
+    correct_answer: Optional[str] = Field(default=None, max_length=1)
+    explanation: Optional[str] = Field(default=None, max_length=5000)
+    marking_scheme: Optional[List[str]] = None
+

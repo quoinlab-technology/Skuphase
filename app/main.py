@@ -56,15 +56,6 @@ app.add_middleware(
 )
 
 
-@app.get("/", tags=["Root"])
-async def root():
-    return {
-        "message": f"Welcome to {settings.app_name} API",
-        "version": settings.app_version,
-        "docs": "/docs" if settings.enable_swagger else "disabled",
-    }
-
-
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy", "environment": settings.app_env}
@@ -77,3 +68,9 @@ app.include_router(schools_router.router, prefix="/api/v1/schools", tags=["Schoo
 app.include_router(exams_router.router, prefix="/api/v1/exams", tags=["Exams"])
 app.include_router(ops_router.router, prefix="/api/v1/ops", tags=["Operations"])
 app.include_router(curriculum_router.router, prefix="/api/v1/curriculum", tags=["Curriculum"])
+
+# Frontend (FastHTML + Faststrap) — mounted LAST so /api/v1/*, /docs and
+# /health keep precedence; the UI owns "/" (FRONTEND_SPEC.md §2.1).
+from app.frontend.app import frontend_app  # noqa: E402
+
+app.mount("/", frontend_app)

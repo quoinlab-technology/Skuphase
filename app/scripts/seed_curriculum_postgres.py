@@ -40,6 +40,13 @@ async def _print_summary(records: List[Dict[str, Any]], label: str) -> None:
 
 def _rows(records: List[Dict[str, Any]]):
     """Build deduplicated curriculum + scheme row payloads."""
+    level_order_map = {
+        "Pre-Nursery": 1, "Nursery 1": 2, "Nursery 2": 3, "Nursery 3": 4,
+        "Primary 1": 5, "Primary 2": 6, "Primary 3": 7, "Primary 4": 8,
+        "Primary 5": 9, "Primary 6": 10,
+        "JSS 1": 11, "JSS 2": 12, "JSS 3": 13,
+        "SSS 1": 14, "SSS 2": 15, "SSS 3": 16,
+    }
     curriculums: Dict[tuple, Dict[str, Any]] = {}
     schemes: List[Dict[str, Any]] = []
     seen_scheme_keys = set()
@@ -52,6 +59,7 @@ def _rows(records: List[Dict[str, Any]]):
                 "board": r["board"],
                 "class_level": r["class_level"],
                 "subject_name": r["subject"],
+                "level_order": level_order_map.get(r["class_level"], 99),
             }
 
         scheme_key = (key, r["term"], r["week"])
@@ -113,6 +121,7 @@ async def seed_curriculum_from_json(json_path: Path, check_only: bool = False) -
                     index_elements=["board", "class_level", "subject_name"],
                     set_={
                         "country": pg_insert(Curriculum).excluded.country,
+                        "level_order": pg_insert(Curriculum).excluded.level_order,
                         "updated_at": func.now(),
                     },
                 )

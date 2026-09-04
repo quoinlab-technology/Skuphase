@@ -1,7 +1,8 @@
-﻿"""Authentication and identity API routes."""
+"""Authentication and identity API routes."""
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
@@ -23,6 +24,7 @@ from app.schemas.auth import (
     CurrentUser,
     ForgotPasswordRequest,
     ResetPasswordRequest,
+    ChangePasswordRequest,
     EmailVerificationRequest,
     ResendVerificationRequest,
     AcceptInviteRequest,
@@ -43,11 +45,33 @@ async def register_school(
     """
     try:
         return await AuthService.register_school(request, db)
+    except IntegrityError as e:
+        await db.rollback()
+        err_msg = str(e.orig if hasattr(e, "orig") else e).lower()
+        if "schools_contact_email_key" in err_msg or "contact_email" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A school with contact email '{request.contact_email}' is already registered. Please sign in or use a different email.",
+            )
+        if "users_email_key" in err_msg or "email" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"An account with email '{request.admin_user.email}' already exists. Please sign in instead.",
+            )
+        if "schools_name_key" in err_msg or "name" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A school with name '{request.school_name}' already exists. Please choose a different school name.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration failed: an organization or user with these credentials already exists.",
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"School registration error: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Registration failed: {str(e)}")
 
 
 @router.post("/register-individual", response_model=IndividualRegistrationResponse, status_code=201)
@@ -60,11 +84,31 @@ async def register_individual_teacher(
     """
     try:
         return await AuthService.register_individual_teacher(request, db)
+    except IntegrityError as e:
+        await db.rollback()
+        err_msg = str(e.orig if hasattr(e, "orig") else e).lower()
+        if "email" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"An account or workspace with email '{request.email}' already exists. Please sign in instead.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration failed: an account with these credentials already exists.",
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"Individual teacher registration error: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Registration failed: {str(e)}")
+
+
+def _client_ip(http_request: Request) -> str:
+    """Resolve the client IP, preferring proxy headers (FastAPI Cloud/Render)."""
+    forwarded_for = http_request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip() or "unknown"
+    return http_request.client.host if http_request.client else "unknown"
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -76,18 +120,18 @@ async def login(
     """
     Authenticate user and return JWT access and refresh tokens.
     """
-    client_ip = http_request.client.host if http_request.client else "unknown"
-    if _login_locked_out(request.email, client_ip):
+    client_ip = _client_ip(http_request)
+    if await _login_locked_out(db, request.email, client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed attempts. Try again later.",
         )
     try:
         result = await AuthService.login(request.email, request.password, db)
-        _login_success(request.email, client_ip)
+        await _login_success(db, request.email, client_ip)
         return result
     except ValueError as e:
-        _login_failure(request.email, client_ip)
+        await _login_failure(db, request.email, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except Exception as e:
         logger.error(f"Login error: {str(e)}")
@@ -141,6 +185,29 @@ async def reset_password(
     except Exception as e:
         logger.error(f"Password reset error: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Password reset failed")
+
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Change password for authenticated user.
+    """
+    try:
+        return await AuthService.change_password(
+            user_id=current_user.user_id,
+            current_password=request.old_password,
+            new_password=request.new_password,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Change password error: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Password change failed")
 
 
 @router.post("/verify-email")
@@ -210,9 +277,12 @@ async def get_current_user_info(
 @router.post("/logout")
 async def logout(
     current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Logout user (client should discard stored tokens).
+    Revoke outstanding refresh tokens (token-generation bump) and acknowledge
+    logout. Clients must also discard stored tokens.
     """
+    await AuthService.logout(current_user.user_id, db)
     logger.info(f"User '{current_user.email}' logged out")
     return {"message": "Logged out successfully"}

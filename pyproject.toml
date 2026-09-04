@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skuphase"
 version = "0.1.0"
-description = "AI-powered exam generation backend for schools (FastAPI + PostgreSQL + pgvector)"
+description = "AI-powered exam generation backend for Nigerian schools (FastAPI + PostgreSQL, curriculum-first)"
 requires-python = ">=3.11"
 dependencies = []
 

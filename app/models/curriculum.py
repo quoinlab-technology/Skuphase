@@ -23,6 +23,9 @@ class Curriculum(BaseModel):
     class_level = Column(String(50), nullable=False, index=True)
     subject_name = Column(String(100), nullable=False, index=True)
     category = Column(String(50), nullable=True)
+    # Data-driven display/lookup ordering (Pre-Nursery=1 ... SSS 3=16) so
+    # adding JSS/SSS later requires data only, no code change.
+    level_order = Column(Integer, nullable=True, index=True)
 
     # Relationships
     schemes = relationship(

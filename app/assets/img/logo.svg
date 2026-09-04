@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="SkuPhase logo">
+  <!-- Placeholder brand mark (FRONTEND_SPEC.md §9.4 open item: real logo pending) -->
+  <rect width="48" height="48" rx="10" fill="#00412E"/>
+  <path d="M14 30 L24 14 L34 30" fill="none" stroke="#96BF8A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="34" r="3" fill="#10b981"/>
+</svg>

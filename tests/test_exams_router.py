@@ -455,7 +455,9 @@ def test_admin_can_generate_exam_from_proposal():
     assert response.json()["status"] == "generating"
     assert proposal.status == "used"
     assert proposal.used_by_user_id == user.user_id
-    assert db.commit.await_count == 1
+    # F-10: exam + proposal flip + job are committed atomically by the
+    # request-scoped dependency, so the endpoint itself performs no commit.
+    assert db.commit.await_count == 0
     mock_enqueue.assert_called_once()
 
 
@@ -630,3 +632,73 @@ def test_few_shot_selector_only_reads_platform_rows():
 
     source = inspect.getsource(few_shot_selector.FewShotSelector.select)
     assert 'owner_type' in source and 'platform' in source
+
+
+# ---------------------------------------------------------------------------
+# EXPORT DOWNLOAD ENDPOINTS (audit F-01 regression: `db` was used but never
+# injected, so every call crashed with a NameError -> 500).
+# ---------------------------------------------------------------------------
+
+def test_download_export_rejects_bad_filename_with_400():
+    user = _admin()
+    exam = SimpleNamespace(id=uuid.uuid4(), school_id=user.school_id)
+    client = _build_test_app(_dispatching_db(exam, []), user)
+
+    response = client.get(f"/api/v1/exams/{exam.id}/exports/not-a-valid-export-name")
+
+    assert response.status_code == 400
+
+
+def test_download_export_cross_school_returns_404():
+    user = _admin()  # school A
+    other = SimpleNamespace(id=uuid.uuid4(), school_id=uuid.uuid4())
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _execute(stmt, *args, **kwargs):
+        class _Result:
+            def scalar_one_or_none(self_inner):
+                return None  # tenant filter excludes it
+
+        return _Result()
+
+    db.execute = AsyncMock(side_effect=_execute)
+    client = _build_test_app(db, user)
+
+    response = client.get(f"/api/v1/exams/{other.id}/exports/{uuid.uuid4().hex}.pdf")
+
+    assert response.status_code == 404
+
+
+def test_download_export_missing_file_returns_404():
+    user = _admin()
+    exam = SimpleNamespace(id=uuid.uuid4(), school_id=user.school_id)
+    client = _build_test_app(_dispatching_db(exam, []), user)
+
+    response = client.get(f"/api/v1/exams/{exam.id}/exports/{uuid.uuid4().hex}.pdf")
+
+    # Tenant check passes, but no such export was ever generated.
+    assert response.status_code == 404
+
+
+def test_list_exports_cross_school_returns_404():
+    user = _admin()  # school A
+    other = SimpleNamespace(id=uuid.uuid4(), school_id=uuid.uuid4())
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _execute(stmt, *args, **kwargs):
+        class _Result:
+            def scalar_one_or_none(self_inner):
+                return None
+
+        return _Result()
+
+    db.execute = AsyncMock(side_effect=_execute)
+    client = _build_test_app(db, user)
+
+    response = client.get(f"/api/v1/exams/{other.id}/exports")
+
+    assert response.status_code == 404

@@ -1,5 +1,7 @@
 ﻿"""Exam and question models."""
 
+from uuid import uuid4
+
 from sqlalchemy import Column, String, Integer, ForeignKey, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
@@ -17,6 +19,7 @@ class Exam(BaseModel):
     
     subject = Column(String(100), nullable=False)
     grade_level = Column(String(50), nullable=False)  # JSS1, JSS2, SSS1, etc
+    language = Column(String(20), nullable=False, default="English")  # language of instruction
     
     status = Column(String(20), default="draft")  # draft, under_review, approved
     workflow_state = Column(
@@ -36,6 +39,7 @@ class Exam(BaseModel):
     school = relationship("School", back_populates="exams")
     created_by = relationship("User", back_populates="exams")
     questions = relationship("Question", back_populates="exam", cascade="all, delete-orphan")
+    passages = relationship("ExamPassage", back_populates="exam", cascade="all, delete-orphan")
     audit_comments = relationship(
         "ExamAuditComment",
         back_populates="exam",
@@ -45,6 +49,30 @@ class Exam(BaseModel):
     def __repr__(self) -> str:
         return f"<Exam(id={self.id}, subject={self.subject}, grade_level={self.grade_level})>"
 
+class ExamPassage(BaseModel):
+    """A reading/comprehension passage attached to an exam section.
+
+    The passage text is authoritative (teacher-supplied); generated questions
+    are validated for lexical grounding against it (anti-hallucination).
+    """
+
+    __tablename__ = "exam_passages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    exam_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(Text, nullable=True)
+    body = Column(Text, nullable=False)
+    section_number = Column(Integer, nullable=False, default=1)
+
+    exam = relationship("Exam", back_populates="passages")
+
+    def __repr__(self) -> str:
+        return f"<ExamPassage(id={self.id}, exam_id={self.exam_id}, section={self.section_number})>"
 
 class Question(BaseModel):
     """Individual exam question."""
@@ -52,6 +80,11 @@ class Question(BaseModel):
     __tablename__ = "questions"
     
     exam_id = Column(UUID(as_uuid=True), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
+    passage_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("exam_passages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     
     question_number = Column(Integer, nullable=False)
     type = Column(String(30), nullable=False)  # multiple_choice, short_answer, essay
@@ -78,6 +111,7 @@ class Question(BaseModel):
     
     # Relationships
     exam = relationship("Exam", back_populates="questions")
+    passage = relationship("ExamPassage", foreign_keys=[passage_id])
     refinements = relationship(
         "QuestionRefinement",
         back_populates="question",

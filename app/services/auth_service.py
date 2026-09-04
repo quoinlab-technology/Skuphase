@@ -70,10 +70,15 @@ class AuthService:
         if result.scalar_one_or_none():
             raise ValueError(f"School with name '{request.school_name}' already exists")
 
+        # Check existing school contact email
+        email_check = await db.execute(select(School).filter(School.contact_email == request.contact_email))
+        if email_check.scalar_one_or_none():
+            raise ValueError(f"A school with contact email '{request.contact_email}' already exists. Please sign in or use a different email.")
+
         # Check existing user
         result = await db.execute(select(User).filter(User.email == request.admin_user.email))
         if result.scalar_one_or_none():
-            raise ValueError(f"User with email '{request.admin_user.email}' already exists")
+            raise ValueError(f"An account with email '{request.admin_user.email}' already exists. Please sign in instead.")
 
         plan_id = request.plan_id
         plan_obj = None
@@ -169,9 +174,15 @@ class AuthService:
         if len(password.encode('utf-8')) > 72:
             password = password[:72]
 
+        # Check existing user
         result = await db.execute(select(User).filter(User.email == request.email))
         if result.scalar_one_or_none():
-            raise ValueError(f"User with email '{request.email}' already exists")
+            raise ValueError(f"An account with email '{request.email}' already exists. Please sign in instead.")
+
+        # Check existing school contact email
+        school_email_check = await db.execute(select(School).filter(School.contact_email == request.email))
+        if school_email_check.scalar_one_or_none():
+            raise ValueError(f"A workspace or school with email '{request.email}' already exists. Please sign in instead.")
 
         workspace_name = request.workspace_name or f"{request.full_name}'s Workspace"
         # Ensure unique workspace name
@@ -271,6 +282,10 @@ class AuthService:
         if not user.is_active:
             raise ValueError("Your account is deactivated. Please contact support or your school administrator.")
 
+        # NOTE (audit F-18): login intentionally does NOT require is_verified;
+        # email verification is reserved for campaigns/mailing later. Invitees
+        # cannot log in because they are is_active=False until they accept
+        # their invitation.
         user.last_login = utc_now()
         await db.commit()
 
@@ -290,6 +305,7 @@ class AuthService:
             "user_id": str(user.id),
             "school_id": str(user.school_id),
             "token_type": "refresh",
+            "gen": user.token_generation or 1,
         }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
         return {
@@ -326,6 +342,12 @@ class AuthService:
             if not user or not user.is_active:
                 raise ValueError("User account is inactive or not found.")
 
+            # Revocation check (audit F-06): logout bumps token_generation,
+            # instantly invalidating all outstanding refresh tokens.
+            current_gen = getattr(user, "token_generation", 1) or 1
+            if payload.get("gen", 1) != current_gen:
+                raise ValueError("Refresh token has been revoked. Please log in again.")
+
             new_access_token = create_access_token({
                 "sub": user.email,
                 "user_id": str(user.id),
@@ -342,6 +364,7 @@ class AuthService:
                 "user_id": str(user.id),
                 "school_id": str(user.school_id),
                 "token_type": "refresh",
+                "gen": current_gen,
             }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
             return {
@@ -352,6 +375,17 @@ class AuthService:
             }
         except Exception as e:
             raise ValueError(f"Token refresh failed: {str(e)}")
+
+    @staticmethod
+    async def logout(user_id: UUID, db: AsyncSession) -> None:
+        """Bump the user's refresh-token generation, revoking outstanding
+        refresh tokens immediately (access tokens expire naturally)."""
+        result = await db.execute(select(User).filter(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            return
+        user.token_generation = (user.token_generation or 1) + 1
+        await db.commit()
 
     @staticmethod
     async def request_password_reset(email: str, db: AsyncSession) -> Dict[str, str]:
@@ -415,6 +449,29 @@ class AuthService:
         await db.commit()
 
         return {"message": "Password reset successfully. You can now login."}
+
+    @staticmethod
+    async def change_password(
+        user_id: UUID,
+        current_password: str,
+        new_password: str,
+        db: AsyncSession,
+    ) -> Dict[str, str]:
+        """Change password for an authenticated user."""
+        result = await db.execute(select(User).filter(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or not verify_password(current_password, user.hashed_password):
+            raise ValueError("Current password is incorrect.")
+        if len(new_password) < 8:
+            raise ValueError("New password must be at least 8 characters.")
+        pwd = new_password
+        if len(pwd.encode('utf-8')) > 72:
+            pwd = pwd[:72]
+        user.hashed_password = hash_password(pwd)
+        if hasattr(user, "token_valid_after"):
+            user.token_valid_after = utc_now()
+        await db.commit()
+        return {"message": "Password changed successfully."}
 
     @staticmethod
     async def verify_email(token: str, db: AsyncSession) -> Dict[str, str]:

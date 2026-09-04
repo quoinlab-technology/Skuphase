@@ -2,11 +2,13 @@
 
 import uuid
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SchemeOfWorkResponse(BaseModel):
     """Weekly scheme of work details."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     curriculum_id: uuid.UUID
     term: str
@@ -16,20 +18,16 @@ class SchemeOfWorkResponse(BaseModel):
     raw_content: Optional[str] = None
     is_exam_or_break: bool = False
 
-    class Config:
-        from_attributes = True
-
 
 class CurriculumSubjectResponse(BaseModel):
     """Subject available in a class curriculum."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     board: str
     class_level: str
     subject_name: str
     category: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class ClassListResponse(BaseModel):
@@ -56,16 +54,10 @@ class WeekListResponse(BaseModel):
     weeks: List[SchemeOfWorkResponse]
 
 
-class CurriculumSearchQuery(BaseModel):
-    """Search query for curriculum topics."""
-    query: str
-    class_level: Optional[str] = None
-    subject_name: Optional[str] = None
-    limit: int = 20
-
-
 class CurriculumSearchResult(BaseModel):
     """Curriculum search hit."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     board: str
     class_level: str
@@ -74,6 +66,3 @@ class CurriculumSearchResult(BaseModel):
     week_number: int
     topic: str
     subtopics: List[str] = Field(default_factory=list)
-
-    class Config:
-        from_attributes = True

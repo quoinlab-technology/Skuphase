@@ -1,6 +1,6 @@
 """User model."""
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -38,6 +38,10 @@ class User(BaseModel):
 
     # JWTs issued before this instant are rejected (set on credential changes).
     token_valid_after = Column(DateTime(timezone=True), nullable=True)
+
+    # Refresh-token generation counter; incremented on logout so all
+    # outstanding refresh tokens become invalid instantly (audit F-06).
+    token_generation = Column(Integer, nullable=False, default=1)
 
     last_login = Column(DateTime(timezone=True))
     

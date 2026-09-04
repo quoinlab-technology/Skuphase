@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     background_retry_attempts: int = 3
     background_retry_base_delay_seconds: float = 2.0
 
+    # In-app worker concurrency (jobs processed in parallel per instance)
+    worker_concurrency: int = 3
+    # Hard timeout for a single LLM provider call (seconds). Must stay well
+    # below the stale-running job reap window in job_queue.py.
+    llm_timeout_seconds: int = 120
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     cors_methods: list[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
