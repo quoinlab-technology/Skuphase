@@ -128,12 +128,14 @@ def unwrap(resp) -> tuple[bool, Any]:
 
     # 6. Detailed dictionary error
     if isinstance(detail, dict):
-        msg = detail.get("message") or detail.get("detail") or "Request could not be completed."
+        msg = detail.get("message") or detail.get("detail") or "We could not complete that request — please try again in a moment."
         return False, {"kind": "detail", "message": msg, "data": detail}
 
     # 7. Explicit string error (400 Bad Request, 409 Conflict, 500, etc.)
     if detail and isinstance(detail, str) and detail.strip():
         return False, {"kind": "error", "message": detail.strip()}
 
-    # 8. Status code fallback
-    return False, {"kind": "generic", "message": f"Server returned error code {resp.status_code}. Please try again."}
+    # 8. Status code fallback — user-facing copy only (no developer-speak).
+    # Backend "message"/"detail" payloads take precedence above; this is the
+    # action-oriented net so users never see "Server returned error code 500."
+    return False, {"kind": "generic", "message": "We could not complete that request right now — please try again in a moment."}

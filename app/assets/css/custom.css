@@ -828,6 +828,24 @@ body {
   .print-page-break {
     page-break-before: always;
   }
+  .app-card, .print-avoid-break {
+    page-break-inside: avoid;
+  }
+}
+
+/* Mobile: keep toasts above bottom nav + comfortable tap targets */
+@media (max-width: 991.98px) {
+  #app-toast-container {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+@media (max-width: 575.98px) {
+  .app-table-container + .d-flex .badge.rounded-pill,
+  .badge.rounded-pill.px-3 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    font-size: 0.95rem !important;
+  }
 }
 
 

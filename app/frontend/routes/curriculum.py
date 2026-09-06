@@ -168,6 +168,7 @@ def curriculum_routes(app):
                         cls="badge text-decoration-none px-3 py-2 me-2 mb-2 " + (
                             "bg-dark text-white" if c == class_level else "bg-light text-secondary border"
                         ),
+                        **({"aria-current": "true"} if c == class_level else {}),
                     )
                     for c in all_classes
                 ],
@@ -183,6 +184,7 @@ def curriculum_routes(app):
                         cls="btn btn-sm rounded-pill me-2 mb-2 " + (
                             "btn-success" if s == active_subject else "btn-outline-secondary"
                         ),
+                        **({"aria-current": "true"} if s == active_subject else {}),
                     )
                     for s in subject_names
                 ],

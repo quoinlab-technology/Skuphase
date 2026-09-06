@@ -232,7 +232,7 @@ def QuestionBlock(q: dict, number: int, show_answers: bool):
         if ans:
             parts.append(P(" - ".join(ans), cls="mb-0 small text-success"))
 
-    return Div(*parts, cls="mb-3 pb-2 border-bottom")
+    return Div(*parts, cls="mb-3 pb-2 border-bottom print-avoid-break")
 
 
 def PassageBlock(p: dict):

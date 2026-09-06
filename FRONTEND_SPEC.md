@@ -198,7 +198,7 @@ Three shells, all in `components/layout.py`:
 | --- | --- |
 | Forms | `Form`, `FormGroup`, `FormFloatingLabel`/`Input`, `Select`, `SearchableSelect`, `FormErrorSummary`, `FormGroupFromErrors`, `map_formgroup_validation` |
 | Submit buttons | `LoadingButton` preset (auto spinner + disable + `aria-busy`) — **mandatory for every mutation** |
-| Feedback | `ToastContainer` in AppShell base + `toast_response()` preset in HTMX handlers; `ModernToast` variants |
+| Feedback | `ToastContainer` in AppShell base + `toast_response()` preset in HTMX handlers; `ModernToast` variants. **Rule (2026-09 audit decision):** HTMX partial responses use `show_toast()`/`ModernToast` for ephemeral feedback (action success/failure); full-page redirect flows use `push_flash()` → `pop_flash()` → `Flash()`. **Agreed exception:** inline `Alert` is allowed inside tab bodies for *persistent* content results that belong with the data (preflight summary, quality status/flags, validation errors next to a form) — these are content, not notifications, and must not vanish like toasts |
 | Confirm destructive | `ConfirmDialog` / `ConfirmPrompt` preset (`hx_confirm` acceptable for simple cases) |
 | Lists/tables | `DataTable` (striped, hover) for exams/users/bank; `Pagination` preset + `InfiniteScroll` only for bank browse |
 | Empty states | `EmptyState` with one clear CTA — mandatory on every list page |

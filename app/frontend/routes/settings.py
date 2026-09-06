@@ -8,12 +8,42 @@ from fasthtml.common import A, Div, Form, H1, H2, Input, Label, P, Span, Strong,
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from faststrap import Alert, Button, Card, Col, Container, FormGroup, Icon, Row, Select
+from faststrap import (
+    Alert,
+    Button,
+    Card,
+    Col,
+    Container,
+    EmptyState,
+    FormGroup,
+    Icon,
+    Row,
+    Select,
+    Switch,
+)
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+
+# Audit2 Phase 2 — Settings → Notifications tab (mirrors prototype
+# Settings.png–Settings6.png and NotificationPrefs schema defaults).
+NOTIF_PREFS = [
+    ("exam_generation_completed", "Exam generation completed",
+     "Get notified when your exam finishes generating.", True),
+    ("new_audit_comments", "New audit comments",
+     "Know right away when a reviewer comments on your exam.", True),
+    ("proposal_status_changes", "Proposal status changes",
+     "Follow your proposal from request to generated exam.", True),
+    ("document_processing_done", "Document processing done",
+     "Alert me when uploaded documents finish processing.", False),
+    ("user_joins_school", "User joins school",
+     "Know when a new staff member joins your school.", False),
+    ("preflight_check_failed", "Preflight check failed",
+     "Alert me when a quality preflight check fails.", True),
+]
+NOTIF_PREF_KEYS = [key for key, *_ in NOTIF_PREFS]
 
 
 def register_routes(app):
@@ -53,6 +83,16 @@ def register_routes(app):
 
         active_tab = req.query_params.get("tab", "profile").lower()
 
+        # Audit2 Phase 2: load saved notification preferences (schema defaults
+        # apply to any key the user has never saved).
+        notif_state = {key: default for key, _, _, default in NOTIF_PREFS}
+        r_prefs = await call_api(req, "GET", "/auth/me/preferences")
+        ok_prefs, d_prefs = unwrap(r_prefs)
+        if ok_prefs and isinstance(d_prefs.get("preferences"), dict):
+            for key in NOTIF_PREF_KEYS:
+                if key in d_prefs["preferences"]:
+                    notif_state[key] = bool(d_prefs["preferences"][key])
+
         header = Div(
             H1("School Settings", cls="fw-bold fs-2 text-dark mb-1"),
             P("Configure school profile, academic sessions, security, and exam quality requirements.", cls="text-muted small mb-4"),
@@ -63,11 +103,14 @@ def register_routes(app):
             cls = "btn btn-sm rounded-pill px-3 py-2 fw-semibold me-2 mb-2 " + (
                 "btn-dark" if is_curr else "btn-outline-secondary"
             )
-            return A(Icon(icon_name, cls="bi me-1"), label, href=f"/app/settings?tab={key}", cls=cls)
+            return A(Icon(icon_name, cls="bi me-1"), label, href=f"/app/settings?tab={key}", cls=cls,
+                     **({"aria-current": "true"} if is_curr else {}))
 
         tabs_nav = Div(
             _tab_link("profile", "School Profile", "building"),
             _tab_link("account", "My Account", "person"),
+            _tab_link("notifications", "Notifications", "bell"),
+            _tab_link("integrations", "API & Integrations", "plug"),
             _tab_link("policy", "Academic Policy", "mortarboard"),
             _tab_link("security", "Security", "shield-lock"),
             cls="d-flex flex-wrap mb-4",
@@ -125,7 +168,54 @@ def register_routes(app):
             cls="p-4 border-0 shadow-sm",
         )
 
-        # Tab 3: Academic Policy
+        # Tab 3: Notifications (audit2 Phase 2 — matches prototype toggle list)
+        notif_rows = []
+        for key, title, desc, _default in NOTIF_PREFS:
+            notif_rows.append(
+                Div(
+                    Switch(key, label=title, checked=notif_state.get(key, False),
+                           label_cls="fw-semibold text-dark"),
+                    P(desc, cls="text-muted small mb-0 ms-5"),
+                    cls="py-2 border-bottom",
+                )
+            )
+        notifications_content = Form(
+            Card(
+                Strong("Email & In-App Notifications", cls="fs-6 text-dark d-block mb-1"),
+                P("Choose what SkuPhase tells you about. These preferences apply to your account only.",
+                  cls="text-muted small mb-3"),
+                *notif_rows,
+                Div(
+                    Button("Save Preferences", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold"),
+                    cls="d-flex justify-content-end mt-3",
+                ),
+                cls="p-4 border-0 shadow-sm",
+            ),
+            action="/app/settings?tab=notifications",
+            method="post",
+        )
+
+        # Tab 4: API & Integrations (audit2 Phase 2 — stub; backend is not
+        # built yet, descope documented in FRONTEND_SPEC §6.12)
+        integrations_content = Card(
+            EmptyState(
+                title="API access is coming soon",
+                description=(
+                    "School API keys and integrations (Google Drive, WAEC/NECO "
+                    "standards) are on our roadmap. Contact your SkuPhase "
+                    "representative to join the pilot."
+                ),
+                action=A(
+                    Icon("envelope", cls="bi me-1"),
+                    "Contact Support",
+                    href="/about",
+                    cls="btn btn-brand rounded-pill px-4",
+                ),
+            ),
+            cls="p-4 border-0 shadow-sm",
+        )
+
+        # Tab 5: Academic Policy
         policy_content = Form(
             Card(
                 Strong("Academic Session & Policies", cls="fs-6 text-dark d-block mb-3"),
@@ -180,6 +270,8 @@ def register_routes(app):
         tab_bodies = {
             "profile": profile_content,
             "account": account_content,
+            "notifications": notifications_content,
+            "integrations": integrations_content,
             "policy": policy_content,
             "security": security_content,
         }
@@ -226,13 +318,26 @@ def register_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
-        if user.get("role") != "school_admin":
-            push_flash(req, "Only administrators can update school settings.", "danger")
-            return RedirectResponse("/app/settings", status_code=303)
-
         form = await req.form()
         school_id = user.get("school_id") or ""
         target_tab = (req.query_params.get("tab") or "profile").lower()
+
+        # Audit2 Phase 2: notification preferences are a per-user setting, so
+        # individual teachers may save them too (handled before the
+        # school-admin gate that protects school-wide tabs).
+        if target_tab == "notifications":
+            payload = {key: form.get(key) == "1" for key in NOTIF_PREF_KEYS}
+            resp = await call_api(req, "PUT", "/auth/me/preferences", json=payload)
+            ok, data = unwrap(resp)
+            if ok:
+                push_flash(req, "Notification preferences saved.", "success")
+            else:
+                push_flash(req, data.get("message", "Failed to save notification preferences."), "danger")
+            return RedirectResponse("/app/settings?tab=notifications", status_code=303)
+
+        if user.get("role") != "school_admin":
+            push_flash(req, "Only administrators can update school settings.", "danger")
+            return RedirectResponse("/app/settings", status_code=303)
 
         if school_id and target_tab == "profile":
             # Audit #8: "Save School Profile" previously fell through to the

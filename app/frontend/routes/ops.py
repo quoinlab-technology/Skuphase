@@ -11,16 +11,23 @@ from starlette.responses import RedirectResponse
 from faststrap import Alert, Badge, Button, Card, Col, Container, Icon, Row
 
 from app.frontend.api import call_api, unwrap
-from app.frontend.components.feedback import Flash, pop_flash
+from app.frontend.components.feedback import Flash, pop_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 
 
-async def _ops_content(req: Request):
-    """Build the ops page content (shared by full page and HTMX partial)."""
+async def _ops_content(req: Request, htmx: bool = False):
+    """Build the ops page content (shared by full page and HTMX partial).
+
+    ``htmx=True`` switches the role-guard failure from an inline Flash to a
+    ModernToast, per the feedback rules (HTMX partials use toasts, full-page
+    responses use Flash).
+    """
     user = current_user(req) or {}
     role = user.get("role") or ""
     if role != "school_admin" and user.get("account_type") != "individual_teacher":
+        if htmx:
+            return show_toast("Access restricted to school administrators.", "danger")
         return Flash("Access restricted to school administrators.", "danger")
 
     resp_health = await call_api(req, "GET", "/ops/health")
@@ -164,7 +171,7 @@ def register_routes(app):
         guard = ensure_login(req)
         if guard:
             return guard
-        return await _ops_content(req)
+        return await _ops_content(req, htmx=True)
 
     @app.get("/app/ops")
     async def operations_page(req: Request):

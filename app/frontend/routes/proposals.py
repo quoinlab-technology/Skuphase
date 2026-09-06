@@ -171,7 +171,7 @@ def _proposal_card(prop: dict, is_admin: bool) -> Div:
                 Div(Icon("stars", cls="bi fs-5"), cls="app-row-icon ai me-3"),
                 Div(
                     Div(
-                        Strong(f"{grade} {subject}", cls="fs-6 text-dark me-2"),
+                        Strong(f"{grade} {subject}", cls="fs-6 text-dark me-2 text-truncate", style="max-width: 22rem;"),
                         _status_pill(status),
                         cls="d-flex align-items-center mb-1",
                     ),
@@ -305,11 +305,18 @@ def register_routes(app):
         if filtered:
             cards = [_proposal_card(p, is_admin) for p in filtered]
             list_content = Div(*cards)
+        elif not all_props:
+            # First-run explainer: school has zero proposals (audit fix-list #4).
+            list_content = EmptyState(
+                title="How proposals work",
+                description="Teachers describe the exam they need. A school admin reviews the request and generates the exam. Everyone can then refine, preflight and export it.",
+                action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
+            )
         else:
             list_content = EmptyState(
                 title="No proposals found",
-                message="Submit a proposal for an exam, or check back once staff creates one.",
-                primary_cta=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
+                description="Submit a proposal for an exam, or check back once staff creates one.",
+                action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
             )
 
         return AppShell(

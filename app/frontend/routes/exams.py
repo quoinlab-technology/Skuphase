@@ -343,8 +343,10 @@ def register_page_routes(app):
         ok, data = unwrap(resp)
 
         if not ok:
+            # Full-page flow: inline Alert is correct here (FRONTEND_SPEC §5) —
+            # this renders inside AppShell, not as an HTMX swap response.
             body_content = Div(
-                Alert(data.get("message", "Could not load exams."), variant="danger"),
+                Alert(data.get("message", "We couldn't load your exams right now — refresh to try again."), variant="danger"),
                 cls="mb-3",
             )
         else:
@@ -358,8 +360,8 @@ def register_page_routes(app):
             if not exams:
                 body_content = EmptyState(
                     title="No exams yet",
-                    message="Create your first exam with AI or type one yourself.",
-                    primary_cta=A(
+                    description="Create your first exam with AI or type one yourself.",
+                    action=A(
                         Icon("stars", cls="bi me-2"),
                         "Create exam",
                         href="/app/exams/new",
@@ -393,7 +395,8 @@ def register_page_routes(app):
             else:
                 cls = "badge rounded-pill bg-white text-muted border px-3 py-2 fw-normal text-decoration-none shadow-sm"
                 style = "font-size: 0.88rem;"
-            return A(f"{label}{count_str}", href=href, cls=cls, style=style)
+            return A(f"{label}{count_str}", href=href, cls=cls, style=style,
+                     **({"aria-current": "true"} if is_active else {}))
 
         all_exams = (data.get("exams", []) or []) if ok else []
         approved_cnt = sum(1 for e in all_exams if (e.get("workflow_state") or e.get("status")) == "approved")
@@ -621,7 +624,8 @@ def register_page_routes(app):
             return guard
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            return Alert(exam.get("message", "Could not load questions."), variant="danger")
+            # HTMX partial response: ephemeral feedback uses show_toast (FRONTEND_SPEC §5).
+            return show_toast(exam.get("message", "We couldn't load the questions right now — refresh to try again."), "danger")
         return _questions_tab(exam, show_answers=answers == "1")
 
     @app.get("/ui/exams/{exam_id}/tab/preflight")
@@ -634,8 +638,8 @@ def register_page_routes(app):
             return Div(
                 EmptyState(
                     title="Preflight not yet run",
-                    message="Run the checks to confirm this exam is ready to export.",
-                    primary_cta=Button(
+                    description="Run the checks to confirm this exam is ready to export.",
+                    action=Button(
                         "Run Preflight Check",
                         hx_get=f"/ui/exams/{exam_id}/tab/preflight?run=1",
                         hx_target="#tab-content",
@@ -647,8 +651,11 @@ def register_page_routes(app):
         resp = await call_api(req, "GET", f"/exams/{exam_id}/preflight")
         ok, data = unwrap(resp)
         if not ok:
-            return Alert(data.get("message", "Preflight could not run."), variant="danger")
+            # HTMX partial response: ephemeral feedback uses show_toast (FRONTEND_SPEC §5).
+            return show_toast(data.get("message", "Preflight could not run."), "danger")
         if data.get("passed"):
+            # Persistent tab content (result summary), not ephemeral feedback —
+            # inline Alert is the agreed exception (QUICK_REFERENCE feedback rules).
             return Div(
                 Alert(
                     Icon("check-circle", cls="bi me-2"),
@@ -675,6 +682,8 @@ def register_page_routes(app):
                 )
             )
         return Div(
+            # Persistent tab content (preflight result summary) — inline Alert is the
+            # agreed exception (QUICK_REFERENCE feedback rules).
             Alert(
                 f"Preflight found {data.get('issue_count', len(data.get('issues') or []))} issue(s)"
                 f" and {data.get('warning_count', len(data.get('warnings') or []))} warning(s)."
@@ -696,7 +705,7 @@ def register_page_routes(app):
             # Exams8.png: quality report unavailable (e.g. no questions yet).
             return EmptyState(
                 title="Quality report not available",
-                message=data.get("message", "Complete generation to see the quality score."),
+                description=data.get("message", "Complete generation to see the quality score."),
             )
         return _quality_tab_content(data)
 
@@ -896,6 +905,24 @@ def _exports_history_modal(exam: dict) -> Div:
     )
 
 
+def _teacher_waiting_copy(exam: dict, user: dict):
+    """Helper copy for school-staff teachers viewing an exam awaiting admin approval.
+
+    Audit fix-list #7: when a teacher's exam is in final_submitted_by_teacher
+    (with the admin), explain why no action buttons are available.
+    """
+    role = (user.get("role") or "").lower()
+    if role != "teacher":
+        return Div()
+    state = _state_of(exam)
+    if state == "final_submitted_by_teacher":
+        return P(
+            "Your exam is with your school admin for approval. You'll get a notification when it's reviewed.",
+            cls="text-muted small mt-2",
+        )
+    return Div()
+
+
 def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> Div:
     """Render the full exam detail content (used after polling resolves).
 
@@ -923,6 +950,7 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
         ),
         _section_cards(exam),
         Div(*actions, id="exam-actions", cls="mb-3 d-flex flex-wrap gap-2"),
+        _teacher_waiting_copy(exam, user),
         _refine_panel(exam_id),
         _export_panel(exam_id),
         Div(id="export-result"),
@@ -1066,6 +1094,8 @@ def _quality_tab_content(data: dict) -> Div:
             _score_card(coverage_txt, "Curriculum Coverage"),
             cls="g-3 mb-3",
         ),
+        # Persistent tab content (quality report summary) — inline Alert is the
+        # agreed exception (QUICK_REFERENCE feedback rules).
         Alert(
             f"Quality status: {str(status).replace('_', ' ').title()}",
             variant="success" if status in ("good", "excellent") else "warning",
@@ -1074,6 +1104,7 @@ def _quality_tab_content(data: dict) -> Div:
         _dist_rows("Difficulty", distribution.get("difficulty")),
         _dist_rows("Bloom's levels", distribution.get("bloom_levels")),
         *[
+            # Persistent quality flags, not ephemeral feedback — inline Alert exception.
             Alert(Icon("exclamation-triangle", cls="bi me-2"), str(flag), variant="warning")
             for flag in flags
         ],
@@ -1085,6 +1116,8 @@ def _comments_tab_content(req: Request, exam_id: str, comments: list, ok: bool =
     csrf = _csrf_input(req)
     items = []
     if not ok and message:
+        # Persistent tab context (error shown next to the comment form) —
+        # inline Alert is the agreed exception (QUICK_REFERENCE feedback rules).
         items.append(Alert(message, variant="danger"))
     elif not comments:
         items.append(
@@ -1139,11 +1172,13 @@ def _comments_tab_content(req: Request, exam_id: str, comments: list, ok: bool =
             ),
             Div(
                 Button("Save comment", type="submit", size="sm", variant="primary", cls="btn-brand"),
-                cls="d-flex justify-content-end",
+                Span("Saving…", id="comments-spinner", cls="htmx-indicator text-muted small ms-2"),
+                cls="d-flex justify-content-end align-items-center",
             ),
             hx_post=f"/ui/exams/{exam_id}/comments",
             hx_target="#tab-content",
             hx_swap="innerHTML",
+            hx_indicator="#comments-spinner",
         ),
     )
 
@@ -1773,14 +1808,16 @@ def register_action_routes(app):
             return guard
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            return Flash(exam.get("message", "Could not load exam."), "danger")
+            # HTMX polling partial: ephemeral feedback uses show_toast (FRONTEND_SPEC §5).
+            return show_toast(exam.get("message", "Could not load exam."), "danger")
 
         state = _state_of(exam)
         if state in ("generation_requested", "refinement_requested"):
             return Div(
                 Spinner(),
-                P("Still generating...", cls="text-muted small ms-2"),
+                P("Still generating — this usually takes under 2 minutes. You can keep this tab open.", cls="text-muted small ms-2"),
                 cls="d-flex align-items-center gap-2 mb-3",
+                **{"aria-live": "polite"},
             )
 
         user = current_user(req) or {}
@@ -1823,7 +1860,8 @@ def register_action_routes(app):
         resp = await call_api(req, "POST", f"/exams/{exam_id}/submit-final")
         ok, data = unwrap(resp)
         if not ok:
-            return Flash(data.get("message", "Submission failed."), "danger")
+            # HTMX response: ephemeral feedback uses show_toast; success path redirects with set_flash.
+            return show_toast(data.get("message", "We couldn't submit your exam — check your connection and try again."), "danger")
         set_flash(req.session, "success", "Exam submitted for approval.")
         return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
 
@@ -1864,7 +1902,7 @@ def register_action_routes(app):
         resp = await call_api(req, "POST", f"/exams/{exam_id}/approve")
         ok, data = unwrap(resp)
         if not ok:
-            return show_toast(data.get("message", "Approval failed."), "danger")
+            return show_toast(data.get("message", "We couldn't approve this exam — try again in a moment."), "danger")
         set_flash(req.session, "success", "Exam approved.")
         return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
 
@@ -1879,11 +1917,12 @@ def register_action_routes(app):
         resp = await call_api(req, "POST", f"/exams/{exam_id}/export", payload)
         ok, data = unwrap(resp)
         if not ok:
-            return Flash(data.get("message", "Export failed."), "danger")
+            # HTMX response targeting #export-result: ephemeral feedback uses show_toast.
+            return show_toast(data.get("message", "We couldn't prepare the export — try again in a moment."), "danger")
         download_url = data.get("download_url", "")
         file_name = data.get("file_name", "exam.pdf")
         return Div(
-            Alert("Export ready.", variant="success"),
+            show_toast("Export ready.", "success"),
             A(
                 f"Download {file_name}",
                 href=download_url,
@@ -1900,15 +1939,21 @@ def register_action_routes(app):
         resp = await call_api(req, "DELETE", f"/exams/{exam_id}")
         ok, data = unwrap(resp)
         if not ok:
-            return Flash(data.get("message", "Delete failed."), "danger")
+            # HTMX DELETE response: ephemeral feedback uses show_toast (never Flash —
+            # Flash is only rendered by the shell in full-page redirect flows).
+            return show_toast(data.get("message", "We couldn't delete this exam — check your connection and try again."), "danger")
         set_flash(req.session, "success", "Exam deleted.")
         return RedirectResponse("/app/exams", status_code=303)
 
 
 def _wizard_error(message: str) -> Div:
-    """Return a wizard panel fragment with an error alert (HTMX swap target)."""
+    """Return a wizard panel fragment for HTMX swap targets.
+
+    The error itself is ephemeral feedback → show_toast (FRONTEND_SPEC §5);
+    the link stays inline so the user always has a recovery path in the panel.
+    """
     return Div(
-        Alert(message, variant="danger"),
+        show_toast(message, "danger"),
         A("Back to Step 1", href="/app/exams/new?step=1", cls="btn btn-link"),
         id="wizard-panel",
     )

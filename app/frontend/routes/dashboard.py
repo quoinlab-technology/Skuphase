@@ -346,10 +346,27 @@ def register_routes(app):
             cls="mb-4",
         )
 
+        # Curriculum-first CTA: guides new teachers to the NERDC scheme deep-link
+        # entry point (audit fix-list #5). Shown always; most prominent when empty.
+        curriculum_cta = Card(
+            Div(
+                Div(Icon("journal-text", cls="bi fs-4"), cls="app-row-icon brand me-3"),
+                Div(
+                    Strong("Start from the curriculum", cls="d-block"),
+                    P("Pick a class, subject and week from the NERDC scheme — we pre-fill the exam for you.", cls="text-muted small mb-0"),
+                ),
+                A(Icon("arrow-right-circle", cls="bi me-1"), "Open Curriculum Explorer",
+                  href="/app/curriculum", cls="btn btn-brand rounded-pill px-4 flex-shrink-0"),
+                cls="d-flex flex-wrap align-items-center gap-3 p-3",
+            ),
+            cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
+        )
+
         return AppShell(
             Title("Dashboard — SkuPhase"),
             Div(
                 header,
+                curriculum_cta,
                 metrics_row,
                 Row(
                     Col(recent_exams_card, span=12, lg=8),

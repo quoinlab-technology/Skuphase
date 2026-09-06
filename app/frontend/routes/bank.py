@@ -402,8 +402,8 @@ def register_routes(app):
         else:
             list_content = EmptyState(
                 title="No questions in bank yet",
-                message="Questions are automatically saved into your school bank when approved, or can be saved directly from any exam detail.",
-                primary_cta=Button("View Exams", as_="a", href="/app/exams", cls="btn-brand"),
+                description="Questions are automatically saved into your school bank when approved, or can be saved directly from any exam detail.",
+                action=Button("View Exams", as_="a", href="/app/exams", cls="btn-brand"),
             )
 
         return AppShell(
