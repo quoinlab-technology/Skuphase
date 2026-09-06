@@ -1,6 +1,6 @@
 """User model."""
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -44,7 +44,11 @@ class User(BaseModel):
     token_generation = Column(Integer, nullable=False, default=1)
 
     last_login = Column(DateTime(timezone=True))
-    
+
+    # Per-user notification preferences (audit2 Phase 2). JSON dict keyed by
+    # NotificationPrefs field names; None falls back to schema defaults.
+    notification_prefs = Column(JSON, nullable=True)
+
     # Relationships
     school = relationship("School", back_populates="users")
     exams = relationship("Exam", back_populates="created_by")

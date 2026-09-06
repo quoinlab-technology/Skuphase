@@ -28,6 +28,8 @@ from app.schemas.auth import (
     EmailVerificationRequest,
     ResendVerificationRequest,
     AcceptInviteRequest,
+    NotificationPrefs,
+    NotificationPrefsResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -272,6 +274,47 @@ async def get_current_user_info(
     Get profile information of currently authenticated user.
     """
     return current_user
+
+
+@router.get("/me/preferences", response_model=NotificationPrefsResponse)
+async def get_notification_preferences(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Get the current user's notification preferences. Unset keys fall back
+    to NotificationPrefs defaults (audit2 Phase 2).
+    """
+    from app.models.user import User
+
+    user = await db.get(User, current_user.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    stored = getattr(user, "notification_prefs", None) or {}
+    prefs = NotificationPrefs(**{
+        key: bool(stored[key]) for key in NotificationPrefs.model_fields if key in stored
+    })
+    return NotificationPrefsResponse(message="Preferences loaded", preferences=prefs)
+
+
+@router.put("/me/preferences", response_model=NotificationPrefsResponse)
+async def update_notification_preferences(
+    prefs: NotificationPrefs,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Persist the current user's notification preferences (audit2 Phase 2).
+    """
+    from app.models.user import User
+
+    user = await db.get(User, current_user.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.notification_prefs = prefs.model_dump()
+    await db.commit()
+    logger.info(f"Notification preferences updated for user '{current_user.email}'")
+    return NotificationPrefsResponse(message="Preferences saved successfully", preferences=prefs)
 
 
 @router.post("/logout")

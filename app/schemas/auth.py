@@ -78,6 +78,27 @@ class SubscriptionResponse(BaseModel):
     status: str
     start_date: datetime
     end_date: datetime
+
+
+class NotificationPrefs(BaseModel):
+    """Per-user notification preferences (audit2 Phase 2, Settings → Notifications).
+
+    Stored as a JSON dict on User.notification_prefs; missing keys fall back
+    to these defaults, which mirror the prototype (Settings.png–Settings6.png).
+    """
+    exam_generation_completed: bool = True
+    new_audit_comments: bool = True
+    proposal_status_changes: bool = True
+    document_processing_done: bool = False
+    user_joins_school: bool = False
+    preflight_check_failed: bool = True
+
+
+class NotificationPrefsResponse(BaseModel):
+    """Envelope for GET/PUT /auth/me/preferences."""
+    message: str
+    preferences: NotificationPrefs
+
     
     model_config = ConfigDict(from_attributes=True)
 

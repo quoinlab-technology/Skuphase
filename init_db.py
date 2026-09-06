@@ -5,7 +5,7 @@ import subprocess
 import sys
 from uuid import uuid4
 
-from app.core.database import async_session_maker
+from app.core.database import get_async_session_maker
 from app.models import Plan
 
 
@@ -25,7 +25,8 @@ def run_migrations() -> None:
 
 async def init_default_plans() -> None:
     """Create default subscription plans if absent."""
-    async with async_session_maker() as session:
+    session_maker = get_async_session_maker()
+    async with session_maker() as session:
         from sqlalchemy import select
 
         result = await session.execute(select(Plan))
