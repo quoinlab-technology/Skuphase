@@ -49,13 +49,14 @@ def _user_row(u: dict, current_uid: str) -> Div:
     if not is_self:
         actions.append(
             Form(
+                # Pass the intended next state so the handler sends the correct
+                # is_active value regardless of current DB state.
+                Input(type="hidden", name="target_active", value="false" if is_active else "true"),
                 Button(
                     "Deactivate" if is_active else "Activate",
                     type="submit",
-                    variant="outline-secondary",
+                    variant="outline-danger" if is_active else "outline-success",
                     size="sm",
-                    # Audit: py-0 px-2 + 0.75rem font made this far below the
-                    # 44px mobile touch-target minimum.
                     cls="rounded-pill py-1 px-3",
                 ),
                 action=f"/app/staff/{uid}/toggle-status",
@@ -313,10 +314,17 @@ def register_routes(app):
             push_flash(req, "Unauthorized.", "danger")
             return RedirectResponse("/app/staff", status_code=303)
 
-        resp = await call_api(req, "PUT", f"/users/{user_id}/status", json={"is_active": False})
+        form = await req.form()
+        # The _user_row button passes the intended *next* state via a hidden input
+        # so we never have to guess the current state from the DB on this endpoint.
+        target_active_str = (form.get("target_active") or "false").strip().lower()
+        target_active = target_active_str == "true"
+
+        resp = await call_api(req, "PUT", f"/users/{user_id}/status", json={"is_active": target_active})
         ok, data = unwrap(resp)
         if not ok:
             push_flash(req, data.get("message", "Failed to update user status."), "danger")
         else:
-            push_flash(req, "User status updated successfully.", "success")
+            action_word = "activated" if target_active else "deactivated"
+            push_flash(req, f"User account {action_word} successfully.", "success")
         return RedirectResponse("/app/staff", status_code=303)

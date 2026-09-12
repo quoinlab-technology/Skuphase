@@ -422,6 +422,7 @@ def register_routes(app):
         )
 
     @app.post("/app/bank/new")
+    @app.post("/app/bank/add")
     async def create_bank_item(req: Request):
         guard = ensure_login(req)
         if guard:

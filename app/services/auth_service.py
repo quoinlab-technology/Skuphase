@@ -308,6 +308,26 @@ class AuthService:
             "gen": user.token_generation or 1,
         }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
+        # Fetch school branding to include in the session user dict.
+        # This avoids a separate round-trip from the frontend on every page load.
+        _school_name = None
+        _school_address = None
+        _school_logo_url = None
+        try:
+            school_res = await db.execute(select(School).where(School.id == user.school_id))
+            school_obj = school_res.scalar_one_or_none()
+            if school_obj:
+                _school_name = school_obj.name
+                _school_address = school_obj.address
+            settings_res = await db.execute(
+                select(SchoolSettings).where(SchoolSettings.school_id == user.school_id)
+            )
+            settings_obj = settings_res.scalar_one_or_none()
+            if settings_obj:
+                _school_logo_url = settings_obj.logo_url
+        except Exception as _branding_err:
+            logger.warning("Could not fetch school branding at login: %s", _branding_err)
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -322,8 +342,13 @@ class AuthService:
                 is_active=user.is_active,
                 is_verified=user.is_verified,
                 created_at=user.created_at,
+                school_id=user.school_id,
+                school_name=_school_name,
+                school_address=_school_address,
+                school_logo_url=_school_logo_url,
             ),
         }
+
 
     @staticmethod
     async def refresh_access_token(refresh_token_str: str, db: AsyncSession) -> Dict[str, Any]:
@@ -367,14 +392,48 @@ class AuthService:
                 "gen": current_gen,
             }, expires_delta=timedelta(days=get_settings().refresh_token_expire_days))
 
+            # Refresh school branding alongside the new tokens
+            _school_name = None
+            _school_address = None
+            _school_logo_url = None
+            try:
+                school_res = await db.execute(select(School).where(School.id == user.school_id))
+                school_obj = school_res.scalar_one_or_none()
+                if school_obj:
+                    _school_name = school_obj.name
+                    _school_address = school_obj.address
+                settings_res = await db.execute(
+                    select(SchoolSettings).where(SchoolSettings.school_id == user.school_id)
+                )
+                settings_obj = settings_res.scalar_one_or_none()
+                if settings_obj:
+                    _school_logo_url = settings_obj.logo_url
+            except Exception as _branding_err:
+                logger.warning("Could not fetch school branding during token refresh: %s", _branding_err)
+
             return {
                 "access_token": new_access_token,
                 "refresh_token": new_refresh_token,
                 "token_type": "bearer",
                 "expires_in": get_settings().access_token_expire_minutes * 60,
+                "user": UserResponse(
+                    user_id=user.id,
+                    full_name=user.full_name,
+                    email=user.email,
+                    role=user.role,
+                    account_type=getattr(user, "account_type", "school_staff"),
+                    is_active=user.is_active,
+                    is_verified=user.is_verified,
+                    created_at=user.created_at,
+                    school_id=user.school_id,
+                    school_name=_school_name,
+                    school_address=_school_address,
+                    school_logo_url=_school_logo_url,
+                ),
             }
         except Exception as e:
             raise ValueError(f"Token refresh failed: {str(e)}")
+
 
     @staticmethod
     async def logout(user_id: UUID, db: AsyncSession) -> None:

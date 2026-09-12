@@ -8,7 +8,7 @@ Dashboard matching UI_design/Dashboard.png:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from fasthtml.common import A, Div, H1, P, Span, Strong, Title
 from starlette.requests import Request
 
@@ -19,6 +19,36 @@ from app.frontend.components.feedback import pop_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 from app.frontend.routes.exams import _create_modal
+
+
+def _relative_time(iso_str: str) -> str:
+    """Convert ISO 8601 timestamp to a human-readable relative string."""
+    if not iso_str:
+        return "Recently"
+    try:
+        # Handle both Z and +00:00 timezone suffixes
+        ts = iso_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        diff = datetime.now(timezone.utc) - dt
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "Just now"
+        if seconds < 3600:
+            mins = seconds // 60
+            return f"{mins} minute{'s' if mins != 1 else ''} ago"
+        if seconds < 86400:
+            hours = seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        if seconds < 172800:
+            return "Yesterday"
+        days = seconds // 86400
+        if days < 30:
+            return f"{days} days ago"
+        return iso_str[:10]
+    except Exception:
+        return iso_str[:10] if len(iso_str) >= 10 else iso_str
 
 
 async def _load_exams(req: Request, status: str | None = None, workflow_state: str | None = None):
@@ -87,6 +117,8 @@ def _recent_exam_item(exam: dict):
         st_text, st_type = "Draft", "draft"
 
     title_text = f"{grade} {subject} — Term Examination" if "Exam" not in subject else f"{grade} {subject}"
+    created_at = exam.get("created_at") or ""
+    time_str = _relative_time(created_at) if created_at else f"{total_marks} marks"
 
     return Div(
         Div(
@@ -95,7 +127,7 @@ def _recent_exam_item(exam: dict):
                 href=f"/app/exams/{eid}",
                 cls="text-decoration-none",
             ),
-            Div(f"{grade} · {total_marks} marks", cls="text-muted small"),
+            Div(f"{grade} · {time_str}", cls="text-muted small"),
             cls="flex-grow-1",
         ),
         _status_badge_pill(st_text, st_type),
@@ -142,8 +174,10 @@ def register_routes(app):
             return guard
         user = current_user(req) or {}
         flash = pop_flash(req)
-        role = user.get("role") or ("Teacher" if user.get("account_type") == "individual_teacher" else "Staff")
-        is_school_staff = user.get("account_type") == "school_staff" or role in {"school_admin", "teacher", "auditor"}
+        account_type = user.get("account_type") or ""
+        role = user.get("role") or ("Teacher" if account_type == "individual_teacher" else "Staff")
+        is_individual = account_type == "individual_teacher"
+        is_school_staff = (not is_individual) and (account_type == "school_staff" or role in {"school_admin", "teacher", "auditor"})
 
         # Parallel fetches with shared client
         (
@@ -279,9 +313,9 @@ def register_routes(app):
                     Div(Span("Mathematics, English, Basic Science", cls="small fw-semibold"), cls="mb-1"),
                     Div(Span("Social Studies, National Values, Languages", cls="small text-muted"), cls="mb-3"),
                     A(
-                        Icon("book", cls="bi me-1"),
-                        "Question Bank",
-                        href="/app/bank",
+                        Icon("journal-bookmark", cls="bi me-1"),
+                        "Explore Curriculum",
+                        href="/app/curriculum",
                         cls="btn btn-sm btn-outline-secondary d-inline-block",
                     ),
                 ),
@@ -291,7 +325,7 @@ def register_routes(app):
         right_widget_card = Card(
             Div(
                 Strong("Proposals" if is_school_staff else "Curriculum Coverage", cls="fs-6 text-dark"),
-                A("View all", href="/app/proposals" if is_school_staff else "/app/bank", cls="small text-brand text-decoration-none fw-semibold"),
+                A("View all", href="/app/proposals" if is_school_staff else "/app/curriculum", cls="small text-brand text-decoration-none fw-semibold"),
                 cls="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom",
             ),
             proposals_body,
@@ -362,10 +396,29 @@ def register_routes(app):
             cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
         )
 
+        # School customization & setup reminder alert
+        setup_alert = Div()
+        if is_school_staff:
+            setup_alert = Card(
+                Div(
+                    Div(Icon("building", cls="bi fs-4 text-success"), cls="app-row-icon ai me-3"),
+                    Div(
+                        Strong("School Branding & Exam Settings", cls="d-block text-dark"),
+                        P("Customize your school name, physical address, and logo so all generated exams are printed with your official header.", cls="text-muted small mb-0"),
+                        cls="flex-grow-1",
+                    ),
+                    A(Icon("gear", cls="bi me-1"), "Configure School Profile",
+                      href="/app/settings?tab=profile", cls="btn btn-outline-success rounded-pill px-4 flex-shrink-0 fw-semibold"),
+                    cls="d-flex flex-wrap align-items-center gap-3 p-3",
+                ),
+                cls="border-0 shadow-sm rounded-4 mb-4 bg-white border-start border-4 border-success",
+            )
+
         return AppShell(
             Title("Dashboard — SkuPhase"),
             Div(
                 header,
+                setup_alert,
                 curriculum_cta,
                 metrics_row,
                 Row(

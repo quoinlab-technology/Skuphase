@@ -25,14 +25,18 @@ async def _ops_content(req: Request, htmx: bool = False):
     """
     user = current_user(req) or {}
     role = user.get("role") or ""
-    if role != "school_admin" and user.get("account_type") != "individual_teacher":
+    account_type = user.get("account_type") or ""
+    # Operations is a school-admin-only page. Individual teachers and other roles
+    # are redirected or shown a flash, not crashed with a 403.
+    if role != "school_admin":
         if htmx:
             return show_toast("Access restricted to school administrators.", "danger")
         return Flash("Access restricted to school administrators.", "danger")
 
     resp_health = await call_api(req, "GET", "/ops/health")
     ok_h, health_data = unwrap(resp_health)
-    health = health_data if ok_h else {"status": "ok", "version": "1.0.0"}
+    # Graceful fallback: treat a failed health fetch as DEGRADED rather than crashing
+    health = health_data if ok_h else {"status": "degraded", "version": "—"}
 
     resp_stats = await call_api(req, "GET", "/ops/stats")
     ok_s, stats_data = unwrap(resp_stats)

@@ -229,3 +229,106 @@ def test_difficulty_distribution_wired_into_prompt():
     assert "50% easy" in prompt
     assert "30% medium" in prompt
     assert "20% hard" in prompt
+def test_parse_response_normalizes_british_bloom_spelling():
+    """British/mixed-case Bloom levels are canonicalized at parse time.
+
+    Regression for a real failure: the LLM returned "analyse" and validation
+    then failed on "invalid Bloom level 'analyse'". Normalizing during
+    parse_response means the persisted value and validation both see the
+    canonical "analyze".
+    """
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    data = {
+        "sections": [
+            {
+                "section_number": 1,
+                "section_title": "SECTION A",
+                "questions": [
+                    {
+                        "id": 1,
+                        "type": "multiple_choice",
+                        "question": "Q?",
+                        "options": ["A. 1", "B. 2", "C. 3", "D. 4"],
+                        "correct_answer": "A",
+                        "marks": 2,
+                        "difficulty": "easy",
+                        "bloom_level": "analyse",
+                    },
+                    {
+                        "id": 2,
+                        "type": "multiple_choice",
+                        "question": "Q2?",
+                        "options": ["A. 5", "B. 6", "C. 7", "D. 8"],
+                        "correct_answer": "B",
+                        "marks": 2,
+                        "difficulty": "medium",
+                        "bloom_level": "Analyse",
+                    },
+                ],
+            }
+        ]
+    }
+
+    parsed = generator.parse_response(json.dumps(data), MOCK_SECTION_CONFIG)
+    questions = parsed["sections"][0]["questions"]
+    assert questions[0]["bloom_level"] == "analyze"
+    assert questions[1]["bloom_level"] == "analyze"
+def test_parse_response_preserves_long_essay_correct_answer():
+    """Essay/short-answer model answers are NOT truncated to a single char.
+
+    Regression for a real failure: essay questions store their full model
+    answer in ``correct_answer`` (e.g. "a) 5 × 1000 = ... e) Yes, because..."),
+    but the DB column was VARCHAR(1) and Pydantic capped max_length=1, so
+    generation failed at store time after a successful LLM call.
+    """
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    long_answer = (
+        "a) 5 × 1000 = ₦5,000. "
+        "b) 2 × 500 = ₦1,000. "
+        "c) 5000 + 1000 = ₦6,000. "
+        "d) 10000 - 6000 = ₦4,000. "
+        "e) Yes, because ₦4,000 is greater than ₦800."
+    )
+    assert len(long_answer) > 1
+
+    data = {
+        "sections": [
+            {
+                "section_number": 1,
+                "section_title": "SECTION B",
+                "questions": [
+                    {
+                        "id": 1,
+                        "type": "essay",
+                        "question": "Fatima went to the market...",
+                        "marks": 20,
+                        "difficulty": "hard",
+                        "bloom_level": "analyze",
+                        "correct_answer": long_answer,
+                    }
+                ],
+            }
+        ]
+    }
+    parsed = generator.parse_response(json.dumps(data), MOCK_SECTION_CONFIG)
+    stored = parsed["sections"][0]["questions"][0]["correct_answer"]
+    assert stored == long_answer
+
+
+def test_question_bank_schema_accepts_long_essay_answer():
+    """QuestionBankItemCreateRequest allows a multi-char correct_answer."""
+    from app.schemas.exam import QuestionBankItemCreateRequest
+
+    item = QuestionBankItemCreateRequest(
+        subject="Mathematics",
+        grade_level="Primary 4",
+        question_type="essay",
+        question_text="Explain how you would budget ₦10,000 for a week.",
+        marks=5,
+        correct_answer="= 5 × 1000 = ₦5,000 ... " * 5,  # far longer than 1 char
+    )
+    assert len(item.correct_answer) > 1

@@ -2,11 +2,32 @@
 
 from __future__ import annotations
 
-from fasthtml.common import Div, P, Strong, H2, Span
+from fasthtml.common import (
+    A,
+    Button as HtmlButton,
+    Div,
+    Form,
+    H2,
+    H4,
+    Input,
+    P,
+    Span,
+    Strong,
+    Textarea,
+    Label,
+    NotStr,
+)
 
-from faststrap import Badge, Button, Card
+from faststrap import Badge, Button, Card, Row, Col, Icon
 
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES
+from app.utils.exam_utils import format_mcq_option
+
+def render_rich_text(text: str) -> Span:
+    """Render text with math equation delimiters so KaTeX auto-renders it."""
+    if not text:
+        return Span("")
+    return Span(text, cls="math-content")
 
 _STATUS_BADGE = {
     "generation_requested": ("Generating", "info"),
@@ -30,16 +51,30 @@ _state_of = state_of
 
 
 def StatusBadge(exam: dict):
+    """Status badge matching the prototype design.
+
+    Prototype uses Tailwind classes:
+      - approved:   bg-emerald-100 text-emerald-800 border-emerald-200  + dot
+      - review:     bg-purple-100 text-purple-800 border-purple-200     + dot
+      - generating: bg-blue-100 text-blue-800 border-blue-200           + dot
+      - draft:      bg-gray-100 text-gray-700 border-gray-200            + dot
+      - failed:     bg-red-100 text-red-800 border-red-200              + dot
+    """
     state = state_of(exam)
-    if state == "failed":
-        return Span("Failed", cls="badge-status badge-status-failed")
-    if state == "approved":
-        return Span("Approved", cls="badge-status badge-status-approved")
-    if state in {"teacher_review", "final_submitted_by_teacher", "refinement_requested"}:
-        return Span("Under Review", cls="badge-status badge-status-review")
-    if state == "generation_requested":
-        return Span("Generating", cls="badge-status badge-status-generating")
-    return Span("Draft", cls="badge-status badge-status-draft")
+    label_map = {
+        "approved": ("Approved", "badge-status-approved"),
+        "failed": ("Failed", "badge-status-failed"),
+        "teacher_review": ("Under Review", "badge-status-review"),
+        "final_submitted_by_teacher": ("Under Review", "badge-status-review"),
+        "refinement_requested": ("Refining", "badge-status-review"),
+        "generation_requested": ("Generating", "badge-status-generating"),
+    }
+    label, cls = label_map.get(state, ("Draft", "badge-status-draft"))
+    return Span(
+        Span(cls="w-1.5 h-1.5 rounded-full bg-current opacity-70 d-inline-block me-1"),
+        label,
+        cls=f"badge-status {cls}",
+    )
 
 
 def action_buttons(exam: dict, user: dict) -> list:
@@ -55,12 +90,21 @@ def action_buttons(exam: dict, user: dict) -> list:
     if state == "failed":
         return [
             Button(
+                "Delete and start over",
+                hx_delete=f"/ui/exams/{exam['id']}",
+                hx_confirm="This permanently deletes the failed exam. Continue?",
+                hx_target="#exam-detail-view",
+                hx_swap="outerHTML",
+                variant="danger",
+                cls="btn-brand",
+            ),
+            Button(
                 "Try again",
                 as_="a",
                 href="/app/exams/new",
                 variant="primary",
                 cls="btn-brand",
-            )
+            ),
         ]
 
     # F23/F29: Refine needs the textarea (rendered in _refine_panel), the
@@ -71,9 +115,13 @@ def action_buttons(exam: dict, user: dict) -> list:
                 "Refine with AI",
                 hx_post=f"/ui/exams/{exam['id']}/refine",
                 hx_include="#refine-feedback",
-                hx_target="#exam-actions",
+                hx_target="#exam-detail-view",
                 hx_swap="outerHTML",
                 hx_indicator="#refine-spinner",
+                **{
+                    "hx-on::before-request": "this.innerHTML='<span class=\\'spinner-border spinner-border-sm me-2\\'></span>Regenerating…'; this.disabled=true;",
+                    "hx-on::after-request": "this.innerHTML='Refine with AI'; this.disabled=false;",
+                },
                 variant="outline-secondary",
             )
         )
@@ -163,11 +211,11 @@ def action_buttons(exam: dict, user: dict) -> list:
         )
 
     buttons.append(
-        Button(
+        A(
             "Print",
-            type="button",
+            href=f"/app/exams/{exam_id}/print",
+            target="_blank",
             cls="btn btn-sm btn-outline-dark rounded-pill no-print",
-            onclick="window.print()",
         )
     )
 
@@ -188,98 +236,383 @@ def action_buttons(exam: dict, user: dict) -> list:
     return buttons
 
 
-def QuestionBlock(q: dict, number: int, show_answers: bool):
-    """Render a single question (sec 6.6). FastHTML auto-escapes text."""
-    parts = [Div(Strong(f"Q{number}. "), q.get("question_text", ""), cls="mb-1")]
+def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = False, exam_id: str = "", user: dict = None, section_title: str = ""):
+    """Render a single question matching P06_exam_detail_questions_desktop.png.
+
+    Collapsible card with number pill, type badge, section label, marks pill,
+    collapse chevron, 2-column MCQ options grid with correct answer highlight,
+    and Edit question button.
+    """
+    user = user or {}
+    qid = str(q.get("id") or "")
+    q_type_raw = str(q.get("type") or "mcq").lower()
+    if "mcq" in q_type_raw or "choice" in q_type_raw:
+        type_label = "Mcq"
+    elif "short" in q_type_raw:
+        type_label = "Short Answer"
+    elif "essay" in q_type_raw:
+        type_label = "Essay"
+    elif "true" in q_type_raw:
+        type_label = "True / False"
+    else:
+        type_label = q_type_raw.replace("_", " ").title()
+
+    marks = q.get("marks", 1)
+    marks_str = f"{marks} mark" if marks == 1 else f"{marks} marks"
+    section_label = section_title or q.get("section_name") or f"Section {q.get('section_number', 'A')}"
+    correct_ans = (q.get("correct_answer") or "").strip()
+
+    # Question header row: Number pill, Type badge, Section, Marks, Chevron
+    card_id = f"question-card-{number}"
+    collapse_id = f"q-collapse-{number}"
+
+    # Question text: Persistent and always readable!
+    q_text_display = Div(
+        render_rich_text(q.get("question_text", "")),
+        cls="my-2 text-dark fw-medium fs-6 cursor-pointer",
+        style="line-height:1.55; cursor:pointer;",
+        **{
+            "data-bs-toggle": "collapse",
+            "data-bs-target": f"#{collapse_id}",
+            "aria-expanded": "true",
+            "aria-controls": collapse_id,
+        },
+    )
+
+    # Body details: Collapsed/expanded when toggled
+    body_parts = []
+
     options = q.get("options") or []
     if options:
-        # F26: render MC options as a proper ordered list.
-        parts.append(
-            Div(
-                *[
-                    P(opt, cls="mb-0 small text-muted")
-                    for opt in options
-                ],
-                cls="ms-4 mb-1",
+        mcq_cols = []
+        for idx, opt in enumerate(options):
+            opt_str = format_mcq_option(opt, idx)
+            # Check if this option is the correct answer (e.g. letter matches or full text matches)
+            letter = chr(65 + idx)
+            is_correct = False
+            if correct_ans:
+                if correct_ans.upper() == letter or correct_ans.upper().startswith(letter + ".") or opt_str.strip() == correct_ans:
+                    is_correct = True
+            
+            box_cls = "mcq-option-box is-correct" if is_correct else "mcq-option-box"
+            opt_content = [
+                Span(render_rich_text(opt_str)),
+            ]
+            if is_correct:
+                opt_content.append(Span("✔", cls="mcq-correct-icon"))
+
+            mcq_cols.append(
+                Col(
+                    Div(*opt_content, cls=box_cls),
+                    cls="col-12 col-md-6",
+                )
             )
+        body_parts.append(
+            Div(Row(*mcq_cols, cls="g-2 mb-3"))
         )
+
     if q.get("sub_parts"):
-        parts.append(
-            Div(
-                *[
+        sub_items = []
+        for sp in q["sub_parts"]:
+            if isinstance(sp, dict):
+                sub_items.append(
                     P(
-                        f"({sp.get('part', '?')}) {sp.get('question', '')} "
-                        f"[{sp.get('marks', 0)} marks]",
-                        cls="mb-0 small",
+                        Span(f"({sp.get('part', '?')}) ", cls="fw-semibold text-dark"),
+                        render_rich_text(sp.get("question", "")),
+                        Span(f" [{sp.get('marks', 0)} marks]", cls="text-muted ms-1"),
+                        cls="mb-1 small",
                     )
-                    for sp in q["sub_parts"]
-                    if isinstance(sp, dict)
-                ],
-                cls="ms-4 mb-1 text-muted",
+                )
+        body_parts.append(Div(*sub_items, cls="ms-3 mb-2"))
+
+    if q.get("explanation") and show_answers:
+        body_parts.append(
+            Div(
+                Strong("Explanation: ", cls="text-success small"),
+                Span(render_rich_text(q["explanation"]), cls="small text-muted"),
+                cls="p-2 bg-light rounded-3 mb-2",
             )
         )
-    line = f"[{q.get('marks', 0)} marks]"
-    if q.get("difficulty"):
-        line += f" - {q['difficulty']}"
-    parts.append(P(line, cls="mb-0 small text-muted"))
 
-    if show_answers:
-        ans = []
-        if q.get("correct_answer"):
-            ans.append(f"Answer: {q['correct_answer']}")
-        if q.get("explanation"):
-            ans.append(q["explanation"])
-        if ans:
-            parts.append(P(" - ".join(ans), cls="mb-0 small text-success"))
+    # Edit & Delete Action Buttons + Modals
+    edit_modal = Div()
+    delete_modal = Div()
+    if can_edit and qid and exam_id:
+        delete_modal_id = f"deleteQuestionModal-{exam_id}-{qid}"
+        action_buttons = [
+            Button(
+                Icon("pencil", cls="bi me-1"),
+                "Edit question",
+                type="button",
+                variant="light",
+                size="sm",
+                cls="rounded-pill px-3 py-1 text-muted border me-2",
+                style="font-size:0.82rem; background:#f8fafc;",
+                **{"data-bs-toggle": "modal", "data-bs-target": f"#editQuestionModal-{exam_id}-{qid}"},
+            ),
+            Button(
+                Icon("trash", cls="bi me-1 text-danger"),
+                "Delete",
+                type="button",
+                variant="light",
+                size="sm",
+                cls="rounded-pill px-3 py-1 text-danger border",
+                style="font-size:0.82rem; background:#fff1f2; border-color:#fecdd3 !important;",
+                **{"data-bs-toggle": "modal", "data-bs-target": f"#{delete_modal_id}"},
+            ),
+        ]
+        body_parts.append(
+            Div(*action_buttons, cls="mt-3 d-flex align-items-center"),
+        )
 
-    return Div(*parts, cls="mb-3 pb-2 border-bottom print-avoid-break")
+        # Hand-crafted delete modal — NOT using ConfirmDialog because faststrap's ConfirmDialog
+        # puts data-bs-dismiss on the confirm button, which causes Bootstrap to destroy the DOM
+        # element before HTMX can fire the DELETE request. Instead we close the modal via
+        # hx-on::before-request (fires inside HTMX's pipeline, before the request is sent).
+        delete_modal = Div(
+            Div(
+                Div(
+                    Div(
+                        Strong(f"Delete Question {number}", cls="fs-5 fw-bold text-dark d-block"),
+                        Span(
+                            f"Are you sure you want to delete Question {number}? "
+                            "Remaining questions will be automatically renumbered and total marks recalculated.",
+                            cls="text-muted small mt-1 d-block",
+                        ),
+                    ),
+                    HtmlButton("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
+                    cls="modal-header border-0 pb-2 d-flex justify-content-between align-items-start",
+                ),
+                Div(
+                    HtmlButton("Cancel", type="button", cls="btn btn-light rounded-pill px-4 py-2 me-2", **{"data-bs-dismiss": "modal"}),
+                    HtmlButton(
+                        "Delete Question",
+                        type="button",
+                        cls="btn btn-danger rounded-pill px-4 py-2",
+                        **{
+                            "hx-delete": f"/ui/exams/{exam_id}/questions/{qid}",
+                            "hx-target": "#tab-content",
+                            "hx-swap": "innerHTML",
+                            # Close the modal BEFORE HTMX fires — avoids data-bs-dismiss destroying
+                            # the element before the request is sent.
+                            "hx-on::before-request": (
+                                f"var m=bootstrap.Modal.getInstance(document.getElementById('{delete_modal_id}'));"
+                                "if(m)m.hide();"
+                            ),
+                        },
+                    ),
+                    cls="modal-footer border-0 pt-3 pb-4 px-4 d-flex justify-content-end",
+                ),
+                cls="modal-content border-0 shadow-lg rounded-4 p-2",
+            ),
+            cls="modal-dialog modal-dialog-centered",
+        )
+        delete_modal = Div(delete_modal, cls="modal fade", id=delete_modal_id, tabindex="-1", **{"aria-hidden": "true"})
+
+        edit_modal = Div(
+            Div(
+                Div(
+                    Div(
+                        Div(
+                            Strong(f"Edit Question {number}", cls="fs-5 fw-bold text-dark d-block"),
+                            Span("Update question details. Total exam marks will recalculate automatically.", cls="text-muted small"),
+                        ),
+                        HtmlButton("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
+                        cls="modal-header border-0 pb-2 d-flex justify-content-between align-items-start",
+                    ),
+                    Form(
+                        Div(
+                            Div(
+                                Label("Question text", cls="form-label small fw-semibold"),
+                                Textarea(
+                                    q.get("question_text", ""),
+                                    name="question_text",
+                                    cls="form-control rounded-3",
+                                    rows=3,
+                                    required=True,
+                                ),
+                                cls="mb-3",
+                            ),
+                            Div(
+                                Label("Options (one per line for MCQ)", cls="form-label small fw-semibold"),
+                                Textarea(
+                                    "\n".join(options or []),
+                                    name="options",
+                                    cls="form-control rounded-3 font-monospace",
+                                    rows=max(2, len(options or [])),
+                                ),
+                                cls="mb-3",
+                            ),
+                            Div(
+                                Row(
+                                    Col(
+                                        Label("Correct answer (e.g. A or full answer)", cls="form-label small fw-semibold"),
+                                        Input("correct_answer", value=q.get("correct_answer", ""), cls="form-control rounded-3"),
+                                        md=6,
+                                    ),
+                                    Col(
+                                        Label("Marks", cls="form-label small fw-semibold"),
+                                        Input("marks", type="number", value=q.get("marks", 1), min=1, max=100, cls="form-control rounded-3"),
+                                        md=6,
+                                    ),
+                                    cls="g-3",
+                                ),
+                                cls="mb-3",
+                            ),
+                            Div(
+                                Label("Explanation", cls="form-label small fw-semibold"),
+                                Textarea(
+                                    q.get("explanation", ""),
+                                    name="explanation",
+                                    cls="form-control rounded-3",
+                                    rows=2,
+                                ),
+                                cls="mb-3",
+                            ),
+                            Input("_workflow_state", type="hidden", value=user.get("workflow_state", "")),
+                            Input("_status", type="hidden", value=user.get("status", "")),
+                            Div(id=f"edit-result-{qid}", cls="mb-2"),
+                            cls="modal-body py-2 px-4",
+                        ),
+                        Div(
+                            Button("Cancel", type="button", variant="light", cls="rounded-pill px-3 me-2", **{"data-bs-dismiss": "modal"}),
+                            Button("Save changes", type="submit", variant="success", cls="btn-brand rounded-pill px-4"),
+                            cls="modal-footer border-0 pt-2 pb-4 px-4",
+                        ),
+                        hx_post=f"/ui/exams/{exam_id}/questions/{qid}/edit",
+                        hx_target=f"#edit-result-{qid}",
+                        hx_swap="innerHTML",
+                    ),
+                    cls="modal-content border-0 shadow-lg rounded-4",
+                ),
+                cls="modal-dialog modal-dialog-centered",
+            ),
+            cls="modal fade",
+            id=f"editQuestionModal-{exam_id}-{qid}",
+            tabindex="-1",
+            **{"aria-hidden": "true"},
+        )
+
+    # Question Card Container
+    header_toggle = Div(
+        Div(
+            Span(str(number), cls="app-q-num-pill me-2"),
+            Span(type_label, cls="app-q-type-badge me-2"),
+            Span(section_label, cls="app-q-section-label"),
+            cls="d-flex align-items-center flex-wrap gap-1",
+        ),
+        Div(
+            Span(marks_str, cls="app-q-marks-pill me-2"),
+            Icon("chevron-down", cls="bi text-muted collapse-chevron", style="transition:transform 0.2s ease; font-size:0.85rem;"),
+            cls="d-flex align-items-center",
+        ),
+        cls="d-flex justify-content-between align-items-center cursor-pointer",
+        style="cursor:pointer; user-select:none;",
+        **{
+            "data-bs-toggle": "collapse",
+            "data-bs-target": f"#{collapse_id}",
+            "aria-expanded": "true",
+            "aria-controls": collapse_id,
+        },
+    )
+
+    card = Div(
+        header_toggle,
+        q_text_display,
+        Div(
+            Div(*body_parts, cls="pt-3 border-top mt-2"),
+            id=collapse_id,
+            cls="collapse show",
+        ),
+        id=card_id,
+        cls="app-question-card mb-3",
+    )
+
+    elements = [card]
+    if edit_modal:
+        elements.append(edit_modal)
+    if delete_modal:
+        elements.append(delete_modal)
+    return Div(*elements)
 
 
 def PassageBlock(p: dict):
     """Render a comprehension passage once (sec 6.6)."""
     parts = []
     if p.get("title"):
-        # F27: passage title as a heading for screen readers.
         parts.append(H2(p.get("title"), cls="h5 mb-2"))
     parts.append(P(p.get("body", ""), cls="mb-0"))
     return Div(
         P("Read the passage and answer the questions that follow.", cls="text-muted small mb-2"),
         *parts,
-        cls="p-3 mb-3 border-start border-4 border-success",
+        cls="p-3 mb-3 border-start border-4 border-success bg-light rounded-2",
     )
 
 
-def render_questions(exam: dict, show_answers: bool = False):
-    """Render questions grouped by passage (F17 dedupes PassageBlock).
+def SectionHeader(title: str, count: int = 0, total_marks: int = 0):
+    """Clean Nigerian exam section header dividing objectives, theory, essay."""
+    meta = f"{count} question" if count == 1 else f"{count} questions"
+    if total_marks:
+        meta += f" · {total_marks} marks"
+    return Div(
+        Div(
+            H4(title, cls="fs-6 fw-bold text-dark mb-0"),
+            Span(meta, cls="badge bg-light text-secondary border fw-medium px-2 py-1 rounded-pill", style="font-size:0.75rem;"),
+            cls="d-flex justify-content-between align-items-center",
+        ),
+        cls="app-exam-section-header bg-white border rounded-3 p-3 mb-3 shadow-xs mt-4",
+    )
 
-    The API returns a flat question list + a passages list; questions link a
-    passage via ``passage_id``. Comprehension questions render beneath their
-    passage; all others in sequence.  F32: drop per-question Card chrome.
-    """
+
+def render_questions(exam: dict, show_answers: bool = False, can_edit: bool = False, user: dict = None):
+    """Render questions with Nigerian section headers (Objectives, Theory, Essay)."""
     from fasthtml.common import Div as _Div
 
     questions = exam.get("questions") or []
     passages = exam.get("passages") or []
     passage_by_id = {str(p.get("id")): p for p in passages if p.get("id")}
+    exam_id = str(exam.get("id") or "")
+    user = user or {}
 
-    rendered = []
-    standalone = []
-    for idx, q in enumerate(questions, start=1):
-        pid = q.get("passage_id")
-        if pid and str(pid) in passage_by_id:
-            rendered.append((passage_by_id[str(pid)], q, idx))
-        else:
-            standalone.append((None, q, idx))
+    def get_section_info(q):
+        sec_name = q.get("section_name")
+        sec_num = q.get("section_number") or 1
+        q_type = (q.get("question_type") or "").lower()
+        if sec_name:
+            return sec_num, sec_name
+        if sec_num == 1 or "choice" in q_type or "mcq" in q_type:
+            return 1, "Section A (Objectives)"
+        elif sec_num == 2 or "short" in q_type:
+            return 2, "Section B (Theory)"
+        elif sec_num == 3 or "essay" in q_type:
+            return 3, "Section C (Essay)"
+        return sec_num, f"Section {sec_num}"
+
+    # Pre-calculate section question counts and marks
+    sec_counts: dict[str, int] = {}
+    sec_marks: dict[str, int] = {}
+    for q in questions:
+        _, s_title = get_section_info(q)
+        sec_counts[s_title] = sec_counts.get(s_title, 0) + 1
+        sec_marks[s_title] = sec_marks.get(s_title, 0) + (q.get("marks") or 1)
 
     out = []
-    # F17: render each unique passage once even if multiple questions share it.
     seen_passages: set = set()
-    for p, q, n in rendered:
-        if p.get("id") not in seen_passages:
-            out.append(PassageBlock(p))
-            seen_passages.add(p.get("id"))
-        out.append(QuestionBlock(q, n, show_answers))
-    out += [QuestionBlock(q, n, show_answers) for _, q, n in standalone]
+    current_section = None
+
+    for idx, q in enumerate(questions, start=1):
+        _, s_title = get_section_info(q)
+        if s_title != current_section:
+            current_section = s_title
+            out.append(SectionHeader(s_title, sec_counts.get(s_title, 0), sec_marks.get(s_title, 0)))
+
+        pid = q.get("passage_id")
+        if pid and str(pid) in passage_by_id and pid not in seen_passages:
+            out.append(PassageBlock(passage_by_id[str(pid)]))
+            seen_passages.add(pid)
+
+        out.append(QuestionBlock(q, idx, show_answers, can_edit=can_edit, exam_id=exam_id, user=user))
+
     return _Div(*out)
 
 

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
         description="development, staging, release, production",
     )
     debug: bool = True
-    log_level: str = "INFO"
+    log_level: str = "INFO" 
 
     @field_validator("app_env", mode="before")
     @classmethod
@@ -74,7 +74,9 @@ class Settings(BaseSettings):
     # LLM providers ("Groq" primary, OpenRouter fallback)
     groq_api_key: str
     groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "qwen/qwen3.8-27b"
     openrouter_api_key: str = ""
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
 
     # Background retries (Postgres-backed jobs)
     background_retry_attempts: int = 3

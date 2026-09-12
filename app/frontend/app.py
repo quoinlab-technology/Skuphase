@@ -8,7 +8,7 @@ tokens from M2 onwards.
 
 from pathlib import Path
 
-from fasthtml.common import FastHTML, Link
+from fasthtml.common import FastHTML, Link, Script
 from faststrap import add_bootstrap, mount_assets
 
 from app.config.settings import get_settings
@@ -39,12 +39,40 @@ add_bootstrap(
     frontend_app,
     mode="light",
     font_family=FONT_FAMILY,
+    include_modern_toast=True,
 )
 
 # Brand CSS mounted after Faststrap so local tokens override cleanly (sec 3).
 # Preload avoids flash of unstyled content.
 frontend_app.hdrs.append(Link(rel="preload", href="/assets/css/custom.css", as_="style"))
 frontend_app.hdrs.append(Link(rel="stylesheet", href="/assets/css/custom.css"))
+
+# KaTeX for LaTeX scientific math, physics & chemistry formulas (offline-resilient)
+frontend_app.hdrs.append(Link(rel="stylesheet", href="/assets/vendor/katex/katex.min.css"))
+frontend_app.hdrs.append(Script(src="/assets/vendor/katex/katex.min.js", defer=True))
+frontend_app.hdrs.append(Script(src="/assets/vendor/katex/mhchem.min.js", defer=True))
+frontend_app.hdrs.append(Script(src="/assets/vendor/katex/auto-render.min.js", defer=True))
+frontend_app.hdrs.append(Script("""
+document.addEventListener('DOMContentLoaded', function() {
+    function renderMath() {
+        if (typeof renderMathInElement === 'function') {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\\\(', right: '\\\\)', display: false},
+                    {left: '\\\\[', right: '\\\\]', display: true}
+                ],
+                throwOnError: false
+            });
+        }
+    }
+    renderMath();
+    document.body.addEventListener('htmx:afterSwap', function() {
+        renderMath();
+    });
+});
+"""))
 
 # App-owned static assets (css/img) served from /assets (never /static).
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"

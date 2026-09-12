@@ -230,9 +230,16 @@ def register_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
+        account_type = user.get("account_type") or ""
         role = user.get("role") or ""
         is_admin = role == "school_admin"
         flash = pop_flash(req)
+
+        # Individual teachers are not part of a school and cannot access proposals.
+        # Redirect with an explanatory message rather than letting the 403 bubble.
+        if account_type == "individual_teacher":
+            push_flash(req, "Generation proposals are a school feature. As an individual teacher, you can generate exams directly from your dashboard.", "info")
+            return RedirectResponse("/app", status_code=303)
 
         status_filter = req.query_params.get("status", "")
         q = req.query_params.get("q", "").strip().lower()

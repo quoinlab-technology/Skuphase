@@ -17,6 +17,26 @@ ALLOWED_BLOOM = {
     "evaluate",
     "create",
 }
+# British -> American spelling aliases for Bloom's taxonomy. LLMs are
+# inconsistent (e.g. "analyse" vs "analyze"), so we normalize before any
+# comparison or persistence. Without this, valid British-spelled levels
+# would fail quality validation and kill an otherwise-fine generation.
+_BLOOM_SPELLING_ALIASES = {
+    "analyse": "analyze",
+}
+
+
+def normalize_bloom_level(value: Any) -> Optional[str]:
+    """Return the canonical, lowercase, American-spelled Bloom level or None.
+
+    Accepts case and British/American spelling variants, e.g. all of
+    "Analyse", "ANALYZE", "Analyze", "analyse" -> "analyze".
+    """
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    raw = _BLOOM_SPELLING_ALIASES.get(raw, raw)
+    return raw if raw in ALLOWED_BLOOM else None
 US_BIAS_TOKENS = {
     "dollar",
     "miles",
@@ -125,7 +145,7 @@ class ExamQualityValidator:
                         difficulty_counts[difficulty] += 1
 
                 bloom = q.get("bloom_level")
-                if bloom and bloom not in ALLOWED_BLOOM:
+                if bloom and normalize_bloom_level(bloom) is None:
                     errors.append(
                         f"Section {req_section.section_number} question {idx} has invalid "
                         f"Bloom level '{bloom}'."

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from starlette.requests import Request
 
-from fasthtml.common import Div
+from fasthtml.common import Div, Script
 from faststrap import Alert, ModernToast, ToastContainer
 
 _FLASH_KEY = "flash"
@@ -72,7 +72,7 @@ def Flash(message: str, variant: str = "info"):
     )
 
 
-def show_toast(message: str, variant: str = "info", title: str | None = None):
+def show_toast(message: str, variant: str = "info", title: str | None = None, **kwargs):
     """Return a ModernToast for HTMX partial responses or flash conversions.
 
     Usage::
@@ -90,6 +90,7 @@ def show_toast(message: str, variant: str = "info", title: str | None = None):
         intent=intent,
         duration=5000,
         dismissible=True,
+        **kwargs,
     )
 
 
@@ -119,6 +120,77 @@ def app_toast_container(toast=None):
 
     If an initial toast (e.g. from flash on redirect) is provided, it is mounted
     directly inside the container so it appears immediately on page load.
+    Includes an active runtime script for auto-dismissal and close button handling.
     """
     toasts = [toast] if toast is not None else []
-    return ToastContainer(*toasts, position="bottom-end", container_id="app-toast-container")
+    dismiss_script = Script("""
+    (function() {
+      function dismissToastEl(el) {
+        if (!el || el._isDismissing) return;
+        el._isDismissing = true;
+        el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(10px) scale(0.96)';
+        setTimeout(function() {
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        }, 320);
+      }
+
+      function bindToast(toastEl) {
+        if (!toastEl || toastEl._toastBound) return;
+        toastEl._toastBound = true;
+
+        var duration = parseInt(toastEl.getAttribute('data-fs-duration') || '4500', 10);
+        var timer = null;
+        if (duration > 0) {
+          timer = setTimeout(function() {
+            dismissToastEl(toastEl);
+          }, duration);
+        }
+
+        toastEl.addEventListener('mouseenter', function() {
+          if (timer) { clearTimeout(timer); timer = null; }
+        });
+        toastEl.addEventListener('mouseleave', function() {
+          if (!toastEl._isDismissing && duration > 0) {
+            timer = setTimeout(function() {
+              dismissToastEl(toastEl);
+            }, 2500);
+          }
+        });
+
+        var closeBtns = toastEl.querySelectorAll('.btn-close, [data-fs-dismiss="true"], [data-bs-dismiss="toast"]');
+        closeBtns.forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (timer) clearTimeout(timer);
+            dismissToastEl(toastEl);
+          });
+        });
+      }
+
+      function initAllToasts() {
+        var toastSel = '.' + ['faststrap', 'modern', 'toast'].join('-');
+        var toasts = document.querySelectorAll(toastSel + ', [data-fs-modern-toast], #app-toast-container .toast, #app-toast-container [role="status"], #app-toast-container [role="alert"]');
+        toasts.forEach(bindToast);
+      }
+
+      if (document.readyState !== 'loading') {
+        initAllToasts();
+      } else {
+        document.addEventListener('DOMContentLoaded', initAllToasts);
+      }
+
+      document.addEventListener('htmx:afterSwap', function() {
+        setTimeout(initAllToasts, 20);
+      });
+      document.addEventListener('htmx:oobAfterSwap', function() {
+        setTimeout(initAllToasts, 20);
+      });
+    })();
+    """)
+    return Div(
+        ToastContainer(*toasts, position="bottom-end", container_id="app-toast-container"),
+        dismiss_script,
+    )

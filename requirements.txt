@@ -4,52 +4,52 @@
 # =============================================================================
 
 # WEB FRAMEWORK
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
+fastapi
+uvicorn[standard]
 
 # DATABASE
-sqlalchemy[asyncio]==2.0.25
-asyncpg==0.29.0
-psycopg2-binary==2.9.9        # Sync driver for Alembic migrations
-alembic==1.13.1
+sqlalchemy[asyncio]
+asyncpg
+psycopg2-binary       # Sync driver for Alembic migrations
+alembic
 
 # AUTHENTICATION & SECURITY
-passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
-python-jose[cryptography]==3.3.0
-cryptography==42.0.2
+passlib[bcrypt]
+bcrypt
+python-jose[cryptography]
+cryptography
 
 # VALIDATION & SERIALIZATION
-pydantic==2.5.3
-pydantic-settings==2.1.0
-email-validator==2.1.0
+pydantic
+pydantic-settings
+email-validator
 
 # LLM PROVIDERS (Groq primary, OpenRouter fallback; OpenAI-compatible clients)
-openai==1.10.0
+openai
 
 # EMAIL DELIVERY
-aiosmtplib==3.0.1             # SMTP (Gmail App Password) provider
-httpx==0.26.0                 # Resend HTTP API provider + test client
+aiosmtplib         # SMTP (Gmail App Password) provider
+httpx          # Resend HTTP API provider + test client
 
 # FILE EXPORT
-reportlab==4.0.9              # PDF generation (platypus)
+reportlab            # PDF generation (platypus)
 
 # UTILITIES
-python-dotenv==1.0.1          # .env loading for pydantic-settings
+python-dotenv          # .env loading for pydantic-settings
 
 # -----------------------------------------------------------------------------
 # TESTING (Development)
 # -----------------------------------------------------------------------------
-pytest==8.0.0
-pytest-asyncio==0.23.4
-pypdf==4.0.0                  # Export content assertions in tests
+pytest
+pytest-asyncio
+pypdf              # Export content assertions in tests
 
 # -----------------------------------------------------------------------------
 # CODE QUALITY (Development)
 # -----------------------------------------------------------------------------
-ruff==0.2.1
-black==24.1.1
-mypy==1.8.0
+ruff
+black
+mypy
 
 # =============================================================================
 # NOTES

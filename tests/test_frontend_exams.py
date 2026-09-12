@@ -5,6 +5,8 @@ tests stub that function so no database is required. Login is performed for real
 (via the auth router with a stubbed ``call_api``) to obtain a session cookie.
 """
 
+import json
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -163,17 +165,105 @@ def test_wizard_page_renders(client, logged_in):
 
 def test_wizard_all_steps_render(client, logged_in):
     logged_in(FakeResp(404, {"detail": "no curriculum yet"}))
-    for step in ("1", "2", "3"):
+    for step in ("1", "2", "3", "4"):
         r = client.get(f"/app/exams/new?step={step}", follow_redirects=False)
         assert r.status_code == 200
         assert "app-stepper" in r.text
+
+    # Step 1: Exam Scope verification
+    r1 = client.get("/app/exams/new?step=1")
+    assert "Exam Scope" in r1.text
+    assert "Total Marks" in r1.text
+    assert "Difficulty Preset" in r1.text
+    assert "Balanced" in r1.text
+    assert "Exam Prep" in r1.text
+    assert "CA Test" in r1.text
+    # Ensure NO field variable names bleed through into visible HTML
+    assert ">csrf_token" not in r1.text
+    assert ">exam_title" not in r1.text
+    assert ">total_marks" not in r1.text
+    assert ">difficulty_preset" not in r1.text
+    assert ">bloom_levels" not in r1.text
+    assert ">term" not in r1.text
+    assert ">weeks" not in r1.text
+
+
+    # Step 2: Curriculum coverage verification
+    r2 = client.get("/app/exams/new?step=2")
+    assert "Curriculum Coverage" in r2.text
+    assert "NERDC Curriculum Scope" in r2.text
+    assert "Focus Topics" in r2.text
+
+    # Step 3: Exam Structure verification
+    r3 = client.get("/app/exams/new?step=3")
+    assert "Exam Structure" in r3.text
+    assert "SECTION 1" in r3.text
+    assert "Section A: Objectives" in r3.text
+    assert "Add Section" in r3.text
+
+    # Step 4: Confirm & Review verification
+    r4 = client.get("/app/exams/new?step=4")
+    assert "Review" in r4.text
+    assert "Generate Exam" in r4.text
+
+
+def test_wizard_step1_navigation(client, logged_in):
+    logged_in(FakeResp(404, {"detail": "no curriculum yet"}))
+    r = client.post("/ui/exams/wizard/step1", data={
+        "grade_level": "Primary 4",
+        "subject": "Mathematics",
+        "term": "First Term",
+        "exam_title": "Primary 4 Mathematics — First Term Examination",
+        "total_marks": "100",
+        "difficulty_preset": "balanced",
+        "bloom_levels": ["Remember", "Understand", "Apply", "Analyse"],
+    })
+    assert r.status_code == 200
+    assert "Curriculum Coverage" in r.text
+    assert "NERDC Curriculum Scope" in r.text
+
+
+
 
 
 def test_manual_entry_page_renders(client, logged_in):
     logged_in(FakeResp(404, {"detail": "no curriculum yet"}))
     r = client.get("/app/exams/new/manual")
     assert r.status_code == 200
-    assert "question" in r.text.lower()
+    assert "Manual Exam" in r.text
+    assert "manual-question-editor" in r.text
+
+
+def test_exams_list_has_direct_ai_and_manual_actions(client, logged_in):
+    logged_in(FakeResp(200, EXAM_LIST))
+    r = client.get("/app/exams")
+    assert r.status_code == 200
+    assert "Generate with AI" in r.text
+    assert "Manual Exam" in r.text
+    assert 'href="/app/exams/new/manual"' in r.text
+    assert 'data-bs-target="#createExamModal"' not in r.text
+
+
+def test_manual_composer_submits_structured_questions(client, logged_in):
+    calls = logged_in(FakeResp(200, {"exam_id": "manual-1"}))
+    questions = [{
+        "question_number": 1,
+        "type": "multiple_choice",
+        "question_text": "What is 2 + 2?",
+        "marks": 2,
+        "options": ["3", "4", "5", "6"],
+    }]
+    r = client.post("/ui/exams/manual-submit", data={
+        "subject": "Mathematics",
+        "grade_level": "Primary 4",
+        "duration_minutes": "60",
+        "language": "English",
+        "questions_json": json.dumps(questions),
+    })
+    assert r.status_code == 200
+    assert "Open exam" in r.text
+    assert calls["last"][0:2] == ("POST", "/exams/manual-submit")
+    assert calls["last"][2]["questions"] == questions
 
 
 # ------------------------------------------------------------ detail + actions
@@ -230,3 +320,89 @@ def test_delete_action(client, logged_in):
     logged_in(FakeResp(204, {}))
     r = client.delete("/ui/exams/e1", follow_redirects=False)
     assert r.status_code in (200, 303)
+
+def test_exam_detail_renders_phase6_elements(client, logged_in):
+    logged_in(FakeResp(200, EXAM))
+    r = client.get("/app/exams/e1")
+    assert r.status_code == 200
+    assert "app-section-strip-card" in r.text
+    assert "Run Preflight" in r.text
+    assert "Approve" in r.text
+    assert "Questions" in r.text
+    assert "Preflight" in r.text
+    assert "Quality Report" in r.text
+    assert "Audit Comments" in r.text
+
+
+def test_exam_detail_approved_header_actions(client, logged_in):
+    approved_exam = {**EXAM, "workflow_state": "approved", "status": "approved"}
+    logged_in(FakeResp(200, approved_exam))
+    r = client.get("/app/exams/e1")
+    assert r.status_code == 200
+    assert "Export PDF" in r.text
+
+
+def test_edit_question_recalculates_marks(client, logged_in):
+    logged_in(FakeResp(200, {"id": "q1", "marks": 5, "total_marks": 15}))
+    r = client.post(
+        "/ui/exams/e1/questions/q1/edit",
+        data={"question_text": "Updated question?", "marks": "5", "options": "A\nB", "correct_answer": "A"},
+    )
+    assert r.status_code == 200
+    assert "recalculated" in r.text.lower()
+
+
+def test_resolve_audit_comment(client, logged_in):
+    logged_in([
+        FakeResp(200, {"message": "Audit comment resolved"}),
+        FakeResp(200, [{"id": "c1", "status": "resolved", "comment_text": "Need harder question"}]),
+    ])
+    r = client.post("/ui/exams/e1/comments/c1/resolve")
+    assert r.status_code == 200
+    assert "resolved" in r.text.lower()
+
+
+def test_delete_question_action(client, logged_in):
+    logged_in([
+        FakeResp(200, {'message': 'Question 1 deleted successfully'}),
+        FakeResp(200, EXAM),
+    ])
+    r = client.delete('/ui/exams/e1/questions/q1')
+    assert r.status_code == 200
+    assert 'deleted' in r.text.lower()
+
+
+def test_question_modal_populates_textarea(client, logged_in):
+    exam_with_q = {
+        **EXAM,
+        'questions': [
+            {
+                'id': 'q1',
+                'question_number': 1,
+                'question_text': 'What is the capital of Lagos State?',
+                'question_type': 'multiple_choice',
+                'options': ['Ikeja', 'Badagry', 'Epe', 'Ikorodu'],
+                'correct_answer': 'A',
+                'marks': 2,
+                'explanation': 'Ikeja is the capital.',
+            }
+        ]
+    }
+    logged_in(FakeResp(200, exam_with_q))
+    r = client.get('/app/exams/e1')
+    assert r.status_code == 200
+    # Ensure textarea contains the text as child, not just an empty tag
+    assert '>What is the capital of Lagos State?</textarea>' in r.text
+    assert '>Ikeja\nBadagry\nEpe\nIkorodu</textarea>' in r.text
+    assert '>Ikeja is the capital.</textarea>' in r.text
+
+
+def test_section_headers_rendered(client, logged_in):
+    logged_in(FakeResp(200, EXAM))
+    r = client.get('/app/exams/e1')
+    assert r.status_code == 200
+    # Section header should be present
+    assert 'app-exam-section-header' in r.text
+    assert 'Section A (Objectives)' in r.text
+    # Top toolbar with show answers should be present
+    assert 'Show answers &amp; explanations' in r.text or 'Show answers & explanations' in r.text

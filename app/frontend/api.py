@@ -18,6 +18,8 @@ from starlette.requests import Request
 
 FRIENDLY_403 = {
     "You are not allowed to browse question bank": "You do not have permission to browse the question bank.",
+    "You are not allowed to view proposals": "Generation proposals are only available for school staff accounts.",
+    "You are not allowed to create proposals": "Only school staff can submit generation proposals.",
 }
 
 
@@ -54,12 +56,41 @@ async def call_api(
 ) -> Any:
     """Forward an in-process request to ``/api/v1<path>``.
 
-    Returns the raw httpx Response. Tests may monkeypatch this function to
-    stub API behaviour without a database.
+    Returns the raw httpx Response. Automatically revalidates / refreshes expired
+    access tokens if a refresh token is present in the session.
     """
     client = _get_client()
     headers = auth_headers_from_session(request)
-    return await client.request(method, f"/api/v1{path}", json=json, params=params, headers=headers)
+    resp = await client.request(method, f"/api/v1{path}", json=json, params=params, headers=headers)
+
+    # Automatic token revalidation & refresh on 401.
+    # If the access token is expired and we have a refresh token, try to get a
+    # fresh pair and replay the original request.  On failure we simply return
+    # the original 401 — session cleanup / redirect is the responsibility of
+    # ensure_login, not this low-level helper (calling clear_auth here wiped
+    # the session during dashboard parallel fetches on the login redirect chain).
+    if resp.status_code == 401 and request and hasattr(request, "session"):
+        refresh_tok = request.session.get("refresh_token")
+        if refresh_tok and not path.endswith("/refresh-token"):
+            try:
+                refresh_resp = await client.post("/api/v1/auth/refresh-token", json={"refresh_token": refresh_tok})
+                if refresh_resp.is_success:
+                    tokens = refresh_resp.json()
+                    new_acc = tokens.get("access_token")
+                    if new_acc:
+                        request.session["access_token"] = new_acc
+                        if "refresh_token" in tokens:
+                            request.session["refresh_token"] = tokens["refresh_token"]
+                        if "user" in tokens:
+                            request.session["user"] = tokens["user"]
+                        request.session["_refreshed"] = True
+                        new_headers = {"Authorization": f"Bearer {new_acc}"}
+                        resp = await client.request(method, f"/api/v1{path}", json=json, params=params, headers=new_headers)
+                # If refresh fails, return original 401; ensure_login handles the redirect.
+            except Exception:
+                pass
+
+    return resp
 
 
 def unwrap(resp) -> tuple[bool, Any]:

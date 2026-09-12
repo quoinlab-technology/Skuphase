@@ -25,13 +25,13 @@ class FakeResp:
         return self._payload
 
 
-def _tokens(role="school_admin"):
+def _tokens(role="school_admin", account_type="school_staff"):
     return {
         "access_token": "at", "refresh_token": "rt", "token_type": "bearer",
         "expires_in": 3600,
         "user": {
             "user_id": "u1", "full_name": "Amina", "email": "a@b.com",
-            "role": role, "account_type": "school_staff",
+            "role": role, "account_type": account_type,
             "is_active": True, "is_verified": True,
         },
     }
@@ -60,8 +60,8 @@ def client():
     return TestClient(app)
 
 
-def _login(client, monkeypatch, role="school_admin"):
-    stub = ApiStub([("POST", "/auth/login", FakeResp(200, _tokens(role)))])
+def _login(client, monkeypatch, role="school_admin", account_type="school_staff"):
+    stub = ApiStub([("POST", "/auth/login", FakeResp(200, _tokens(role, account_type)))])
     monkeypatch.setattr("app.frontend.routes.auth.call_api", stub)
     r = client.post("/login", data={"email": "a@b.com", "password": "pw"})
     assert r.status_code in (200, 303)
@@ -214,5 +214,144 @@ def test_get_logout_and_register_routes(client, monkeypatch):
     for path in ("/register/school", "/register/individual"):
         r = client.get(path, follow_redirects=False)
         assert r.status_code == 200, f"{path} should render"
+
+
+# ---------------------------------------------------------------------------
+# Independent Audit Remediation Tests
+# ---------------------------------------------------------------------------
+
+def test_individual_teacher_role_separation(client, monkeypatch):
+    """An individual teacher must NOT see proposals in the sidebar nav."""
+    _login(client, monkeypatch, role="teacher", account_type="individual_teacher")
+    stub = ApiStub([
+        ("GET", "/exams", FakeResp(200, {"exams": []})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.dashboard.call_api", stub)
+
+    r = client.get("/app")
+    assert r.status_code == 200
+    assert "Generation Proposals" not in r.text
+    assert 'href="/app/exams"' in r.text
+    proposal_calls = [c for c in stub.calls if "proposals" in c["path"]]
+    assert len(proposal_calls) == 0
+
+
+def test_individual_teacher_proposals_redirect(client, monkeypatch):
+    """Accessing /app/proposals directly as individual teacher redirects to /app."""
+    _login(client, monkeypatch, role="teacher", account_type="individual_teacher")
+    r = client.get("/app/proposals", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/app"
+
+
+def test_staff_reactivation_submits_active_true(client, monkeypatch):
+    """Staff reactivation submit sends target_active=true to backend."""
+    _login(client, monkeypatch, role="school_admin")
+    stub = ApiStub([
+        ("PUT", "/users/u-suspended/status", FakeResp(200, {"message": "Updated"})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.staff.call_api", stub)
+
+    r = client.post(
+        "/app/staff/u-suspended/toggle-status",
+        data={"target_active": "true"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    put_calls = [c for c in stub.calls if c["method"] == "PUT" and "u-suspended" in c["path"]]
+    assert len(put_calls) == 1
+    assert put_calls[0]["json"] == {"is_active": True}
+
+
+def test_staff_deactivation_submits_active_false(client, monkeypatch):
+    """Staff deactivation submit sends target_active=false to backend."""
+    _login(client, monkeypatch, role="school_admin")
+    stub = ApiStub([
+        ("PUT", "/users/u-active/status", FakeResp(200, {"message": "Updated"})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.staff.call_api", stub)
+
+    r = client.post(
+        "/app/staff/u-active/toggle-status",
+        data={"target_active": "false"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    put_calls = [c for c in stub.calls if c["method"] == "PUT" and "u-active" in c["path"]]
+    assert len(put_calls) == 1
+    assert put_calls[0]["json"] == {"is_active": False}
+
+
+def test_curriculum_clean_urls_redirect(client):
+    """Clean URLs /app/curriculum/{class} and /{class}/{term} redirect properly."""
+    r = client.get("/app/curriculum/Primary%203", follow_redirects=False)
+    assert r.status_code == 302
+    assert "class_level=Primary" in r.headers["location"]
+
+    r2 = client.get("/app/curriculum/Primary%203/first", follow_redirects=False)
+    assert r2.status_code == 302
+    assert "class_level=Primary" in r2.headers["location"]
+    assert "term=first" in r2.headers["location"]
+
+
+def test_bank_add_route_alias(client, monkeypatch):
+    """POST /app/bank/add works as an alias to /app/bank/new."""
+    _login(client, monkeypatch, role="teacher")
+    stub = ApiStub([
+        ("POST", "/exams/question-bank/items", FakeResp(200, {"id": "item-123"})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.bank.call_api", stub)
+
+    r = client.post(
+        "/app/bank/add",
+        data={
+            "question_text": "What is 7 times 8?",
+            "subject": "Mathematics",
+            "grade_level": "Primary 4",
+            "question_type": "multiple_choice",
+            "difficulty": "medium",
+            "marks": "2",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/app/bank"
+    post_calls = [c for c in stub.calls if c["method"] == "POST" and "question-bank" in c["path"]]
+    assert len(post_calls) == 1
+    assert post_calls[0]["json"]["question_text"] == "What is 7 times 8?"
+
+
+def test_sidebar_links_can_navigate_freely(client, monkeypatch):
+    """Sidebar links must NOT have data-bs-dismiss="offcanvas" which breaks browser navigation."""
+    _login(client, monkeypatch, role="school_admin")
+    stub = ApiStub([
+        ("GET", "/exams", FakeResp(200, {"exams": []})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.dashboard.call_api", stub)
+    r = client.get("/app")
+    assert r.status_code == 200
+    # Ensure sidebar links exist with valid hrefs
+    assert 'href="/app/exams"' in r.text
+    assert 'href="/app/curriculum"' in r.text
+    assert 'href="/app/bank"' in r.text
+    # Ensure sidebar links do NOT have data-bs-dismiss which prevents navigation
+    # by invoking event.preventDefault() in Bootstrap's offcanvas click-handler
+    assert 'app-sidebar-link" data-bs-dismiss' not in r.text
+    assert 'data-bs-dismiss="offcanvas" class="app-sidebar-link' not in r.text
+
+
+def test_app_toast_container_has_dismissal_runtime(client, monkeypatch):
+    """AppShell toast container must render with dismissal runtime script."""
+    _login(client, monkeypatch, role="school_admin")
+    stub = ApiStub([
+        ("GET", "/exams", FakeResp(200, {"exams": []})),
+    ])
+    monkeypatch.setattr("app.frontend.routes.dashboard.call_api", stub)
+    r = client.get("/app")
+    assert r.status_code == 200
+    assert 'id="app-toast-container"' in r.text
+    assert 'dismissToastEl' in r.text
+
+
 
 

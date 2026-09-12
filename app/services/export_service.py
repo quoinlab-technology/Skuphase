@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from app.models.exam import Exam, Question
+from app.utils.exam_utils import format_mcq_option
 
 
 class ExportService:
@@ -61,6 +62,9 @@ class ExportService:
         questions: List[Question],
         include_answers: bool = False,
         passages: list | None = None,
+        school_name: str | None = None,
+        school_address: str | None = None,
+        school_logo_path: str | None = None,
     ) -> str:
         """
         Export exam to a fully word-wrapped PDF and return the file NAME.
@@ -81,6 +85,7 @@ class ExportService:
                 Spacer,
                 Table,
                 TableStyle,
+                Image as ReportLabImage,
             )
         except Exception as e:  # pragma: no cover - env without reportlab
             raise ValueError(f"PDF export dependencies are not available: {e}") from e
@@ -91,11 +96,20 @@ class ExportService:
         output_path = directory / file_name
 
         styles = getSampleStyleSheet()
+        school_name_style = ParagraphStyle(
+            "SchoolName", parent=styles["Title"], fontSize=15, leading=18, alignment=1, spaceAfter=1 * mm
+        )
+        school_addr_style = ParagraphStyle(
+            "SchoolAddr", parent=styles["Normal"], fontSize=9, leading=12, alignment=1, textColor="#555555", spaceAfter=2 * mm
+        )
         title_style = ParagraphStyle(
-            "ExamTitle", parent=styles["Title"], fontSize=16, spaceAfter=2 * mm
+            "ExamTitle", parent=styles["Heading1"], fontSize=12, leading=15, alignment=1, spaceAfter=2 * mm
         )
         meta_style = ParagraphStyle(
-            "ExamMeta", parent=styles["Normal"], fontSize=10, spaceAfter=1.5 * mm
+            "ExamMeta", parent=styles["Normal"], fontSize=9.5, leading=13, alignment=1, spaceAfter=1.5 * mm
+        )
+        instruction_style = ParagraphStyle(
+            "ExamInstructions", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=1 * mm
         )
         section_style = ParagraphStyle(
             "SectionHeader",
@@ -131,30 +145,98 @@ class ExportService:
 
         story: list = []
 
-        header = [
-            Paragraph(f"{esc(exam.subject)} — {esc(exam.grade_level)}", title_style),
+        header = []
+        if school_name:
+            header.append(Paragraph(f"<b>{esc(school_name.upper())}</b>", school_name_style))
+        if school_address:
+            header.append(Paragraph(f"{esc(school_address)}", school_addr_style))
+
+        header.append(Paragraph(f"<b>{esc(exam.subject).upper()} EXAMINATION — {esc(exam.grade_level).upper()}</b>", title_style))
+        header.append(
             Paragraph(
-                f"Duration: {exam.duration_minutes or '-'} minutes &nbsp;&nbsp;|&nbsp;&nbsp; "
-                f"Total Marks: {exam.total_marks}",
+                f"<b>Duration:</b> {exam.duration_minutes or '-'} minutes &nbsp;&nbsp;|&nbsp;&nbsp; "
+                f"<b>Total Marks:</b> {exam.total_marks}",
                 meta_style,
-            ),
-        ]
+            )
+        )
+
+        if include_answers:
+            answer_key_style = ParagraphStyle(
+                "AnswerKeyMasthead",
+                parent=styles["Heading2"],
+                fontSize=10,
+                leading=13,
+                alignment=1,
+                textColor="#b02a37",
+                spaceAfter=1 * mm,
+            )
+            header.append(Paragraph("<b>MARKING SCHEME / ANSWER KEY</b>", answer_key_style))
+
         if exam.instructions:
-            header.append(Paragraph("<b>Instructions</b>", meta_style))
+            header.append(Spacer(1, 1.5 * mm))
+            header.append(Paragraph("<b>INSTRUCTIONS:</b>", instruction_style))
             for line in cls._clean(exam.instructions).splitlines():
                 if line.strip():
-                    header.append(Paragraph(esc(line), meta_style))
-        story.append(Table([[header]], colWidths=[None]))
-        story[-1].setStyle(
-            TableStyle([
-                ("BOX", (0, 0), (-1, -1), 0.75, "#444444"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ])
-        )
+                    header.append(Paragraph(esc(line), instruction_style))
+
+        # Check for school logo
+        logo_flowable = None
+        if school_logo_path:
+            try:
+                lpath = Path(school_logo_path)
+                if not lpath.is_file() and str(school_logo_path).startswith("/"):
+                    candidate = Path(str(school_logo_path).lstrip("/"))
+                    if candidate.is_file():
+                        lpath = candidate
+                    elif (Path("app") / candidate).is_file():
+                        lpath = Path("app") / candidate
+                if lpath.is_file():
+                    logo_flowable = ReportLabImage(str(lpath), width=22 * mm, height=22 * mm)
+            except Exception:
+                logo_flowable = None
+
+        if logo_flowable:
+            header_table = Table([[logo_flowable, header]], colWidths=[26 * mm, None])
+            header_table.setStyle(
+                TableStyle([
+                    ("BOX", (0, 0), (-1, -1), 1, "#222222"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ])
+            )
+        else:
+            header_table = Table([[header]], colWidths=[None])
+            header_table.setStyle(
+                TableStyle([
+                    ("BOX", (0, 0), (-1, -1), 1, "#222222"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ])
+            )
+        story.append(header_table)
         story.append(Spacer(1, 4 * mm))
+
+        # Pre-compute section marks
+        section_marks: dict = {}
+        for q in questions:
+            stitle = getattr(q, "section_title", None)
+            if not stitle:
+                qtype = getattr(q, "type", "multiple_choice")
+                if qtype == "multiple_choice":
+                    stitle = "SECTION A — OBJECTIVE QUESTIONS"
+                elif qtype in ("short_answer", "theory"):
+                    stitle = "SECTION B — SHORT ANSWER / THEORY"
+                elif qtype == "essay":
+                    stitle = "SECTION C — ESSAY QUESTIONS"
+                else:
+                    stitle = "SECTION A"
+            section_marks[stitle] = section_marks.get(stitle, 0) + (getattr(q, "marks", 0) or 0)
 
         current_section = None
         rendered_passage_ids: set = set()
@@ -169,8 +251,26 @@ class ExportService:
             passage_meta[str(pid)] = (p_title, p_body, p_section)
 
         for q in questions:
-            if q.question_text and getattr(q, "section_title", None):
-                pass  # sections are flattened onto questions by numbering only
+            sec_title = getattr(q, "section_title", None)
+            if not sec_title:
+                qtype = getattr(q, "type", "multiple_choice")
+                if qtype == "multiple_choice":
+                    sec_title = "SECTION A — OBJECTIVE QUESTIONS"
+                elif qtype in ("short_answer", "theory"):
+                    sec_title = "SECTION B — SHORT ANSWER / THEORY"
+                elif qtype == "essay":
+                    sec_title = "SECTION C — ESSAY QUESTIONS"
+                else:
+                    sec_title = "SECTION A"
+
+            if sec_title != current_section:
+                current_section = sec_title
+                tot_m = section_marks.get(sec_title, 0)
+                marks_suffix = f" ({tot_m} MARKS)" if tot_m > 0 else ""
+                story.append(
+                    Paragraph(f"<b>{esc(sec_title.upper())}{marks_suffix}</b>", section_style)
+                )
+                story.append(Spacer(1, 1.5 * mm))
 
             pid = str(getattr(q, "passage_id", "") or "")
             if pid in passage_meta and pid not in rendered_passage_ids:
@@ -196,8 +296,9 @@ class ExportService:
             )
 
             if q.options:
-                for option in q.options:
-                    story.append(Paragraph(esc(str(option)), option_style))
+                for idx, option in enumerate(q.options):
+                    opt_str = format_mcq_option(str(option), idx)
+                    story.append(Paragraph(esc(opt_str), option_style))
 
             if include_answers:
                 if q.correct_answer:
@@ -209,7 +310,13 @@ class ExportService:
                 if q.explanation:
                     story.append(Paragraph(f"<i>{esc(q.explanation)}</i>", answer_style))
 
-            current_section = None  # noqa: F841 - kept for future section headers
+        if include_answers:
+            story.append(Spacer(1, 6 * mm))
+            footer_style = ParagraphStyle(
+                "TeacherOnlyFooter", parent=styles["Normal"], fontSize=8, leading=10, alignment=1, textColor="#777777"
+            )
+            story.append(Paragraph("<b>FOR TEACHER USE ONLY — NOT FOR DISTRIBUTION</b>", footer_style))
+
 
         doc = SimpleDocTemplate(
             str(output_path),

@@ -2,7 +2,8 @@
 
 import uuid
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+import json
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SchemeOfWorkResponse(BaseModel):
@@ -17,6 +18,17 @@ class SchemeOfWorkResponse(BaseModel):
     subtopics: List[str] = Field(default_factory=list)
     raw_content: Optional[str] = None
     is_exam_or_break: bool = False
+
+    @field_validator("subtopics", mode="before")
+    @classmethod
+    def _parse_subtopics(cls, v):
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else [v]
+            except Exception:
+                return [v] if v.strip() else []
+        return v or []
 
 
 class CurriculumSubjectResponse(BaseModel):

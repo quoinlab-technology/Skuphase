@@ -99,7 +99,7 @@ class Question(BaseModel):
     
     # MCQ fields
     options = Column(JSON)  # ["A. Option 1", "B. Option 2", ...]
-    correct_answer = Column(String(1))  # A, B, C, D
+    correct_answer = Column(Text)  # MCQ letter ("C") OR full model answer for essay/short-answer
     explanation = Column(Text)
     
     # Short answer/Essay fields

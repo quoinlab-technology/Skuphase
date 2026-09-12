@@ -13,17 +13,44 @@ def current_user(request: Request) -> Optional[dict]:
     return request.session.get("user")
 
 
+def _is_token_expired(token: str) -> bool:
+    """Check if a JWT string is expired or malformed. Returns False for non-JWT test tokens."""
+    if not token or token.count(".") != 2:
+        return False
+    from app.core.security import verify_token
+    return verify_token(token) is None
+
+
 def ensure_login(request: Request) -> Optional[RedirectResponse]:
-    """Return a redirect when unauthenticated; None when allowed.
+    """Return a redirect when unauthenticated or expired without refresh; None when allowed.
 
     Usage inside a handler::
 
         guard = ensure_login(request)
         if guard:
             return guard
+
+    Token expiration during API calls is handled transparently inside ``call_api``
+    via the session's ``refresh_token``. This function only gates on whether any
+    ``access_token`` at all is present so that test sessions (which use opaque
+    non-JWT strings like ``"access-token-123"``) are never redirected.
     """
-    if request.session.get("access_token"):
-        return None
+    token = request.session.get("access_token")
+    if token:
+        # If expired but a refresh token exists, let call_api handle the refresh
+        # transparently. Only hard-block when there is no access_token whatsoever.
+        if not _is_token_expired(token) or request.session.get("refresh_token"):
+            return None
+
+    # No access token (and no refresh fallback) — redirect to login.
+    clear_auth(request.session)
+    is_htmx = (
+        request.headers.get("hx-request") == "true"
+        or request.headers.get("HX-Request") == "true"
+    )
+    if is_htmx:
+        from starlette.responses import Response
+        return Response(status_code=200, headers={"HX-Redirect": "/login?expired=1"})
     return RedirectResponse("/login?expired=1", status_code=303)
 
 

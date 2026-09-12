@@ -44,13 +44,15 @@ class LLMService:
     }
     
     # Default model for exam generation
-    DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+    DEFAULT_GROQ_MODEL = getattr(settings, "groq_model", "qwen/qwen3.8-27b")
     
     def __init__(
         self,
         groq_api_key: Optional[str] = None,
         groq_base_url: Optional[str] = None,
         openrouter_api_key: Optional[str] = None,
+        groq_model: Optional[str] = None,
+        openrouter_model: Optional[str] = None,
     ):
         """
         Initialize LLM service.
@@ -59,10 +61,14 @@ class LLMService:
             groq_api_key: Groq API key (uses env var if not provided)
             groq_base_url: Groq base URL (uses env var if not provided)
             openrouter_api_key: OpenRouter API key for fallback
+            groq_model: Model name for Groq
+            openrouter_model: Model name for OpenRouter fallback
         """
         # Initialize Groq client (OpenAI-compatible)
         self.groq_api_key = groq_api_key or settings.groq_api_key
         self.groq_base_url = groq_base_url or settings.groq_base_url
+        self.groq_model = groq_model or getattr(settings, "groq_model", "qwen/qwen3.8-27b")
+        self.openrouter_model = openrouter_model or getattr(settings, "openrouter_model", "meta-llama/llama-3.3-70b-instruct")
         
         if self.groq_api_key:
             self.groq_client = AsyncOpenAI(
@@ -71,7 +77,7 @@ class LLMService:
                 timeout=settings.llm_timeout_seconds,
                 max_retries=1,
             )
-            logger.info(f"✅ Groq API client initialized: {self.groq_base_url}")
+            logger.info(f"✅ Groq API client initialized: {self.groq_base_url} (model: {self.groq_model})")
         else:
             self.groq_client = None
             logger.warning("⚠️ Groq API key not provided")
@@ -124,7 +130,7 @@ class LLMService:
         Raises:
             ValueError: If generation fails
         """
-        model = model or self.DEFAULT_GROQ_MODEL
+        model = model or getattr(self, "groq_model", self.DEFAULT_GROQ_MODEL)
         
         # Try Groq first
         if self.groq_client:
@@ -175,7 +181,7 @@ class LLMService:
                 logger.info("Generating with OpenRouter fallback")
                 
                 response = await self.openrouter_client.chat.completions.create(
-                    model="meta-llama/llama-3.1-70b-instruct",
+                    model=self.openrouter_model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -183,13 +189,13 @@ class LLMService:
                 
                 content = response.choices[0].message.content
                 tokens_used = response.usage.total_tokens
-                cost = self._calculate_cost("llama-3.1-70b", tokens_used, "openrouter")
+                cost = self._calculate_cost("llama-3.3-70b", tokens_used, "openrouter")
                 
                 logger.info(f"✅ OpenRouter generation successful: {tokens_used} tokens, ${cost:.4f}")
                 
                 return {
                     "content": content,
-                    "model": "meta-llama/llama-3.1-70b-instruct",
+                    "model": self.openrouter_model,
                     "tokens_used": tokens_used,
                     "cost": cost,
                     "provider": "openrouter",

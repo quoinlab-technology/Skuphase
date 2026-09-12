@@ -5,7 +5,7 @@ curricula, search topics/objectives, and trigger exam generation pre-seeded
 with selected scheme weeks.
 """
 
-from fasthtml.common import A, Div, Form, H1, H2, H3, Input, Li, P, Span, Strong, Ul
+from fasthtml.common import A, Div, Form, H1, H2, H3, Input, Li, Option, P, Select, Span, Strong, Ul
 from faststrap import Button, Card, Col, Container, Icon, Row
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -78,13 +78,15 @@ def curriculum_routes(app):
         # Header
         header = Div(
             Div(
+                Div(Icon("journal-bookmark", cls="bi"), cls="app-curriculum-hero-icon"),
                 H1("National Curriculum & Scheme of Work", cls="fs-3 fw-bold text-dark mb-1"),
                 P(
-                    "Official NERDC primary syllabus. Browse weekly topics and learning objectives, or search by topic.",
+                    "Browse the official NERDC primary syllabus by class, subject, term and week, or search a topic directly.",
                     cls="text-muted small mb-0",
                 ),
+                cls="app-curriculum-hero-copy",
             ),
-            cls="mb-4",
+            cls="app-curriculum-hero mb-4",
         )
 
         # Search Bar
@@ -96,10 +98,10 @@ def curriculum_routes(app):
                     name="q",
                     value=q,
                     placeholder="Search curriculum topics, learning objectives, or competencies...",
-                    cls="form-control rounded-pill ps-5 py-2 border shadow-sm",
+                    cls="form-control rounded-pill ps-5 py-2 border shadow-sm app-curriculum-search-input",
                 ),
                 Button("Search", type="submit", variant="success", cls="position-absolute end-0 top-0 bottom-0 rounded-pill px-4 m-1"),
-                cls="position-relative mb-4",
+                cls="position-relative mb-4 app-curriculum-search",
                 style="max-width: 680px;",
             ),
             action="/app/curriculum",
@@ -201,7 +203,7 @@ def curriculum_routes(app):
                     )
                     for t in ["first", "second", "third"]
                 ],
-                cls="btn-group mb-4 shadow-sm",
+                cls="btn-group mb-4 shadow-sm app-curriculum-term-tabs",
             )
 
             # Weeks list cards
@@ -236,7 +238,7 @@ def curriculum_routes(app):
                                 ),
                                 cls="p-3 d-flex flex-column h-100",
                             ),
-                            cls="h-100 border-0 shadow-sm",
+                            cls="h-100 border-0 shadow-sm app-curriculum-week-card",
                         ),
                         span=12, md=6, lg=4,
                     )
@@ -278,9 +280,21 @@ def curriculum_routes(app):
                 header,
                 search_form,
                 content_view,
-                cls="py-2",
+                cls="py-4 pt-lg-5",
             ),
             user=user,
             active="curriculum",
             crumbs=[("Curriculum", None)],
         )
+
+    @app.get("/app/curriculum/{class_level}")
+    async def curriculum_by_class(req: Request, class_level: str):
+        """Clean URL: /app/curriculum/Primary%203 -> curriculum_browser."""
+        from starlette.responses import RedirectResponse as _Redir
+        return _Redir(f"/app/curriculum?class_level={class_level}", status_code=302)
+
+    @app.get("/app/curriculum/{class_level}/{term}")
+    async def curriculum_by_class_term(req: Request, class_level: str, term: str):
+        """Clean URL: /app/curriculum/Primary%203/first -> curriculum_browser."""
+        from starlette.responses import RedirectResponse as _Redir
+        return _Redir(f"/app/curriculum?class_level={class_level}&term={term}", status_code=302)

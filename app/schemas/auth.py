@@ -67,8 +67,15 @@ class UserResponse(BaseModel):
     is_active: bool
     is_verified: bool = False
     created_at: datetime
-    
+    # School branding — populated at login for school users so the frontend
+    # session user dict carries these without an extra round-trip.
+    school_id: Optional[UUID] = None
+    school_name: Optional[str] = None
+    school_address: Optional[str] = None
+    school_logo_url: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
+
 
 
 class SubscriptionResponse(BaseModel):

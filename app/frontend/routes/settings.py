@@ -73,7 +73,7 @@ def register_routes(app):
             if ok2:
                 school_settings = d2
 
-        name = school_data.get("name") or user.get("school_name") or "Greenfield Academy"
+        name = school_data.get("name") or user.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
         email = school_data.get("contact_email") or user.get("email") or ""
         phone = school_data.get("phone") or "+234 800 000 0000"
         state = school_data.get("state") or "Lagos"
@@ -131,6 +131,9 @@ def register_routes(app):
             ("Enugu", "Enugu State"),
         ]
 
+        address = school_data.get("address") or ""
+        logo_url = school_settings.get("logo_url") or ""
+
         # Tab 1: School Profile
         profile_content = Form(
             Card(
@@ -141,7 +144,12 @@ def register_routes(app):
                     Col(FormGroup("Phone Number", Input("phone", value=phone, cls="form-control")), md=6),
                     cls="mb-3",
                 ),
-                FormGroup("State / Region", Select("state", *states, value=state, cls="form-select"), cls="mb-3"),
+                FormGroup("School Physical Address (Printed on Exam Papers)", Input("address", value=address, placeholder="e.g. 15 Commercial Avenue, Yaba, Lagos", cls="form-control"), cls="mb-3"),
+                Row(
+                    Col(FormGroup("State / Region", Select("state", *states, value=state, cls="form-select")), md=6),
+                    Col(FormGroup("School Logo URL / Asset Path", Input("logo_url", value=logo_url, placeholder="e.g. https://... or /static/logo.png", cls="form-control")), md=6),
+                    cls="mb-3",
+                ),
                 Div(
                     Button("Save School Profile", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold"),
                     cls="d-flex justify-content-end mt-3",
@@ -350,8 +358,11 @@ def register_routes(app):
                 payload["contact_email"] = form.get("contact_email").strip()
             if (form.get("phone") or "").strip():
                 payload["contact_phone"] = form.get("phone").strip()
+            address_val = (form.get("address") or "").strip()
             state = (form.get("state") or "").strip()
-            if state:
+            if address_val:
+                payload["address"] = address_val
+            elif state:
                 # The School model has no dedicated state column; keep it in
                 # the free-form address field, preserving any other address text.
                 resp = await call_api(req, "GET", f"/schools/{school_id}")
@@ -368,6 +379,11 @@ def register_routes(app):
                 if not ok:
                     push_flash(req, data.get("message", "Failed to save school profile."), "danger")
                     return RedirectResponse("/app/settings?tab=profile", status_code=303)
+
+            logo_url_val = (form.get("logo_url") or "").strip()
+            if logo_url_val:
+                await call_api(req, "PUT", f"/schools/{school_id}/settings", json={"logo_url": logo_url_val})
+
             push_flash(req, "School profile saved successfully.", "success")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
 

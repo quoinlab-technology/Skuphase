@@ -61,6 +61,8 @@ def test_export_exam_pdf_creates_wrapped_file(tmp_path):
             exam=exam,
             questions=_questions(),
             include_answers=True,
+            school_name="Kings College Lagos",
+            school_address="Catholic Mission Street, Lagos Island",
         )
         created_path = ExportService.exam_dir(exam.id) / file_name
     finally:
@@ -76,11 +78,21 @@ def test_export_exam_pdf_creates_wrapped_file(tmp_path):
     reader = PdfReader(str(created_path))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
+    # Standard school header elements rendered
+    assert "KINGS COLLEGE LAGOS" in text
+    assert "Catholic Mission Street" in text
+
+    # Section headers and answer key masthead
+    assert "SECTION A" in text
+    assert "MARKING SCHEME / ANSWER KEY" in text
+    assert "FOR TEACHER USE ONLY" in text
+
     # A5 regression: no truncation at 120 chars — full question present.
     assert "planted too close" in text
     assert "Answer: A" in text  # include_answers renders the key
     assert "Marking scheme:" in text
     assert "Page" not in ""
+
 
 
 def test_export_path_rejects_bad_names():

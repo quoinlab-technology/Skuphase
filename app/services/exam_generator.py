@@ -13,7 +13,10 @@ from sqlalchemy import select, and_, delete
 from app.models.exam import Exam, Question, ExamPassage
 from app.models.question import QuestionRefinement
 from app.schemas.exam import ExamGenerationRequest, SectionConfig
-from app.services.exam_quality_validator import ExamQualityValidator
+from app.services.exam_quality_validator import (
+    ExamQualityValidator,
+    normalize_bloom_level,
+)
 from app.services.curriculum_service import CurriculumService
 from app.services.few_shot_selector import FewShotSelector
 from app.core.llm import get_llm_service
@@ -33,6 +36,21 @@ def _attach_authoritative_passages(parsed, sections):
         cfg = by_number.get(sec.get("section_number"))
         if cfg and getattr(cfg, "passage", None):
             sec["passage"] = {"title": cfg.passage.title or "", "body": cfg.passage.body}
+
+
+def _normalize_exam_bloom_levels(parsed):
+    """Canonicalize every question's bloom_level after LLM parsing.
+
+    LLMs are inconsistent about case and British/American spelling (e.g.
+    "Analyse" vs "analyze"). We normalize here so the value persisted via
+    store_exam and compared during quality validation is always canonical;
+    this prevents a valid British-spelled level from failing validation.
+    """
+    for section in parsed.get("sections", []):
+        for q in section.get("questions", []):
+            normalized = normalize_bloom_level(q.get("bloom_level"))
+            if normalized is not None:
+                q["bloom_level"] = normalized
 
 
 
@@ -97,7 +115,10 @@ class ExamGenerator:
             llm_response = await self.llm_service.generate(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=6000,
+                # Use 8192 (Groq qwen3.8-27b max output) to avoid truncating
+                # large multi-section exam JSONs. The default 4096 was too low
+                # for exams with 30+ questions across 3 sections.
+                max_tokens=8192,
             )
 
             logger.info(
@@ -555,6 +576,7 @@ PRIMARY EXAM RENDERING RULES
                 logger.warning(f"Expected {expected_questions} questions, got {total_questions}")
 
             _attach_authoritative_passages(data, sections)
+            _normalize_exam_bloom_levels(data)
 
             self._validate_markdown_blocks(data)
 
@@ -564,11 +586,107 @@ PRIMARY EXAM RENDERING RULES
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing failed: {str(e)}")
-            logger.error(f"Response text: {response_text[:500]}...")
+            logger.error(f"Response text (first 500 chars): {response_text[:500]}...")
+
+            # --- Truncation salvage: try to recover complete sections ---
+            salvaged = self._salvage_truncated_json(response_text, sections)
+            if salvaged:
+                logger.warning(
+                    "⚠️ Truncated LLM response salvaged: %s/%s sections recovered",
+                    len(salvaged.get("sections", [])),
+                    len(sections),
+                )
+                return salvaged
+
             raise ValueError(f"Invalid JSON response: {str(e)}")
         except Exception as e:
             logger.error(f"Response parsing failed: {str(e)}")
             raise ValueError(f"Failed to parse response: {str(e)}")
+
+    def _salvage_truncated_json(
+        self,
+        raw: str,
+        sections: List[SectionConfig],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Best-effort recovery when the LLM JSON is cut off mid-stream.
+
+        Strategy:
+        1. Strip markdown fences.
+        2. Find the last *complete* question object (ends with ``}``) using a
+           regex scan — everything after that is discarded.
+        3. Close open arrays/objects until we have valid JSON.
+        4. Only return the salvaged data if at least one complete section is
+           present; otherwise return None so the caller can raise.
+        """
+        try:
+            text = raw.strip()
+            # Strip ```json ... ``` fences
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:])
+            if text.endswith("```"):
+                text = text[:text.rfind("```")]
+            text = text.strip()
+
+            # Find the position of the last closing brace of a complete question
+            # by scanning for `}` preceded by a complete "topic" or "marks" field
+            # (simple heuristic — works even on deeply nested structures).
+            last_good = -1
+            depth = 0
+            in_str = False
+            escape_next = False
+            for i, ch in enumerate(text):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if ch == "\\" and in_str:
+                    escape_next = True
+                    continue
+                if ch == '"' and not escape_next:
+                    in_str = not in_str
+                if in_str:
+                    continue
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth >= 2:  # still inside sections/questions arrays
+                        last_good = i
+
+            if last_good == -1:
+                return None
+
+            # Truncate to last good position and close open structures
+            truncated = text[: last_good + 1]
+            # Count unclosed brackets/braces
+            opens_sq = truncated.count("[") - truncated.count("]")
+            opens_br = truncated.count("{") - truncated.count("}")
+            # Strip trailing commas before closing
+            truncated = re.sub(r",\s*$", "", truncated.rstrip())
+            # Close arrays and objects in reverse nesting order
+            truncated += "]" * max(opens_sq, 0)
+            truncated += "}" * max(opens_br, 0)
+
+            data = json.loads(truncated)
+            if "sections" not in data or not data["sections"]:
+                return None
+
+            # Remove any section that has zero questions (incompletely written)
+            data["sections"] = [
+                s for s in data["sections"] if s.get("questions")
+            ]
+            if not data["sections"]:
+                return None
+
+            _attach_authoritative_passages(data, sections)
+            _normalize_exam_bloom_levels(data)
+            return data
+
+        except Exception as salvage_err:
+            logger.debug("Salvage attempt failed: %s", salvage_err)
+            return None
+
 
     def _validate_markdown_blocks(self, parsed_exam: Dict[str, Any]) -> None:
         """Ensure fenced markdown blocks are balanced for renderer safety."""

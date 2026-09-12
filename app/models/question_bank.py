@@ -66,7 +66,7 @@ class QuestionBankItem(BaseModel):
     question_text = Column(Text, nullable=False)
     marks = Column(Integer, nullable=False)
     options = Column(JSON, nullable=True)
-    correct_answer = Column(String(1), nullable=True)
+    correct_answer = Column(Text, nullable=True)  # MCQ letter OR full model answer for essays
     explanation = Column(Text, nullable=True)
     marking_scheme = Column(JSON, nullable=True)
     sub_parts = Column(JSON, nullable=True)

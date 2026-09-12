@@ -217,6 +217,17 @@ class QuestionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class QuestionEditRequest(BaseModel):
+    """Request schema for manually editing an exam question."""
+
+    question_text: Optional[str] = Field(None, min_length=3, max_length=5000, description="Updated question text")
+    options: Optional[List[str]] = Field(None, description="Updated options list (for MCQ)")
+    correct_answer: Optional[str] = Field(None, description="Updated correct answer")
+    marks: Optional[int] = Field(None, ge=1, le=100, description="Updated marks")
+    explanation: Optional[str] = Field(None, max_length=2000, description="Updated explanation")
+    marking_scheme: Optional[List[str]] = Field(None, description="Updated marking scheme points")
+
+
 class SectionResponse(BaseModel):
     """Response schema for an exam section."""
     
@@ -510,7 +521,7 @@ class QuestionBankItemUpdateRequest(BaseModel):
     question_text: Optional[str] = Field(default=None, min_length=3, max_length=5000)
     marks: Optional[int] = Field(default=None, ge=1, le=100)
     options: Optional[List[str]] = None
-    correct_answer: Optional[str] = Field(default=None, max_length=1)
+    correct_answer: Optional[str] = Field(default=None, max_length=20000)
     explanation: Optional[str] = Field(default=None, max_length=5000)
     marking_scheme: Optional[List[str]] = None
     sub_parts: Optional[List[dict]] = None
@@ -529,7 +540,7 @@ class QuestionBankItemCreateRequest(BaseModel):
     question_text: str = Field(..., min_length=3, max_length=5000)
     marks: int = Field(default=1, ge=1, le=100)
     options: Optional[List[str]] = None
-    correct_answer: Optional[str] = Field(default=None, max_length=1)
+    correct_answer: Optional[str] = Field(default=None, max_length=20000)
     explanation: Optional[str] = Field(default=None, max_length=5000)
     marking_scheme: Optional[List[str]] = None
 

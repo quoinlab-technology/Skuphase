@@ -45,6 +45,26 @@ def test_about_page_renders(client):
     assert "Pre-Nursery to Primary 6" in r.text
 
 
+def test_how_it_works_page_renders(client):
+    r = client.get("/how-it-works")
+    assert r.status_code == 200
+    assert "How SkuPhase Works" in r.text
+    assert "Pick the Curriculum Scope" in r.text
+    assert "Preflight" in r.text
+
+
+def test_contact_page_renders_and_submits(client):
+    r = client.get("/contact")
+    assert r.status_code == 200
+    assert "Get in Touch" in r.text
+    assert "Send us a message" in r.text
+    assert "hello@skuphase.ng" in r.text
+
+    post_r = client.post("/contact", data={"first_name": "Amaka", "email": "a@b.com"}, follow_redirects=True)
+    assert post_r.status_code == 200
+    assert "Thank you! Your message has been sent." in post_r.text
+
+
 def test_privacy_page_renders(client):
     r = client.get("/privacy")
     assert r.status_code == 200
@@ -69,7 +89,10 @@ def test_health_endpoint_unaffected(client):
 def test_api_takes_precedence_over_ui_mount(client):
     """API routes must win over the catch-all frontend mount (§2.1)."""
     r = client.get("/api/v1/auth/me")
-    assert r.status_code == 401  # API responds — not swallowed by the UI
+    # The auth dependency currently returns 403 when no bearer credential is
+    # supplied. What matters here is that the API response is not swallowed by
+    # the mounted UI.
+    assert r.status_code in {401, 403}
 
 
 def test_docs_still_available(client):

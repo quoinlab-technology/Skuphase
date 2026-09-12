@@ -451,3 +451,71 @@ def test_quality_validator_rejects_unbalanced_sub_parts():
 
     result = validator.validate(parsed_exam=parsed_exam, request=request)
     assert any("sub-part marks 7 do not sum to question marks 6" in e for e in result.errors)
+def test_quality_validator_accepts_british_and_mixed_case_bloom_levels():
+    """British 'analyse' and any casing must not fail quality validation.
+
+    Regression for a real failure: the LLM returned "analyse" (British
+    spelling), which was not in the canonical American list and killed an
+    otherwise-fine generation.
+    """
+    validator = ExamQualityValidator()
+    request = _request()
+    parsed_exam = {
+        "sections": [
+            {
+                "section_number": 1,
+                "section_title": "SECTION A",
+                "questions": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "What is 2+2?",
+                        "options": ["A. 1", "B. 2", "C. 3", "D. 4"],
+                        "correct_answer": "D",
+                        "marks": 2,
+                        "difficulty": "easy",
+                        "bloom_level": "analyse",
+                    },
+                    {
+                        "type": "multiple_choice",
+                        "question": "Which is even?",
+                        "options": ["A. 1", "B. 3", "C. 4", "D. 5"],
+                        "correct_answer": "C",
+                        "marks": 2,
+                        "difficulty": "medium",
+                        "bloom_level": "Analyse",
+                    },
+                ],
+            }
+        ]
+    }
+
+    result = validator.validate(parsed_exam=parsed_exam, request=request)
+    assert not any("Bloom level" in e for e in result.errors)
+
+
+def test_quality_validator_still_rejects_junk_bloom_level():
+    """Genuinely invalid Bloom values are still rejected after normalizing."""
+    validator = ExamQualityValidator()
+    request = _request()
+    parsed_exam = {
+        "sections": [
+            {
+                "section_number": 1,
+                "section_title": "SECTION A",
+                "questions": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "Q?",
+                        "options": ["A. 1", "B. 2", "C. 3", "D. 4"],
+                        "correct_answer": "A",
+                        "marks": 2,
+                        "difficulty": "easy",
+                        "bloom_level": "Application",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="quality validation"):
+        validator.validate_or_raise(parsed_exam=parsed_exam, request=request)

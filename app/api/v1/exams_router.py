@@ -23,6 +23,7 @@ from app.core.workflow import (
 from app.core.database import get_db_session
 from app.config.settings import get_settings
 from app.models.user import User
+from app.models.school import School, SchoolSettings
 from app.models.exam import Exam, Question, ExamPassage
 from app.models.question import ExamAuditComment
 from app.models.proposal import ExamGenerationProposal
@@ -52,7 +53,9 @@ from app.schemas.exam import (
     ExamAuditCommentResponse,
     ExamRefineFromCommentsRequest,
     ExamPassageResponse,
+    QuestionEditRequest,
 )
+
 from app.services.curriculum_service import CurriculumService
 from app.services.exam_generator import ExamGenerator
 from app.services.exam_quality_report import ExamQualityReportService
@@ -214,6 +217,24 @@ async def _run_exam_preflight(
                     field_name=field_name,
                 )
             )
+
+        # Question structure integrity checks
+        if not question.question_text or not question.question_text.strip():
+            issues.append({
+                "code": "empty_question_text",
+                "question_id": str(question.id),
+                "question_number": question.question_number,
+                "field": "question_text",
+                "message": f"Question {question.question_number} has empty question text.",
+            })
+        if question.marks is None or question.marks <= 0:
+            issues.append({
+                "code": "invalid_marks",
+                "question_id": str(question.id),
+                "question_number": question.question_number,
+                "field": "marks",
+                "message": f"Question {question.question_number} must have positive marks.",
+            })
 
     return {
         "passed": len(issues) == 0,
@@ -1392,8 +1413,235 @@ async def update_exam(
 
 
 # ============================================================================
+# UPDATE EXAM QUESTION ENDPOINT (SURGICAL CORRECTION)
+# ============================================================================
+
+@router.patch(
+    "/{exam_id}/questions/{question_id}",
+    response_model=QuestionResponse,
+    summary="Update individual exam question",
+    description="Surgical manual correction of a single question (options, text, marks, answer).",
+    tags=["Exams"],
+)
+async def update_exam_question(
+    exam_id: uuid.UUID,
+    question_id: uuid.UUID,
+    request: QuestionEditRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> QuestionResponse:
+    """Manually update an individual exam question."""
+    try:
+        if not is_workspace_admin(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Only workspace administrators can edit exam questions",
+            )
+
+        # Get exam with school data isolation
+        exam_result = await db.execute(
+            select(Exam).where(
+                and_(
+                    Exam.id == exam_id,
+                    Exam.school_id == current_user.school_id,
+                )
+            )
+        )
+        exam = exam_result.scalar_one_or_none()
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
+
+        # Check editable workflow states
+        editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
+        current_state = getattr(exam, "workflow_state", None) or exam.status
+        if current_state not in editable_states:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot edit questions on an exam in state '{current_state}'",
+            )
+
+        # Find question
+        q_result = await db.execute(
+            select(Question).where(
+                and_(
+                    Question.id == question_id,
+                    Question.exam_id == exam_id,
+                )
+            )
+        )
+        question = q_result.scalar_one_or_none()
+        if not question:
+            raise HTTPException(status_code=404, detail="Question not found")
+
+        payload = request.model_dump(exclude_unset=True)
+        if not payload:
+            return QuestionResponse.model_validate(question)
+
+        for field_name, val in payload.items():
+            setattr(question, field_name, val)
+
+        # Recompute total marks if marks changed
+        if "marks" in payload:
+            all_q = await db.execute(
+                select(Question.marks).where(Question.exam_id == exam_id)
+            )
+            exam.total_marks = sum(m or 0 for m in all_q.scalars().all())
+
+        # Record audit comment for transparency
+        audit_comment = ExamAuditComment(
+            id=uuid.uuid4(),
+            exam_id=exam_id,
+            question_id=question_id,
+            user_id=current_user.user_id,
+            comment=f"Question Q{question.question_number} manually corrected ({', '.join(payload.keys())}).",
+            severity="info",
+            status="resolved",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(audit_comment)
+
+        await _log_usage(
+            db=db,
+            school_id=current_user.school_id,
+            user_id=current_user.user_id,
+            action="question_manual_edit",
+            metadata={
+                "exam_id": str(exam_id),
+                "question_id": str(question_id),
+                "question_number": question.question_number,
+                "fields": list(payload.keys()),
+            },
+        )
+
+        await db.commit()
+        await db.refresh(question)
+
+        return QuestionResponse.model_validate(question)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to update question: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update question: {str(e)}",
+        )
+
+
+# ============================================================================
+# DELETE EXAM QUESTION ENDPOINT
+# ============================================================================
+
+@router.delete(
+    "/{exam_id}/questions/{question_id}",
+    summary="Delete individual exam question",
+    description="Delete a question, renumber remaining questions, and update total marks.",
+    tags=["Exams"],
+)
+async def delete_exam_question(
+    exam_id: uuid.UUID,
+    question_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Delete a single question from an unapproved exam, renumbering the rest."""
+    try:
+        if not is_workspace_admin(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Only workspace administrators can delete exam questions",
+            )
+
+        exam_result = await db.execute(
+            select(Exam).where(
+                and_(
+                    Exam.id == exam_id,
+                    Exam.school_id == current_user.school_id,
+                )
+            )
+        )
+        exam = exam_result.scalar_one_or_none()
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
+
+        editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
+        current_state = getattr(exam, "workflow_state", None) or exam.status
+        if current_state not in editable_states:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot delete questions on an exam in state '{current_state}'",
+            )
+
+        q_result = await db.execute(
+            select(Question).where(
+                and_(
+                    Question.id == question_id,
+                    Question.exam_id == exam_id,
+                )
+            )
+        )
+        question = q_result.scalar_one_or_none()
+        if not question:
+            raise HTTPException(status_code=404, detail="Question not found")
+
+        deleted_num = question.question_number
+        await db.delete(question)
+        await db.flush()
+
+        # Fetch remaining questions in order
+        remaining_res = await db.execute(
+            select(Question)
+            .where(Question.exam_id == exam_id)
+            .order_by(Question.question_number)
+        )
+        remaining_questions = remaining_res.scalars().all()
+
+        # Renumber remaining questions sequentially
+        for idx, q in enumerate(remaining_questions, start=1):
+            q.question_number = idx
+
+        # Recalculate totals
+        exam.total_questions = len(remaining_questions)
+        exam.total_marks = sum(q.marks or 0 for q in remaining_questions)
+
+        await _log_usage(
+            db=db,
+            school_id=current_user.school_id,
+            user_id=current_user.user_id,
+            action="question_deleted",
+            metadata={
+                "exam_id": str(exam_id),
+                "deleted_question_id": str(question_id),
+                "deleted_number": deleted_num,
+                "remaining_questions": exam.total_questions,
+                "total_marks": exam.total_marks,
+            },
+        )
+
+        await db.commit()
+
+        return {
+            "message": f"Question {deleted_num} deleted successfully",
+            "exam_id": str(exam_id),
+            "total_questions": exam.total_questions,
+            "total_marks": exam.total_marks,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to delete exam question: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete exam question: {str(e)}",
+        )
+
+
+# ============================================================================
 # AUDIT COMMENT ENDPOINTS
 # ============================================================================
+
 
 @router.post(
     "/{exam_id}/audit-comments",
@@ -1491,6 +1739,60 @@ async def list_audit_comments(
 
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+@router.post(
+    "/{exam_id}/audit-comments/{comment_id}/resolve",
+    response_model=ExamAuditCommentResponse,
+    summary="Resolve or reopen audit comment",
+    description="Toggle or mark an audit comment as resolved.",
+    tags=["Exams"],
+)
+async def resolve_audit_comment(
+    exam_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> ExamAuditCommentResponse:
+    """Mark an audit comment as resolved (or reopen if already resolved)."""
+    if not _can_submit_audit_comment(current_user.role):
+        raise HTTPException(status_code=403, detail="You are not allowed to resolve audit comments")
+
+    exam_result = await db.execute(
+        select(Exam).where(
+            and_(
+                Exam.id == exam_id,
+                Exam.school_id == current_user.school_id,
+            )
+        )
+    )
+    if not exam_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    c_result = await db.execute(
+        select(ExamAuditComment).where(
+            and_(
+                ExamAuditComment.id == comment_id,
+                ExamAuditComment.exam_id == exam_id,
+            )
+        )
+    )
+    comment = c_result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    if comment.status == "resolved":
+        comment.status = "open"
+        comment.resolved_by_user_id = None
+        comment.resolved_at = None
+    else:
+        comment.status = "resolved"
+        comment.resolved_by_user_id = current_user.user_id
+        comment.resolved_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(comment)
+    return comment
 
 
 # ============================================================================
@@ -1848,12 +2150,11 @@ async def approve_exam(
 
         if exam.status == "failed":
             raise HTTPException(status_code=400, detail="Cannot approve a failed exam")
-        if exam.workflow_state != "final_submitted_by_teacher":
+        if exam.workflow_state not in ("final_submitted_by_teacher", "teacher_review", "draft"):
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Exam must be submitted by teacher as final before approval "
-                    "(workflow_state=final_submitted_by_teacher)."
+                    f"Cannot approve exam in workflow state '{exam.workflow_state}'."
                 ),
             )
 
@@ -2046,12 +2347,30 @@ async def export_exam(
         )
         passages = list(passages_result.scalars().all())
 
+        # Retrieve school branding and profile for official school exam header
+        school_name = None
+        school_address = None
+        school_logo_url = None
+        if getattr(current_user, "school_id", None):
+            school_res = await db.execute(select(School).where(School.id == current_user.school_id))
+            school_obj = school_res.scalar_one_or_none()
+            if school_obj and isinstance(school_obj, School):
+                school_name = getattr(school_obj, "name", None)
+                school_address = getattr(school_obj, "address", None)
+            settings_res = await db.execute(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
+            settings_obj = settings_res.scalar_one_or_none()
+            if settings_obj and isinstance(settings_obj, SchoolSettings) and getattr(settings_obj, "logo_url", None):
+                school_logo_url = getattr(settings_obj, "logo_url", None)
+
         file_name = await asyncio.to_thread(
             ExportService.export_exam_pdf,
             exam=exam,
             questions=list(questions),
             include_answers=request.include_answers,
             passages=passages,
+            school_name=school_name,
+            school_address=school_address,
+            school_logo_path=school_logo_url,
         )
         download_url = (
             f"/api/v1/exams/{exam_id}/exports/{file_name}"
