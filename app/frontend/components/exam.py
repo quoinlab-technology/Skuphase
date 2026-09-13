@@ -112,16 +112,21 @@ def action_buttons(exam: dict, user: dict) -> list:
     if is_admin and state in REFINABLE_STATES:
         buttons.append(
             Button(
+                Span(
+                    Icon("arrow-repeat", cls="bi me-1 spinner-border spinner-border-sm"),
+                    "Regenerating...",
+                    cls="htmx-indicator me-2",
+                    style="display:none;",
+                ),
                 "Refine with AI",
+                type="button",
+                id=f"refine-btn-{exam['id']}",
                 hx_post=f"/ui/exams/{exam['id']}/refine",
                 hx_include="#refine-feedback",
                 hx_target="#exam-detail-view",
                 hx_swap="outerHTML",
                 hx_indicator="#refine-spinner",
-                **{
-                    "hx-on::before-request": "this.innerHTML='<span class=\\'spinner-border spinner-border-sm me-2\\'></span>Regenerating…'; this.disabled=true;",
-                    "hx-on::after-request": "this.innerHTML='Refine with AI'; this.disabled=false;",
-                },
+                **{"hx-disabled-elt": f"#refine-btn-{exam['id']}"},
                 variant="outline-secondary",
             )
         )
@@ -367,8 +372,8 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
 
         # Hand-crafted delete modal — NOT using ConfirmDialog because faststrap's ConfirmDialog
         # puts data-bs-dismiss on the confirm button, which causes Bootstrap to destroy the DOM
-        # element before HTMX can fire the DELETE request. Instead we close the modal via
-        # hx-on::before-request (fires inside HTMX's pipeline, before the request is sent).
+        # element before HTMX can fire the DELETE request. The modal is replaced
+        # the OOB #tab-content swap in the response (the modal lives inside the tab).
         delete_modal = Div(
             Div(
                 Div(
@@ -392,13 +397,7 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
                         **{
                             "hx-delete": f"/ui/exams/{exam_id}/questions/{qid}",
                             "hx-target": "#tab-content",
-                            "hx-swap": "innerHTML",
-                            # Close the modal BEFORE HTMX fires — avoids data-bs-dismiss destroying
-                            # the element before the request is sent.
-                            "hx-on::before-request": (
-                                f"var m=bootstrap.Modal.getInstance(document.getElementById('{delete_modal_id}'));"
-                                "if(m)m.hide();"
-                            ),
+                            "hx-swap": "none",
                         },
                     ),
                     cls="modal-footer border-0 pt-3 pb-4 px-4 d-flex justify-content-end",
@@ -447,12 +446,12 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
                                 Row(
                                     Col(
                                         Label("Correct answer (e.g. A or full answer)", cls="form-label small fw-semibold"),
-                                        Input("correct_answer", value=q.get("correct_answer", ""), cls="form-control rounded-3"),
+                                        Input(name="correct_answer", value=q.get("correct_answer", ""), cls="form-control rounded-3"),
                                         md=6,
                                     ),
                                     Col(
                                         Label("Marks", cls="form-label small fw-semibold"),
-                                        Input("marks", type="number", value=q.get("marks", 1), min=1, max=100, cls="form-control rounded-3"),
+                                        Input(name="marks", type="number", value=q.get("marks", 1), min=1, max=100, cls="form-control rounded-3"),
                                         md=6,
                                     ),
                                     cls="g-3",
@@ -469,8 +468,8 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
                                 ),
                                 cls="mb-3",
                             ),
-                            Input("_workflow_state", type="hidden", value=user.get("workflow_state", "")),
-                            Input("_status", type="hidden", value=user.get("status", "")),
+                            Input(name="_workflow_state", type="hidden", value=user.get("workflow_state", "")),
+                            Input(name="_status", type="hidden", value=user.get("status", "")),
                             Div(id=f"edit-result-{qid}", cls="mb-2"),
                             cls="modal-body py-2 px-4",
                         ),
@@ -549,18 +548,91 @@ def PassageBlock(p: dict):
     )
 
 
-def SectionHeader(title: str, count: int = 0, total_marks: int = 0):
+def SectionHeader(title: str, count: int = 0, total_marks: int = 0, can_edit: bool = False, exam_id: str = "", sec_num: int = 1):
     """Clean Nigerian exam section header dividing objectives, theory, essay."""
     meta = f"{count} question" if count == 1 else f"{count} questions"
     if total_marks:
         meta += f" · {total_marks} marks"
+
+    add_btn = (
+        HtmlButton(
+            Icon("plus-lg", cls="bi me-1"),
+            "Add from Bank",
+            type="button",
+            cls="btn btn-sm btn-outline-success rounded-pill px-3 py-1 ms-3 fw-semibold",
+            style="font-size:0.8rem;",
+            **{
+                "data-bs-toggle": "modal",
+                "data-bs-target": f"#importBankModal-{exam_id}-{sec_num}",
+                "hx-get": f"/ui/exams/{exam_id}/sections/{sec_num}/bank-picker",
+                "hx-target": f"#bank-picker-body-{exam_id}-{sec_num}",
+                "hx-swap": "innerHTML",
+            },
+        )
+        if can_edit and exam_id
+        else Div()
+    )
+
     return Div(
         Div(
-            H4(title, cls="fs-6 fw-bold text-dark mb-0"),
+            Div(
+                H4(title, cls="fs-6 fw-bold text-dark mb-0"),
+                add_btn,
+                cls="d-flex align-items-center",
+            ),
             Span(meta, cls="badge bg-light text-secondary border fw-medium px-2 py-1 rounded-pill", style="font-size:0.75rem;"),
             cls="d-flex justify-content-between align-items-center",
         ),
         cls="app-exam-section-header bg-white border rounded-3 p-3 mb-3 shadow-xs mt-4",
+    )
+
+
+def ImportBankModal(exam_id: str, sec_num: int, sec_name: str) -> Div:
+    """Modal allowing teachers to select and insert questions from Question Bank directly into this section."""
+    modal_id = f"importBankModal-{exam_id}-{sec_num}"
+    return Div(
+        Div(
+            Div(
+                Div(
+                    Div(
+                        Strong(f"Import Questions into {sec_name}", cls="fs-5 fw-bold text-dark d-block"),
+                        Span("Select questions from the school Question Bank to append to this section.", cls="text-muted small mt-1 d-block"),
+                    ),
+                    HtmlButton("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
+                    cls="modal-header border-0 pb-2 d-flex justify-content-between align-items-start px-4 pt-4",
+                ),
+                Form(
+                    Div(
+                        Input("section_number", type="hidden", value=str(sec_num)),
+                        Input("section_name", type="hidden", value=sec_name),
+                        Div(
+                            Div(
+                                Icon("arrow-repeat", cls="bi me-2 text-success spinner-border spinner-border-sm"),
+                                Span("Loading question bank items...", cls="small text-muted"),
+                                cls="text-center py-4",
+                            ),
+                            id=f"bank-picker-body-{exam_id}-{sec_num}",
+                            style="max-height: 380px; overflow-y: auto;",
+                        ),
+                        cls="modal-body py-2 px-4",
+                    ),
+                    Div(
+                        HtmlButton("Cancel", type="button", cls="btn btn-light rounded-pill px-4 py-2 me-2", **{"data-bs-dismiss": "modal"}),
+                        Button("Import Selected Questions", type="submit", variant="success", cls="btn-brand rounded-pill px-4 py-2"),
+                        cls="modal-footer border-0 pt-2 pb-4 px-4 d-flex justify-content-end",
+                    ),
+                    hx_post=f"/ui/exams/{exam_id}/questions/import-bank",
+                    hx_target="#exam-tab-section",
+                    hx_swap="innerHTML",
+                ),
+                cls="modal-content border-0 shadow-lg rounded-4",
+            ),
+            cls="modal-dialog modal-dialog-centered modal-lg",
+        ),
+        cls="modal fade",
+        id=modal_id,
+        tabindex="-1",
+        **{"aria-hidden": "true"},
     )
 
 
@@ -601,10 +673,12 @@ def render_questions(exam: dict, show_answers: bool = False, can_edit: bool = Fa
     current_section = None
 
     for idx, q in enumerate(questions, start=1):
-        _, s_title = get_section_info(q)
+        sec_num, s_title = get_section_info(q)
         if s_title != current_section:
             current_section = s_title
-            out.append(SectionHeader(s_title, sec_counts.get(s_title, 0), sec_marks.get(s_title, 0)))
+            out.append(SectionHeader(s_title, sec_counts.get(s_title, 0), sec_marks.get(s_title, 0), can_edit=can_edit, exam_id=exam_id, sec_num=sec_num))
+            if can_edit and exam_id:
+                out.append(ImportBankModal(exam_id=exam_id, sec_num=sec_num, sec_name=s_title))
 
         pid = q.get("passage_id")
         if pid and str(pid) in passage_by_id and pid not in seen_passages:

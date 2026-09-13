@@ -79,14 +79,15 @@ def test_question_bank_renders(monkeypatch):
     assert resp.status_code == 200
     assert "Question Bank" in resp.text
     assert "What is 1/2 + 1/4?" in resp.text
-    assert "Primary 4 · Mathematics" in resp.text
+    assert "Mathematics" in resp.text
+    assert "Primary 4" in resp.text
 
 
 def test_question_bank_update_item(monkeypatch):
     client = _logged_in_client(monkeypatch)
 
     async def fake_update_call(req, method, path, **kwargs):
-        if "/exams/question-bank/items/b1" in path and method == "PUT":
+        if "/exams/question-bank/items/b1" in path and method in ("PUT", "PATCH"):
             return FakeResp(200, {**BANK_ITEM, "marks": 5})
         return FakeResp(404, {})
 
@@ -103,3 +104,51 @@ def test_question_bank_update_item(monkeypatch):
     )
     assert resp.status_code in (302, 303)
     assert resp.headers.get("location") == "/app/bank"
+
+
+def test_question_bank_list_partial(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+
+    async def fake_bank_call(req, method, path, **kwargs):
+        if "/exams/question-bank/items" in path and method == "GET":
+            return FakeResp(200, [BANK_ITEM])
+        if "/exams" in path and method == "GET":
+            return FakeResp(200, [])
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.bank.call_api", fake_bank_call)
+    resp = client.get("/ui/bank/list?q=What&difficulty=medium")
+    assert resp.status_code == 200
+    assert "What is 1/2 + 1/4?" in resp.text
+    assert "1 medium" in resp.text
+
+
+def test_question_bank_delete_item_ui(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+
+    async def fake_delete_call(req, method, path, **kwargs):
+        if "/exams/question-bank/items/b1" in path and method == "DELETE":
+            return FakeResp(200, {"message": "deleted"})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.bank.call_api", fake_delete_call)
+    resp = client.delete("/ui/bank/items/b1")
+    assert resp.status_code == 200
+    assert "Question removed from school question bank" in resp.text
+
+
+def test_question_bank_add_to_exam_ui(monkeypatch):
+    client = _logged_in_client(monkeypatch)
+
+    async def fake_import_call(req, method, path, **kwargs):
+        if "/exams/e1/questions/import-from-bank" in path and method == "POST":
+            return FakeResp(200, {"message": "imported", "imported_count": 1})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.bank.call_api", fake_import_call)
+    resp = client.post(
+        "/ui/bank/items/b1/add-to-exam",
+        data={"exam_id": "e1", "section_number": "1"},
+    )
+    assert resp.status_code == 200
+    assert "Question added to Section A of exam successfully" in resp.text

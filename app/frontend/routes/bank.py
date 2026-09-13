@@ -1,22 +1,52 @@
-"""Question Bank browser and editor (FRONTEND_SPEC sec 6.10 & UI_design/Question-Bank.png).
+"""Question Bank browser and editor (Phase 7: P07_question_bank_*.png).
 
 Allows teachers and school admins to browse verified questions, filter by subject,
-grade, and difficulty, inspect answers and explanations, and update question details.
+grade, difficulty, and type, inspect answers and explanations, and update question details.
+Supports two-way integration: inserting questions from the bank into specific exam sections.
 """
 
 from urllib.parse import urlencode
-from fasthtml.common import A, Div, Form, H1, H2, Input, Label, P, Span, Strong, Textarea, Title
+from fasthtml.common import (
+    A,
+    Button as HtmlButton,
+    Div,
+    Form,
+    H1,
+    H2,
+    Input,
+    Label,
+    P,
+    Script,
+    Span,
+    Strong,
+    Textarea,
+    Title,
+)
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
-from faststrap import Alert, Badge, Button, Card, Col, Container, EmptyState, FormGroup, Icon, Row, Select
+from faststrap import (
+    Alert,
+    Badge,
+    Button,
+    Card,
+    Col,
+    Container,
+    EmptyState,
+    FormGroup,
+    Icon,
+    Row,
+    Select,
+)
 
 from app.frontend.api import call_api, unwrap
-from app.frontend.components.feedback import pop_flash, push_flash
+from app.frontend.components.feedback import pop_flash, push_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.frontend.components.bank import BankCard, BankMetricsBar, AddQuestionModal
 
 
+# Backward-compatibility alias
 def _difficulty_pill(difficulty: str) -> Span:
     diff = (difficulty or "medium").lower()
     if diff == "easy":
@@ -27,233 +57,65 @@ def _difficulty_pill(difficulty: str) -> Span:
 
 
 def _question_bank_card(item: dict, is_editor: bool) -> Div:
-    item_id = str(item.get("id") or "")
-    subject = item.get("subject", "General")
-    grade = item.get("grade_level", "Primary")
-    topic = item.get("topic") or ""
-    difficulty = item.get("difficulty") or "medium"
-    text = item.get("question_text", "No question text provided.")
-    marks = item.get("marks", 1)
-    options = item.get("options") or []
-    correct = item.get("correct_answer") or ""
-    explanation = item.get("explanation") or ""
-    usage_count = item.get("usage_count", 0)
-
-    options_div = Div()
-    if options and isinstance(options, list):
-        opt_letters = ["A", "B", "C", "D", "E", "F"]
-        opt_rows = []
-        for i, opt in enumerate(options):
-            letter = opt_letters[i] if i < len(opt_letters) else str(i + 1)
-            is_correct = correct and (correct.upper() == letter or correct == opt)
-            cls_extra = " fw-bold text-success" if is_correct else " text-muted"
-            opt_rows.append(
-                Div(
-                    Span(f"{letter}. ", cls="fw-bold me-1" + (" text-success" if is_correct else "")),
-                    Span(str(opt)),
-                    (Icon("check-circle-fill", cls="bi text-success ms-2 small") if is_correct else Div()),
-                    cls=f"small py-1 px-2 mb-1 rounded {cls_extra}",
-                    style="background: #f8fafc" if not is_correct else "background: #ecfdf5",
-                )
-            )
-        options_div = Div(*opt_rows, cls="mb-2 mt-2")
-
-    return Div(
-        Div(
-            Div(
-                Div(Icon("book", cls="bi text-secondary fs-5"), cls="app-row-icon me-3"),
-                Div(
-                    Div(
-                        Span((item.get("question_type") or "MCQ").replace("_", " ").upper(), cls="badge bg-light text-dark border me-2 small"),
-                        _difficulty_pill(difficulty),
-                        Span(f"{grade} · {subject}" + (f" · {topic}" if topic else ""), cls="text-muted small ms-2"),
-                        cls="d-flex align-items-center flex-wrap mb-1",
-                    ),
-                    P(text, cls="fw-semibold text-dark mb-1"),
-                    cls="flex-grow-1",
-                ),
-                Div(
-                    Span(f"Used {usage_count}x", cls="badge bg-light text-secondary border me-2 small"),
-                    Button(
-                        Icon("pencil", cls="bi"),
-                        type="button",
-                        variant="outline-secondary",
-                        size="sm",
-                        cls="btn btn-sm btn-outline-secondary rounded-circle me-1",
-                        title="Edit question",
-                        **{
-                            "data-bs-toggle": "modal",
-                            "data-bs-target": f"#editItemModal-{item_id}",
-                        },
-                    ) if is_editor else Div(),
-                    Button(
-                        Icon("chevron-down", cls="bi"),
-                        type="button",
-                        cls="btn btn-sm btn-link text-muted p-1",
-                        **{"data-bs-toggle": "collapse", "data-bs-target": f"#bank-detail-{item_id}"},
-                    ),
-                    cls="d-flex align-items-center ms-3",
-                ),
-                cls="d-flex align-items-center p-3",
-            ),
-            # Collapsible details (options, explanation, correct answer)
-            Div(
-                Div(
-                    options_div,
-                    (Div(
-                        Icon("info-circle", cls="bi me-1 text-primary"),
-                        Span(Strong("Explanation: "), explanation, cls="small text-muted"),
-                        cls="p-2 mb-2 rounded bg-light border-start border-3 border-primary",
-                    ) if explanation else Div()),
-                    Div(
-                        Span(f"Value: {marks} mark{'s' if marks > 1 else ''}", cls="badge bg-light text-dark border me-2"),
-                        Span(f"Saved to school repository", cls="text-muted small"),
-                        cls="d-flex align-items-center pt-2 border-top",
-                    ),
-                    cls="p-3 pt-0",
-                ),
-                id=f"bank-detail-{item_id}",
-                cls="collapse",
-            ),
-            cls="card shadow-sm border-0 mb-3 rounded-3",
-            id=f"bank-item-{item_id}",
-        ),
-        _edit_modal(item) if is_editor else Div(),
-    )
+    return BankCard(item, is_editor)
 
 
-def _edit_modal(item: dict) -> Div:
-    item_id = str(item.get("id") or "")
-    text = item.get("question_text", "")
-    difficulty = (item.get("difficulty") or "medium").lower()
-    marks = str(item.get("marks") or 1)
-    topic = item.get("topic") or ""
-    explanation = item.get("explanation") or ""
-    correct = item.get("correct_answer") or ""
+def _render_bank_list_content(items: list[dict], is_editor: bool, editable_exams: list[dict]) -> Div:
+    """Render the metrics counter row and card list (or empty state)."""
+    total = len(items)
+    easy = sum(1 for i in items if (i.get("difficulty") or "").lower() == "easy")
+    medium = sum(1 for i in items if (i.get("difficulty") or "").lower() == "medium")
+    hard = sum(1 for i in items if (i.get("difficulty") or "").lower() == "hard")
 
-    return Div(
-        Div(
-            Div(
-                Div(
-                    Strong("Edit Question Bank Item", cls="fs-5 text-dark"),
-                    Button("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
-                    cls="modal-header pb-2",
-                ),
-                Form(
-                    Div(
-                        FormGroup("Question Text", Textarea(text, name="question_text", rows=3, cls="form-control", required=True), cls="mb-3"),
-                        Row(
-                            Col(
-                                FormGroup("Difficulty", Select("difficulty", ("easy", "Easy"), ("medium", "Medium"), ("hard", "Hard"), value=difficulty, cls="form-select")),
-                                md=4,
-                            ),
-                            Col(
-                                FormGroup("Marks", Input("marks", type="number", value=marks, min="1", max="100", cls="form-control")),
-                                md=4,
-                            ),
-                            Col(
-                                FormGroup("Correct Option", Input("correct_answer", value=correct, placeholder="e.g. A", cls="form-control")),
-                                md=4,
-                            ),
-                            cls="mb-3",
-                        ),
-                        FormGroup("Topic", Input("topic", value=topic, placeholder="Curriculum topic...", cls="form-control"), cls="mb-3"),
-                        FormGroup("Explanation", Textarea(explanation, name="explanation", rows=2, cls="form-control"), cls="mb-3"),
-                        cls="modal-body py-2",
-                    ),
-                    Div(
-                        Button("Cancel", type="button", variant="outline-secondary", **{"data-bs-dismiss": "modal"}),
-                        Button("Save Changes", type="submit", variant="success", cls="btn-brand ms-2"),
-                        cls="modal-footer pt-2",
-                    ),
-                    action=f"/app/bank/items/{item_id}",
-                    method="post",
-                ),
-                cls="modal-content border-0 shadow-lg rounded-4",
-            ),
-            cls="modal-dialog modal-dialog-centered",
-        ),
-        cls="modal fade",
-        id=f"editItemModal-{item_id}",
-        tabindex="-1",
-        **{"aria-hidden": "true"},
-    )
+    metrics = BankMetricsBar(total=total, easy=easy, medium=medium, hard=hard)
+
+    if items:
+        cards = [BankCard(i, is_editor, editable_exams) for i in items]
+        card_list = Div(*cards)
+    else:
+        card_list = EmptyState(
+            title="No questions in bank yet",
+            description="Questions are automatically saved into your school bank when approved, or can be saved directly from any exam detail.",
+            action=Button("View Exams", as_="a", href="/app/exams", cls="btn-brand rounded-pill px-4"),
+        )
+
+    return Div(metrics, card_list, id="bank-items-container")
 
 
-def _add_question_modal() -> Div:
-    """Modal to add reusable question to bank matching UI_design/Question-Bank3.png."""
-    grades = [
-        ("Primary 1", "Primary 1"),
-        ("Primary 2", "Primary 2"),
-        ("Primary 3", "Primary 3"),
-        ("Primary 4", "Primary 4"),
-        ("Primary 5", "Primary 5"),
-        ("Primary 6", "Primary 6"),
+async def _fetch_bank_items_and_exams(req: Request, q: str = "", subject: str = "", grade: str = "", qtype: str = "", difficulty: str = ""):
+    """Query bank items and editable exams in parallel or sequence."""
+    params = {"limit": "100"}
+    if q:
+        params["query_text"] = q
+    if subject and subject.lower() != "all":
+        params["subject"] = subject
+    if grade and grade.lower() != "all":
+        params["grade_level"] = grade
+    if difficulty and difficulty.lower() != "all":
+        params["difficulty"] = difficulty
+
+    resp = await call_api(req, "GET", "/exams/question-bank/items", params=params)
+    ok, data = unwrap(resp)
+    items = data if (ok and isinstance(data, list)) else []
+
+    # Optional local filter for question_type
+    if qtype and qtype.lower() != "all":
+        items = [
+            i for i in items
+            if qtype.lower() in (i.get("question_type") or "").lower()
+        ]
+
+    # Fetch editable exams
+    exam_resp = await call_api(req, "GET", "/exams", params={"limit": "30"})
+    e_ok, e_data = unwrap(exam_resp)
+    all_exams = e_data.get("items") if (e_ok and isinstance(e_data, dict)) else (e_data if isinstance(e_data, list) else [])
+    editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
+    editable_exams = [
+        e for e in (all_exams or [])
+        if e.get("workflow_state") in editable_states or e.get("status") in editable_states
     ]
-    subjects = [
-        ("Mathematics", "Mathematics"),
-        ("English Language", "English Language"),
-        ("Basic Science", "Basic Science"),
-        ("Social Studies", "Social Studies"),
-        ("National Values", "National Values"),
-        ("Prevocational Studies", "Prevocational Studies"),
-    ]
-    types = [
-        ("multiple_choice", "MCQ (Multiple Choice)"),
-        ("short_answer", "Short Answer"),
-        ("essay", "Essay / Theory"),
-    ]
-    diffs = [
-        ("easy", "Easy"),
-        ("medium", "Medium"),
-        ("hard", "Hard"),
-    ]
-    return Div(
-        Div(
-            Div(
-                Div(
-                    Div(
-                        Strong("Add Question to Bank", cls="fs-5 fw-bold text-dark d-block"),
-                        Span("Manually add a reusable question.", cls="text-muted small"),
-                    ),
-                    Button("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
-                    cls="modal-header border-0 pb-2 d-flex justify-content-between align-items-start",
-                ),
-                Form(
-                    Div(
-                        FormGroup("Question Text", Textarea(name="question_text", rows=3, placeholder="Enter the question...", required=True, cls="form-control mb-3")),
-                        Row(
-                            Col(FormGroup("Subject", Select("subject", *subjects, cls="form-select")), md=6),
-                            Col(FormGroup("Grade", Select("grade_level", *grades, cls="form-select")), md=6),
-                            cls="mb-3",
-                        ),
-                        Row(
-                            Col(FormGroup("Type", Select("question_type", *types, cls="form-select")), md=6),
-                            Col(FormGroup("Difficulty", Select("difficulty", *diffs, value="easy", cls="form-select")), md=6),
-                            cls="mb-3",
-                        ),
-                        FormGroup("Topic", Input("topic", placeholder="e.g. Quadratic Equations, Fractions...", cls="form-control mb-3")),
-                        FormGroup("Marks", Input("marks", type="number", value="1", min="1", max="100", cls="form-control mb-3")),
-                        FormGroup("Explanation (optional)", Textarea(name="explanation", rows=2, placeholder="Explanation or marking guide...", cls="form-control mb-3")),
-                        cls="modal-body py-2 px-4",
-                    ),
-                    Div(
-                        Button("Cancel", type="button", variant="light", cls="btn btn-light rounded-pill px-3 me-2", **{"data-bs-dismiss": "modal"}),
-                        Button("Add Question", type="submit", variant="success", cls="btn-brand rounded-pill px-4"),
-                        cls="modal-footer border-0 pt-2 pb-4 px-4",
-                    ),
-                    action="/app/bank/new",
-                    method="post",
-                ),
-                cls="modal-content border-0 shadow-lg rounded-4",
-            ),
-            cls="modal-dialog modal-dialog-centered",
-        ),
-        cls="modal fade",
-        id="addQuestionModal",
-        tabindex="-1",
-        **{"aria-hidden": "true"},
-    )
+
+    return items, editable_exams
 
 
 def register_routes(app):
@@ -270,57 +132,11 @@ def register_routes(app):
         q = req.query_params.get("q", "").strip()
         subject_filter = req.query_params.get("subject", "").strip()
         grade_filter = req.query_params.get("grade", "").strip()
+        type_filter = req.query_params.get("type", "").strip()
         diff_filter = req.query_params.get("difficulty", "").strip()
 
-        params = {"limit": "50"}
-        if q:
-            params["query_text"] = q
-        if subject_filter:
-            params["subject"] = subject_filter
-        if grade_filter:
-            params["grade_level"] = grade_filter
-
-        resp = await call_api(req, "GET", "/exams/question-bank/items", params=params)
-        ok, data = unwrap(resp)
-        all_items = data if (ok and isinstance(data, list)) else []
-
-        if diff_filter:
-            all_items = [i for i in all_items if (i.get("difficulty") or "").lower() == diff_filter.lower()]
-
-        # Compute metric totals
-        total_items = len(all_items)
-        easy_cnt = sum(1 for i in all_items if (i.get("difficulty") or "").lower() == "easy")
-        med_cnt = sum(1 for i in all_items if (i.get("difficulty") or "").lower() == "medium")
-        hard_cnt = sum(1 for i in all_items if (i.get("difficulty") or "").lower() == "hard")
-
-        # Metric cards
-        metrics = Row(
-            Col(
-                Div(
-                    Div(Icon("collection", cls="bi"), cls="app-metric-icon-wrap icon-blue-light"),
-                    Div(Div(str(total_items), cls="app-metric-value"), Div("Total Questions", cls="app-metric-label")),
-                    cls="app-metric-card",
-                ),
-                span=12, sm=4,
-            ),
-            Col(
-                Div(
-                    Div(Icon("mortarboard", cls="bi"), cls="app-metric-icon-wrap icon-green-light"),
-                    Div(Div("Primary 1-6", cls="app-metric-value"), Div("Active Curriculum", cls="app-metric-label")),
-                    cls="app-metric-card",
-                ),
-                span=12, sm=4,
-            ),
-            Col(
-                Div(
-                    Div(Icon("bar-chart", cls="bi"), cls="app-metric-icon-wrap icon-amber-light"),
-                    Div(Div(f"{easy_cnt}E · {med_cnt}M · {hard_cnt}H", cls="app-metric-value fs-4"), Div("Difficulty Spread", cls="app-metric-label")),
-                    cls="app-metric-card",
-                ),
-                span=12, sm=4,
-            ),
-            g=3,
-            cls="mb-4",
+        items, editable_exams = await _fetch_bank_items_and_exams(
+            req, q=q, subject=subject_filter, grade=grade_filter, qtype=type_filter, difficulty=diff_filter
         )
 
         header = Div(
@@ -329,19 +145,64 @@ def register_routes(app):
                 P("Reusable questions saved from generated exams or added manually.", cls="text-muted small mb-0"),
             ),
             Div(
+                HtmlButton(
+                    Icon("funnel", cls="bi me-2"),
+                    "Filters",
+                    type="button",
+                    cls="btn btn-outline-secondary bg-white rounded-pill px-4 py-2 fw-medium shadow-sm me-2",
+                    **{"data-bs-toggle": "collapse", "data-bs-target": "#bank-filter-tray"},
+                ),
                 Button(
-                    Icon("plus-lg", cls="bi me-1"),
+                    Icon("plus-lg", cls="bi me-2"),
                     "Add Question",
                     type="button",
-                    cls="btn btn-dark rounded-pill px-3 fw-semibold shadow-sm",
+                    cls="btn btn-brand rounded-pill px-4 py-2 fw-medium shadow-sm",
                     **{"data-bs-toggle": "modal", "data-bs-target": "#addQuestionModal"},
                 ) if is_editor else Div(),
+                cls="d-flex align-items-center mt-3 mt-md-0",
             ),
             cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
         )
 
+        # Search Bar matching P07
+        search_bar = Div(
+            Icon("search", cls="bi position-absolute text-muted", style="left: 1.25rem; top: 50%; transform: translateY(-50%); font-size: 1rem; z-index: 5;"),
+            Input(
+                "q",
+                value=q,
+                placeholder="Search questions or topics...",
+                cls="form-control bank-search-input w-100",
+                hx_get="/ui/bank/list",
+                hx_target="#bank-items-container",
+                hx_swap="outerHTML",
+                hx_trigger="input changed delay:300ms, search",
+                hx_include="#bank-filter-form",
+            ),
+            cls="position-relative mb-3",
+            id="bank-search-wrapper",
+        )
+
+        # Dropdown options matching P07
+        subjects = [
+            ("All", "All"),
+            ("Mathematics", "Mathematics"),
+            ("English Language", "English Language"),
+            ("Chemistry", "Chemistry"),
+            ("Physics", "Physics"),
+            ("Biology", "Biology"),
+            ("Basic Science", "Basic Science"),
+            ("Social Studies", "Social Studies"),
+            ("Economics", "Economics"),
+            ("Civic Education", "Civic Education"),
+        ]
         grades = [
-            ("", "All Grades"),
+            ("All", "All"),
+            ("JSS1", "JSS1"),
+            ("JSS2", "JSS2"),
+            ("JSS3", "JSS3"),
+            ("SS1", "SS1"),
+            ("SS2", "SS2"),
+            ("SS3", "SS3"),
             ("Primary 1", "Primary 1"),
             ("Primary 2", "Primary 2"),
             ("Primary 3", "Primary 3"),
@@ -349,77 +210,158 @@ def register_routes(app):
             ("Primary 5", "Primary 5"),
             ("Primary 6", "Primary 6"),
         ]
-
-        subjects = [
-            ("", "All Subjects"),
-            ("Mathematics", "Mathematics"),
-            ("English Language", "English Language"),
-            ("Basic Science and Technology", "Basic Science"),
-            ("National Values Education", "National Values"),
-            ("Pre-Vocational Studies", "Pre-Vocational"),
+        types = [
+            ("All", "All"),
+            ("multiple_choice", "MCQ"),
+            ("short_answer", "Short Answer"),
+            ("essay", "Essay"),
         ]
-
         diffs = [
-            ("", "All Difficulties"),
+            ("All", "All"),
             ("easy", "Easy"),
             ("medium", "Medium"),
             ("hard", "Hard"),
         ]
 
-        search_bar = Form(
-            Row(
-                Col(
-                    Input("q", value=q, placeholder="Search questions by keyword...", cls="app-search-input"),
-                    span=12, md=4,
+        # Filter Tray — hidden by default (collapsible) as seen in P07_question_bank_default_desktop.png
+        filter_tray = Div(
+            Form(
+                Row(
+                    Col(
+                        Div(
+                            Label("Subject:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
+                            Select("subject", *subjects, value=subject_filter or "All", cls="form-select rounded-pill"),
+                            cls="d-flex align-items-center gap-2",
+                        ),
+                        span=12, md=3,
+                    ),
+                    Col(
+                        Div(
+                            Label("Grade:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
+                            Select("grade", *grades, value=grade_filter or "All", cls="form-select rounded-pill"),
+                            cls="d-flex align-items-center gap-2",
+                        ),
+                        span=12, md=3,
+                    ),
+                    Col(
+                        Div(
+                            Label("Type:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
+                            Select("type", *types, value=type_filter or "All", cls="form-select rounded-pill"),
+                            cls="d-flex align-items-center gap-2",
+                        ),
+                        span=12, md=3,
+                    ),
+                    Col(
+                        Div(
+                            Label("Difficulty:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
+                            Select("difficulty", *diffs, value=diff_filter or "All", cls="form-select rounded-pill"),
+                            cls="d-flex align-items-center gap-2",
+                        ),
+                        span=12, md=3,
+                    ),
+                    g=3,
+                    cls="align-items-center",
                 ),
-                Col(
-                    Select("subject", *subjects, value=subject_filter, cls="form-select rounded-pill"),
-                    span=6, md=3,
-                ),
-                Col(
-                    Select("grade", *grades, value=grade_filter, cls="form-select rounded-pill"),
-                    span=6, md=2,
-                ),
-                Col(
-                    Select("difficulty", *diffs, value=diff_filter, cls="form-select rounded-pill"),
-                    span=6, md=2,
-                ),
-                Col(
-                    Button("Filter", type="submit", size="sm", cls="btn-brand w-100 rounded-pill py-2"),
-                    span=6, md=1,
-                ),
-                g=2,
-                cls="align-items-center",
+                id="bank-filter-form",
+                hx_get="/ui/bank/list",
+                hx_target="#bank-items-container",
+                hx_swap="outerHTML",
+                hx_trigger="change",
+                hx_include="#bank-search-wrapper input",
             ),
-            method="get",
-            action="/app/bank",
-            cls="app-card p-3 mb-4",
+            id="bank-filter-tray",
+            cls="bank-filter-tray collapse mb-4" + (" show" if (subject_filter or grade_filter or type_filter or diff_filter) else ""),
         )
 
-        if all_items:
-            cards = [_question_bank_card(i, is_editor) for i in all_items]
-            list_content = Div(*cards)
-        else:
-            list_content = EmptyState(
-                title="No questions in bank yet",
-                description="Questions are automatically saved into your school bank when approved, or can be saved directly from any exam detail.",
-                action=Button("View Exams", as_="a", href="/app/exams", cls="btn-brand"),
-            )
+        items_container = _render_bank_list_content(items, is_editor, editable_exams)
 
         return AppShell(
             Title("Question Bank — SkuPhase"),
             Div(
                 header,
-                metrics,
                 search_bar,
-                list_content,
-                _add_question_modal() if is_editor else Div(),
+                filter_tray,
+                items_container,
+                AddQuestionModal() if is_editor else Div(),
             ),
             user=user,
             active="bank",
             flash=flash,
             crumbs=[("Question Bank", None)],
         )
+
+    @app.get("/ui/bank/list")
+    async def bank_list_partial(req: Request):
+        """HTMX partial endpoint for dynamic search and filter swaps."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        role = user.get("role") or ""
+        is_editor = role in {"teacher", "school_admin"} or user.get("account_type") == "individual_teacher"
+
+        q = req.query_params.get("q", "").strip()
+        subject_filter = req.query_params.get("subject", "").strip()
+        grade_filter = req.query_params.get("grade", "").strip()
+        type_filter = req.query_params.get("type", "").strip()
+        diff_filter = req.query_params.get("difficulty", "").strip()
+
+        items, editable_exams = await _fetch_bank_items_and_exams(
+            req, q=q, subject=subject_filter, grade=grade_filter, qtype=type_filter, difficulty=diff_filter
+        )
+
+        return _render_bank_list_content(items, is_editor, editable_exams)
+
+    @app.delete("/ui/bank/items/{item_id}")
+    async def delete_bank_item_ui(req: Request, item_id: str):
+        """HTMX delete bank item endpoint with toast response."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        resp = await call_api(req, "DELETE", f"/exams/question-bank/items/{item_id}")
+        ok, data = unwrap(resp)
+        if not ok:
+            return show_toast(
+                data.get("message", "Could not delete question from bank."),
+                "danger",
+                hx_swap_oob="beforeend:#app-toast-container",
+            )
+        return Div(
+            show_toast("Question removed from school question bank.", "success", title="Deleted", hx_swap_oob="beforeend:#app-toast-container"),
+        )
+
+    @app.post("/ui/bank/items/{item_id}/add-to-exam")
+    async def add_item_to_exam_ui(req: Request, item_id: str):
+        """HTMX action to insert a question bank item into an exam section."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        exam_id = (form.get("exam_id") or "").strip()
+        sec_num = int(form.get("section_number") or 1)
+        sec_name = f"Section {chr(64 + sec_num)}"
+
+        if not exam_id:
+            return show_toast("Please select a target exam.", "warning")
+
+        payload = {
+            "bank_item_ids": [item_id],
+            "section_number": sec_num,
+            "section_name": sec_name,
+        }
+        resp = await call_api(req, "POST", f"/exams/{exam_id}/questions/import-from-bank", json=payload)
+        ok, data = unwrap(resp)
+        if not ok:
+            return show_toast(data.get("message", "Could not add question to exam."), "danger")
+
+        script = Script(f"var m = bootstrap.Modal.getInstance(document.getElementById('addToExamModal-{item_id}')); if(m) m.hide();")
+        toast = show_toast(
+            f"Question added to {sec_name} of exam successfully!",
+            "success",
+            title="Added to Exam",
+            hx_swap_oob="beforeend:#app-toast-container",
+        )
+        return Div(toast, script)
 
     @app.post("/app/bank/new")
     @app.post("/app/bank/add")
@@ -430,12 +372,17 @@ def register_routes(app):
         form = await req.form()
         text = (form.get("question_text") or "").strip()
         subject = (form.get("subject") or "Mathematics").strip()
-        grade = (form.get("grade_level") or "Primary 1").strip()
+        grade = (form.get("grade_level") or "JSS1").strip()
         qtype = (form.get("question_type") or "multiple_choice").strip()
-        diff = (form.get("difficulty") or "medium").strip()
+        diff = (form.get("difficulty") or "easy").strip()
         topic = (form.get("topic") or "").strip()
         marks = int(form.get("marks") or 1)
+        correct = (form.get("correct_answer") or "").strip()
         explanation = (form.get("explanation") or "").strip()
+
+        # Parse options
+        options_raw = form.get("options") or ""
+        options = [o.strip() for o in options_raw.splitlines() if o.strip()] if options_raw else None
 
         if len(text) < 3:
             push_flash(req, "Question text must be at least 3 characters.", "danger")
@@ -449,6 +396,8 @@ def register_routes(app):
             "topic": topic if topic else None,
             "question_text": text,
             "marks": marks,
+            "options": options,
+            "correct_answer": correct if correct else None,
             "explanation": explanation if explanation else None,
         }
         resp = await call_api(req, "POST", "/exams/question-bank/items", json=payload)
@@ -465,11 +414,15 @@ def register_routes(app):
         if guard:
             return guard
         form = await req.form()
+        options_raw = form.get("options") or ""
+        options = [o.strip() for o in options_raw.splitlines() if o.strip()] if options_raw else None
+
         payload = {
             "question_text": form.get("question_text", "").strip() or None,
             "difficulty": form.get("difficulty", "medium").strip() or None,
             "marks": int(form.get("marks", 1)) if form.get("marks") else None,
             "correct_answer": form.get("correct_answer", "").strip() or None,
+            "options": options,
             "topic": form.get("topic", "").strip() or None,
             "explanation": form.get("explanation", "").strip() or None,
         }

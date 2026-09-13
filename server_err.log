@@ -1,0 +1,434 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Meshell\\Desktop\\FastHTML\\skuphase']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [25112] using WatchFiles
+INFO:     Started server process [3216]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3216]
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py'. Reloading...
+Process SpawnProcess-2:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [21020]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21020]
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+Process SpawnProcess-4:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [3288]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py', 'app\frontend\components\exam.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3288]
+WARNING:  WatchFiles detected changes in 'app\frontend\components\exam.py', 'app\frontend\routes\exams.py'. Reloading...
+Process SpawnProcess-6:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [25644]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py', 'app\frontend\components\exam.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [25644]
+WARNING:  WatchFiles detected changes in 'app\frontend\components\exam.py'. Reloading...
+Process SpawnProcess-8:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [24084]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\api\v1\exams_router.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24084]
+WARNING:  WatchFiles detected changes in 'app\frontend\components\exam.py'. Reloading...
+Process SpawnProcess-10:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 76, in subprocess_started
+    config.configure_logging()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\config.py", line 370, in configure_logging
+    logging.config.dictConfig(self.log_config)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 935, in dictConfig
+    dictConfigClass(config).configure()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 577, in configure
+    _clearExistingHandlers()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 289, in _clearExistingHandlers
+    logging._handlers.clear()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "<frozen _collections_abc>", line 971, in clear
+KeyboardInterrupt
+INFO:     Started server process [23408]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [23408]
+INFO:     Started server process [5032]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [5032]
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+Process SpawnProcess-13:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 76, in subprocess_started
+    config.configure_logging()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\config.py", line 370, in configure_logging
+    logging.config.dictConfig(self.log_config)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 935, in dictConfig
+    dictConfigClass(config).configure()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 577, in configure
+    _clearExistingHandlers()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 289, in _clearExistingHandlers
+    logging._handlers.clear()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "<frozen _collections_abc>", line 971, in clear
+KeyboardInterrupt
+INFO:     Started server process [7912]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7912]
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py'. Reloading...
+Process SpawnProcess-15:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [22768]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [22768]
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py', 'app\frontend\routes\exams.py'. Reloading...
+Process SpawnProcess-17:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [31912]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_verify.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31912]
+INFO:     Started server process [33164]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app\models\question_bank.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [33164]
+WARNING:  WatchFiles detected changes in 'app\schemas\exam.py', 'app\frontend\components\bank.py', 'app\api\v1\exams_router.py', 'app\migrations\versions\0006_add_bank_usage_count.py'. Reloading...
+Process SpawnProcess-20:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 76, in subprocess_started
+    config.configure_logging()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\config.py", line 370, in configure_logging
+    logging.config.dictConfig(self.log_config)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 935, in dictConfig
+    dictConfigClass(config).configure()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 577, in configure
+    _clearExistingHandlers()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\config.py", line 290, in _clearExistingHandlers
+    logging.shutdown(logging._handlerList[:])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python 3.13.7\Lib\logging\__init__.py", line 2245, in shutdown
+    h.close()
+    ~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\logging\__init__.py", line 1055, in close
+    with _lock:
+         ^^^^^
+KeyboardInterrupt
+INFO:     Started server process [21180]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'scratch_write_bank.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [21180]
+WARNING:  WatchFiles detected changes in 'scratch_write_bank.py', 'app\frontend\components\bank.py', 'app\frontend\routes\bank.py'. Reloading...
+Process SpawnProcess-22:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [33988]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_frontend_bank.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [33988]
+WARNING:  WatchFiles detected changes in 'app\frontend\components\exam.py'. Reloading...
+Process SpawnProcess-24:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+INFO:     Started server process [30992]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+ERROR:    Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Python 3.13.7\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Python 3.13.7\Lib\asyncio\runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\starlette\routing.py", line 655, in lifespan
+    await receive()
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python 3.13.7\Lib\asyncio\queues.py", line 186, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+INFO:     Started server process [32908]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests\test_frontend_exams.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32908]
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\exams.py'. Reloading...
+Process SpawnProcess-27:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [25080]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_verify.py'. Reloading...

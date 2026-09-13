@@ -39,6 +39,7 @@ from app.schemas.exam import (
     QuestionBankItemResponse,
     QuestionBankItemCreateRequest,
     QuestionBankItemUpdateRequest,
+    QuestionBankImportRequest,
     ExamGenerationRequest,
     ExamGenerationResponse,
     ExamResponse,
@@ -619,6 +620,7 @@ async def list_question_bank_items(
     subject: Optional[str] = Query(None, description="Filter by subject"),
     grade_level: Optional[str] = Query(None, description="Filter by grade level"),
     topic: Optional[str] = Query(None, description="Filter by topic"),
+    difficulty: Optional[str] = Query(None, description="Filter by difficulty"),
     query_text: Optional[str] = Query(None, description="Free-text search on question text"),
     include_inactive: bool = Query(False, description="Include inactive items"),
     review_status: Optional[str] = Query(None, description="Filter by review status (pending/approved/rejected)"),
@@ -640,6 +642,8 @@ async def list_question_bank_items(
         query = query.where(QuestionBankItem.grade_level == grade_level)
     if topic:
         query = query.where(QuestionBankItem.topic == topic)
+    if difficulty:
+        query = query.where(func.lower(QuestionBankItem.difficulty) == difficulty.lower())
     if review_status:
         query = query.where(QuestionBankItem.review_status == review_status)
     if query_text:
@@ -733,6 +737,147 @@ async def update_question_bank_item(
     await db.commit()
     await db.refresh(item)
     return item
+
+
+@router.delete(
+    "/question-bank/items/{item_id}",
+    summary="Delete question bank item",
+    description="Deactivate/remove an item from the school question bank.",
+    tags=["Exams"],
+)
+async def delete_question_bank_item(
+    item_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Soft delete a question bank item from the school repository."""
+    if current_user.role not in {"teacher", "school_admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only teachers or school administrators can delete bank items",
+        )
+
+    item_result = await db.execute(
+        select(QuestionBankItem).where(
+            and_(
+                QuestionBankItem.id == item_id,
+                QuestionBankItem.school_id == current_user.school_id,
+            )
+        )
+    )
+    item = item_result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Question bank item not found")
+
+    item.is_active = False
+    await db.commit()
+    return {"message": "Question bank item deleted successfully", "id": str(item_id)}
+
+
+@router.post(
+    "/{exam_id}/questions/import-from-bank",
+    summary="Import questions from Question Bank into exam section",
+    description="Import selected bank questions into a target section of an exam.",
+    tags=["Exams"],
+)
+async def import_questions_from_bank(
+    exam_id: uuid.UUID,
+    request: QuestionBankImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Import selected bank questions directly into a specific section of an exam."""
+    if not is_workspace_admin(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only workspace administrators can import questions into exams",
+        )
+
+    exam_result = await db.execute(
+        select(Exam).where(
+            and_(
+                Exam.id == exam_id,
+                Exam.school_id == current_user.school_id,
+            )
+        )
+    )
+    exam = exam_result.scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
+    current_state = getattr(exam, "workflow_state", None) or exam.status
+    if current_state not in editable_states:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot add questions to an exam in state '{current_state}'",
+        )
+
+    bank_result = await db.execute(
+        select(QuestionBankItem).where(
+            and_(
+                QuestionBankItem.id.in_(request.bank_item_ids),
+                QuestionBankItem.school_id == current_user.school_id,
+                QuestionBankItem.is_active.is_(True),
+            )
+        )
+    )
+    bank_items = bank_result.scalars().all()
+    if not bank_items:
+        raise HTTPException(status_code=404, detail="No valid question bank items found to import")
+
+    q_max_res = await db.execute(
+        select(func.max(Question.question_number)).where(Question.exam_id == exam_id)
+    )
+    max_q_num = q_max_res.scalar() or 0
+
+    imported_count = 0
+    sec_num = request.section_number or 1
+    sec_name = request.section_name or f"Section {chr(64 + sec_num)}"
+
+    for idx, item in enumerate(bank_items, start=1):
+        q = Question(
+            exam_id=exam_id,
+            question_number=max_q_num + idx,
+            section_number=sec_num,
+            section_name=sec_name,
+            type=item.question_type,
+            difficulty=item.difficulty or "medium",
+            question_text=item.question_text,
+            marks=item.marks or 1,
+            options=item.options,
+            correct_answer=item.correct_answer,
+            explanation=item.explanation,
+            marking_scheme=item.marking_scheme,
+            topic=item.topic,
+        )
+        db.add(q)
+        item.usage_count = (item.usage_count or 0) + 1
+        imported_count += 1
+
+    # Recalculate total marks
+    all_q = await db.execute(
+        select(Question.marks).where(Question.exam_id == exam_id)
+    )
+    existing_marks = sum(m or 0 for m in all_q.scalars().all())
+    new_marks = sum(item.marks or 1 for item in bank_items)
+    exam.total_marks = existing_marks + new_marks
+
+    # Add audit comment
+    audit_comment = ExamAuditComment(
+        exam_id=exam_id,
+        author_user_id=current_user.user_id,
+        comment_text=f"Imported {imported_count} question(s) from Question Bank into {sec_name}.",
+        status="resolved",
+    )
+    db.add(audit_comment)
+
+    await db.commit()
+    return {
+        "message": f"Successfully imported {imported_count} question(s) into {sec_name}.",
+        "imported_count": imported_count,
+        "exam_id": str(exam_id),
+    }
 
 
 # ============================================================================
@@ -1489,14 +1634,11 @@ async def update_exam_question(
 
         # Record audit comment for transparency
         audit_comment = ExamAuditComment(
-            id=uuid.uuid4(),
             exam_id=exam_id,
             question_id=question_id,
-            user_id=current_user.user_id,
-            comment=f"Question Q{question.question_number} manually corrected ({', '.join(payload.keys())}).",
-            severity="info",
+            author_user_id=current_user.user_id,
+            comment_text=f"Question Q{question.question_number} manually corrected ({', '.join(payload.keys())}).",
             status="resolved",
-            created_at=datetime.now(timezone.utc),
         )
         db.add(audit_comment)
 

@@ -37,6 +37,7 @@ from fasthtml.common import (
     Summary,
     Textarea,
     Title,
+    to_xml,
 )
 from sqlalchemy import and_, select
 from starlette.requests import Request
@@ -74,6 +75,7 @@ from app.frontend.components.exam import (
     action_buttons,
     exam_header,
     render_questions,
+    render_rich_text,
 )
 from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_toast
 from app.frontend.components.layout import AppShell
@@ -1417,24 +1419,30 @@ def register_page_routes(app):
         if not ok:
             return show_toast(data.get("message", "Could not update question."), "danger")
         
-        # Close any open modal via script and notify user that total marks recalculated
+        # Stream the refreshed questions tab back via hx-swap-oob: the edit
+        # modal lives inside #tab-content, so replacing it closes the modal.
+        # The HX-Trigger header fires `cleanup-modals` after the swap, which
+        # removes the orphaned backdrop (the modal element is destroyed by the
+        # swap, so we can't call Bootstrap's modal.hide() — we clean up
+        # directly instead).
         toast = show_toast(
             "Question updated! Total exam marks recalculated.",
             "success",
             title="Updated",
             hx_swap_oob="beforeend:#app-toast-container",
         )
-        script = Script(f"var m = bootstrap.Modal.getInstance(document.getElementById('editQuestionModal-{exam_id}-{question_id}')); if(m) m.hide();")
-        
         # Re-fetch the exam and re-render the questions tab
         ok2, exam = await _fetch_exam(req, exam_id)
         if not ok2:
-            return Div(toast, script)
+            return toast
         user = current_user(req) or {}
-        return Div(
-            _questions_tab(exam, user, show_answers=False),
+        content = Div(
+            Div(_questions_tab(exam, user, show_answers=False), id="tab-content", **{"hx-swap-oob": "innerHTML:#tab-content"}),
             toast,
-            script,
+        )
+        return Response(
+            content=to_xml(content),
+            headers={"HX-Trigger": "cleanup-modals"},
         )
 
     @app.delete("/ui/exams/{exam_id}/questions/{question_id}")
@@ -1463,9 +1471,132 @@ def register_page_routes(app):
         )
         if not ok2:
             return toast
-        return Div(
-            _questions_tab(exam, user, show_answers=False),
+        # The confirm button uses hx-swap="none", so the refreshed questions tab
+        # must be shipped as an out-of-band swap.  Replacing #tab-content also
+        # replaces the confirm modal (it lives inside the tab), closing it.
+        # The HX-Trigger header fires `cleanup-modals` after the swap to remove
+        # the orphaned backdrop.
+        content = Div(
+            Div(_questions_tab(exam, user, show_answers=False), id="tab-content", **{"hx-swap-oob": "innerHTML:#tab-content"}),
             toast,
+        )
+        return Response(
+            content=to_xml(content),
+            headers={"HX-Trigger": "cleanup-modals"},
+        )
+
+    @app.get("/ui/exams/{exam_id}/sections/{sec_num}/bank-picker")
+    async def section_bank_picker(req: Request, exam_id: str, sec_num: int):
+        """HTMX partial loading question bank items matching the exam's subject."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        ok, exam = await _fetch_exam(req, exam_id)
+        if not ok:
+            return Div("Exam not found.", cls="text-danger small")
+
+        subject = exam.get("subject", "")
+        params = {"limit": "60"}
+        if subject:
+            params["subject"] = subject
+
+        resp = await call_api(req, "GET", "/exams/question-bank/items", params=params)
+        b_ok, b_data = unwrap(resp)
+        bank_items = b_data if (b_ok and isinstance(b_data, list)) else []
+
+        if not bank_items:
+            return EmptyState(
+                title="No questions in Question Bank",
+                description="There are no questions in your school bank matching this subject yet.",
+                action=A("Open Question Bank →", href="/app/bank", cls="btn btn-sm btn-outline-success rounded-pill px-3"),
+            )
+
+        rows = []
+        for item in bank_items:
+            bid = str(item.get("id") or "")
+            q_text = item.get("question_text", "")
+            diff = (item.get("difficulty") or "medium").lower()
+            marks = item.get("marks", 1)
+            q_type = (item.get("question_type") or "MCQ").replace("_", " ").upper()
+            topic = item.get("topic") or ""
+
+            rows.append(
+                Div(
+                    Div(
+                        Input(
+                            type="checkbox",
+                            name="bank_item_ids",
+                            value=bid,
+                            id=f"chk-bank-{sec_num}-{bid}",
+                            cls="form-check-input mt-1 me-3",
+                        ),
+                        Div(
+                            Div(
+                                Span(q_type, cls="badge bg-light text-dark border me-2 small"),
+                                Span(diff.capitalize(), cls=f"bank-badge-diff-{diff} me-2"),
+                                Span(f"{marks} mark{'s' if marks > 1 else ''}" + (f" · {topic}" if topic else ""), cls="text-muted small"),
+                                cls="d-flex align-items-center mb-1",
+                            ),
+                            Label(
+                                P(render_rich_text(q_text), cls="mb-0 text-dark small fw-medium cursor-pointer"),
+                                for_=f"chk-bank-{sec_num}-{bid}",
+                                cls="form-check-label w-100",
+                            ),
+                            cls="flex-grow-1",
+                        ),
+                        cls="d-flex align-items-start",
+                    ),
+                    cls="p-3 border rounded-3 mb-2 bg-white",
+                )
+            )
+
+        return Div(
+            P(f"{len(bank_items)} question(s) available in school bank for {subject}:", cls="small fw-semibold text-secondary mb-2"),
+            *rows,
+        )
+
+    @app.post("/ui/exams/{exam_id}/questions/import-bank")
+    async def import_bank_questions_ui(req: Request, exam_id: str):
+        """Import selected bank questions into this section and refresh exam."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        bank_item_ids = form.getlist("bank_item_ids")
+        sec_num = int(form.get("section_number") or 1)
+        sec_name = (form.get("section_name") or f"Section {chr(64 + sec_num)}").strip()
+
+        if not bank_item_ids:
+            return show_toast("Please select at least one question to import.", "warning")
+
+        payload = {
+            "bank_item_ids": bank_item_ids,
+            "section_number": sec_num,
+            "section_name": sec_name,
+        }
+        resp = await call_api(req, "POST", f"/exams/{exam_id}/questions/import-from-bank", json=payload)
+        ok, data = unwrap(resp)
+        if not ok:
+            return show_toast(data.get("message", "Could not import questions from bank."), "danger")
+
+        modal_id = f"importBankModal-{exam_id}-{sec_num}"
+        script = Script(f"var m = bootstrap.Modal.getInstance(document.getElementById('{modal_id}')); if(m) m.hide();")
+        toast = show_toast(
+            f"Successfully imported {len(bank_item_ids)} question(s) into {sec_name}!",
+            "success",
+            title="Questions Imported",
+            hx_swap_oob="beforeend:#app-toast-container",
+        )
+
+        ok2, exam = await _fetch_exam(req, exam_id)
+        if not ok2:
+            return Div(toast, script)
+        user = current_user(req) or {}
+        return Div(
+            _tab_strip(exam_id, exam, active_tab="questions"),
+            Div(_questions_tab(exam, user, show_answers=False), id="tab-content"),
+            toast,
+            script,
         )
 
     @app.post("/ui/exams/{exam_id}/refine-comments")
@@ -1861,15 +1992,9 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
                         type="button",
                         variant="success",
                         cls="btn-brand rounded-pill px-4 py-2",
-                        hx_post=f"/ui/exams/{exam_id}/approve",
-                        hx_target="#exam-detail-view",
-                        hx_swap="outerHTML",
-                        **{
-                            "hx-on::before-request": (
-                                f"var m=bootstrap.Modal.getInstance(document.getElementById('approveExamModal-{exam_id}'));"
-                                "if(m)m.hide();"
-                            )
-                        },
+                hx_post=f"/ui/exams/{exam_id}/approve",
+                hx_target="#exam-detail-view",
+                hx_swap="outerHTML",
                     ),
                     cls="modal-footer border-0 pt-3 pb-4 px-4 d-flex justify-content-end",
                 ),
@@ -2363,14 +2488,16 @@ def _refine_panel(exam_id: str) -> Div:
                 ),
                 Div(
                     Button(
+                        Span(
+                            Icon("arrow-repeat", cls="bi me-1 spinner-border spinner-border-sm"),
+                            "Regenerating...",
+                            cls="htmx-indicator me-2",
+                            style="display:none;",
+                        ),
                         "Send for refinement",
                         type="submit",
-                        variant="outline-secondary",
-                        size="sm",
-                        **{
-                            "hx-on::before-request": "this.innerHTML='<span class=\\'spinner-border spinner-border-sm me-2\\'></span>Regenerating…'; this.disabled=true;",
-                            "hx-on::after-request": "this.innerHTML='Send for refinement'; this.disabled=false;",
-                        },
+                        id=f"refine-send-{exam_id}",
+                        **{"hx-disabled-elt": f"#refine-send-{exam_id}"},
                     ),
                     cls="d-flex justify-content-end",
                 ),
@@ -3960,7 +4087,7 @@ def register_action_routes(app):
             return _wizard_error(
                 data.get("message", "Generation failed. Please try again.")
             )
-        exam_id = data.get("exam_id", "")
+        exam_id = str(data.get("exam_id") or data.get("id") or "")
         warnings = data.get("warnings") or []
         if warnings:
             for w in warnings:
@@ -4201,7 +4328,18 @@ def register_action_routes(app):
                 issue_lines = "<br>".join(f"• {i.get('message', 'Issue')}" for i in issues[:5])
                 msg = f"{msg}<br><small class='text-muted'>{issue_lines}</small>"
                 msg += f'<br><a href="/app/exams/{exam_id}?tab=preflight" class="small">Open Preflight tab to review & fix →</a>'
-            return show_toast(msg, "danger", title="Approval Blocked")
+            # Toast is out-of-band so it survives the swap; the page re-renders
+            # in place (replacing the confirm modal) instead of being replaced
+            # by a bare toast fragment.
+            toast = show_toast(msg, "danger", title="Approval Blocked", hx_swap_oob="beforeend:#app-toast-container")
+            ok2, exam = await _fetch_exam(req, exam_id)
+            if not ok2:
+                return toast
+            user = current_user(req) or {}
+            return Div(
+                toast,
+                Div(_render_exam_detail(exam, user, req.query_params.get("answers") == "1"), id="exam-detail-view"),
+            )
         set_flash(req.session, "success", "Exam approved successfully.")
         if req.headers.get("hx-request"):
             return Response(headers={"HX-Redirect": f"/app/exams/{exam_id}"})
@@ -4500,7 +4638,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         ),
         Form(
             _csrf_input(req),
-            Input("questions_json", type="hidden", id="manual-questions-json"),
+            Input(name="questions_json", type="hidden", id="manual-questions-json"),
             Row(
                 Col(
                     meta_card,
@@ -4638,7 +4776,7 @@ def register_manual_routes(app):
                 data.get("message", "Submission failed. Please try again."),
                 "danger",
             )
-        exam_id = data.get("exam_id", "")
+        exam_id = str(data.get("exam_id") or data.get("id") or "")
         if not exam_id:
             return show_toast("Submission succeeded but no exam id was returned.", "warning")
         return Div(

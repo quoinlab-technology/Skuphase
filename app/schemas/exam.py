@@ -507,6 +507,7 @@ class QuestionBankItemResponse(BaseModel):
     sub_parts: Optional[List[dict]] = None
     diagram_svg: Optional[str] = None
     is_active: bool
+    usage_count: int = 0
     review_status: str = "approved"
     created_at: datetime
 
@@ -543,4 +544,12 @@ class QuestionBankItemCreateRequest(BaseModel):
     correct_answer: Optional[str] = Field(default=None, max_length=20000)
     explanation: Optional[str] = Field(default=None, max_length=5000)
     marking_scheme: Optional[List[str]] = None
+
+
+class QuestionBankImportRequest(BaseModel):
+    """Request to import questions from Question Bank into an Exam section."""
+
+    bank_item_ids: List[UUID] = Field(..., min_length=1, description="List of bank question IDs to import")
+    section_number: int = Field(default=1, ge=1, description="Target section number")
+    section_name: Optional[str] = Field(default=None, max_length=100, description="Target section name")
 

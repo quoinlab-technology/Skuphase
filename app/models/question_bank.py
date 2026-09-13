@@ -73,6 +73,7 @@ class QuestionBankItem(BaseModel):
     diagram_svg = Column(Text, nullable=True)
 
     is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
 
     # Owner curation queue: platform rows are 'approved' by definition;
     # school-contributed rows start 'pending' and only an explicit owner

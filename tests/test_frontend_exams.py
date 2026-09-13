@@ -406,3 +406,60 @@ def test_section_headers_rendered(client, logged_in):
     assert 'Section A (Objectives)' in r.text
     # Top toolbar with show answers should be present
     assert 'Show answers &amp; explanations' in r.text or 'Show answers & explanations' in r.text
+
+
+def test_section_header_has_add_from_bank_button(client, logged_in):
+    logged_in(FakeResp(200, EXAM))
+    r = client.get('/app/exams/e1')
+    assert r.status_code == 200
+    assert 'Add from Bank' in r.text
+    assert 'importBankModal-e1-1' in r.text
+
+
+def test_section_bank_picker_loads_items(client, logged_in, monkeypatch):
+    logged_in(FakeResp(200, EXAM))
+
+    async def fake_bank_call(req, method, path, **kwargs):
+        if '/exams/e1' in path and method == 'GET':
+            return FakeResp(200, EXAM)
+        if '/exams/question-bank/items' in path and method == 'GET':
+            return FakeResp(200, [
+                {
+                    'id': 'b-item-1',
+                    'question_text': 'Sample Bank Question for Math',
+                    'difficulty': 'easy',
+                    'marks': 2,
+                    'question_type': 'multiple_choice',
+                    'topic': 'Algebra',
+                }
+            ])
+        return FakeResp(404, {})
+
+    monkeypatch.setattr('app.frontend.routes.exams.call_api', fake_bank_call)
+    r = client.get('/ui/exams/e1/sections/1/bank-picker')
+    assert r.status_code == 200
+    assert 'Sample Bank Question for Math' in r.text
+    assert 'chk-bank-1-b-item-1' in r.text
+
+
+def test_import_bank_questions_into_section(client, logged_in, monkeypatch):
+    logged_in(FakeResp(200, EXAM))
+
+    async def fake_api_call(req, method, path, **kwargs):
+        if '/exams/e1/questions/import-from-bank' in path and method == 'POST':
+            return FakeResp(200, {'message': 'imported', 'imported_count': 1})
+        if '/exams/e1' in path and method == 'GET':
+            return FakeResp(200, EXAM)
+        return FakeResp(404, {})
+
+    monkeypatch.setattr('app.frontend.routes.exams.call_api', fake_api_call)
+    r = client.post(
+        '/ui/exams/e1/questions/import-bank',
+        data={
+            'bank_item_ids': ['b-item-1'],
+            'section_number': '1',
+            'section_name': 'Section A (Objectives)',
+        }
+    )
+    assert r.status_code == 200
+    assert 'Successfully imported 1 question(s)' in r.text
