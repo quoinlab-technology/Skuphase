@@ -166,9 +166,9 @@ def register_routes(app):
 
         # Search Bar matching P07
         search_bar = Div(
-            Icon("search", cls="bi position-absolute text-muted", style="left: 1.25rem; top: 50%; transform: translateY(-50%); font-size: 1rem; z-index: 5;"),
+            Icon("search", cls="bi position-absolute text-muted", style="left: 1rem; top: 50%; transform: translateY(-50%); font-size: 1rem; pointer-events: none; z-index: 5;"),
             Input(
-                "q",
+                name="q",
                 value=q,
                 placeholder="Search questions or topics...",
                 cls="form-control bank-search-input w-100",
@@ -229,38 +229,38 @@ def register_routes(app):
                 Row(
                     Col(
                         Div(
-                            Label("Subject:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
-                            Select("subject", *subjects, value=subject_filter or "All", cls="form-select rounded-pill"),
-                            cls="d-flex align-items-center gap-2",
+                            Label("Subject", cls="form-label small fw-semibold text-secondary mb-1"),
+                            Select("subject", *subjects, value=subject_filter or "All", cls="form-select rounded-3"),
                         ),
-                        span=12, md=3,
+                        span=12, sm=6, md=3,
+                        cls="mb-3",
                     ),
                     Col(
                         Div(
-                            Label("Grade:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
-                            Select("grade", *grades, value=grade_filter or "All", cls="form-select rounded-pill"),
-                            cls="d-flex align-items-center gap-2",
+                            Label("Grade", cls="form-label small fw-semibold text-secondary mb-1"),
+                            Select("grade", *grades, value=grade_filter or "All", cls="form-select rounded-3"),
                         ),
-                        span=12, md=3,
+                        span=12, sm=6, md=3,
+                        cls="mb-3",
                     ),
                     Col(
                         Div(
-                            Label("Type:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
-                            Select("type", *types, value=type_filter or "All", cls="form-select rounded-pill"),
-                            cls="d-flex align-items-center gap-2",
+                            Label("Type", cls="form-label small fw-semibold text-secondary mb-1"),
+                            Select("type", *types, value=type_filter or "All", cls="form-select rounded-3"),
                         ),
-                        span=12, md=3,
+                        span=12, sm=6, md=3,
+                        cls="mb-3",
                     ),
                     Col(
                         Div(
-                            Label("Difficulty:", cls="form-label small fw-medium text-secondary mb-1 me-2"),
-                            Select("difficulty", *diffs, value=diff_filter or "All", cls="form-select rounded-pill"),
-                            cls="d-flex align-items-center gap-2",
+                            Label("Difficulty", cls="form-label small fw-semibold text-secondary mb-1"),
+                            Select("difficulty", *diffs, value=diff_filter or "All", cls="form-select rounded-3"),
                         ),
-                        span=12, md=3,
+                        span=12, sm=6, md=3,
+                        cls="mb-3",
                     ),
                     g=3,
-                    cls="align-items-center",
+                    cls="align-items-end",
                 ),
                 id="bank-filter-form",
                 hx_get="/ui/bank/list",

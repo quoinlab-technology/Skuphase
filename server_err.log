@@ -432,3 +432,14 @@ INFO:app.main:Database verification passed
 INFO:app.main:Background job worker started
 INFO:     Application startup complete.
 WARNING:  WatchFiles detected changes in '_verify.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [25080]
+INFO:     Started server process [31716]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.

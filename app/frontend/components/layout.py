@@ -350,9 +350,11 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
 
     initials = "".join(w[0] for w in name.split()[:2]).upper() or "U"
     topbar = Div(
+        # Hamburger hidden on mobile (< md) — bottom nav "Menu" handles that.
+        # Shown only on tablet (md..lg) where the bottom nav is absent.
         Button(
             Span(cls="navbar-toggler-icon"),
-            cls="navbar-toggler d-lg-none me-2 p-1",
+            cls="navbar-toggler d-none d-md-flex d-lg-none me-2 p-1",
             type="button",
             **{"data-bs-toggle": "offcanvas", "data-bs-target": "#appSidebar", "aria-controls": "appSidebar", "aria-label": "Toggle navigation"},
         ),
