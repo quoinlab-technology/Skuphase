@@ -443,3 +443,115 @@ INFO:app.core.database:Database migration state verified
 INFO:app.main:Database verification passed
 INFO:app.main:Background job worker started
 INFO:     Application startup complete.
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: POST http://ui.local/api/v1/auth/refresh-token "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+WARNING:  WatchFiles detected changes in 'app\frontend\components\layout.py'. Reloading...
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31716]
+WARNING:  WatchFiles detected changes in 'app\frontend\routes\bank.py'. Reloading...
+Process SpawnProcess-30:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [2716]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100&query_text=free "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://ui.local/api/v1/auth/login "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=50&workflow_state=generation_requested "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=50&workflow_state=teacher_review "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=50&status=approved "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=50&status=failed "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/generation-proposals "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/schools/947c2f52-5bdb-436c-8161-f067730c77a4 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/schools/947c2f52-5bdb-436c-8161-f067730c77a4/settings "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/auth/me/preferences "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/question-bank/items?limit=100 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams?limit=30 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/b48f8275-c405-4e8f-90e1-0af3259674e3 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/exams/?limit=50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://ui.local/api/v1/curriculum/weeks?class_level=Primary+3&subject=Mathematics&term=Second+Term "HTTP/1.1 200 OK"
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2716]
+WARNING:  WatchFiles detected changes in 'app\frontend\app.py', 'app\frontend\middleware.py'. Reloading...
+Process SpawnProcess-32:
+Traceback (most recent call last):
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Python 3.13.7\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Meshell\Desktop\FastHTML\.venv\Lib\site-packages\uvicorn\_subprocess.py", line 73, in subprocess_started
+    sys.stdin = os.fdopen(stdin_fileno)  # pragma: full coverage
+                ~~~~~~~~~^^^^^^^^^^^^^^
+  File "<frozen os>", line 1069, in fdopen
+  File "<frozen codecs>", line 312, in __init__
+KeyboardInterrupt
+INFO:     Started server process [34960]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_verify2.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [34960]
+INFO:     Started server process [31140]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in '_verify2.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:app.main:Background job worker stopped
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31140]
+INFO:     Started server process [4456]
+INFO:     Waiting for application startup.
+INFO:app.core.database:Database migration state verified
+INFO:app.main:Database verification passed
+INFO:app.main:Background job worker started
+INFO:     Application startup complete.

@@ -858,7 +858,7 @@ def register_page_routes(app):
         search_input_wrap = Div(
             Icon("search", cls="bi text-muted me-2"),
             Input(
-                "q",
+                name="q",
                 value=q,
                 placeholder="Search exams...",
                 cls="border-0 bg-transparent shadow-none p-0 flex-grow-1",

@@ -77,14 +77,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
-        # CSP: keep loose on inline styles (FastHTML + Faststrap use them),
-        # but block embedding.
+        # CSP: allow CDN origins for Faststrap's CDN asset injection
+        # (cdn.jsdelivr.net for Bootstrap, htmx, KaTeX, Bootstrap Icons; fonts.googleapis.com
+        # for Google Fonts; fonts.gstatic.com for font files).  Service worker
+        # caches all CDN assets for offline use after first load.
         if "Content-Security-Policy" not in response.headers:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "img-src 'self' data:; "
-                "style-src 'self' 'unsafe-inline'; "
-                "script-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+                "connect-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com https://fonts.gstatic.com; "
                 "frame-ancestors 'none'"
             )
         return response

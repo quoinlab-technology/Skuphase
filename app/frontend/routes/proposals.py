@@ -301,7 +301,7 @@ def register_routes(app):
         search_bar = Form(
             Div(
                 Icon("search", cls="bi text-muted ms-2"),
-                Input("q", value=q, placeholder="Search proposals...", cls="form-control border-0 shadow-none"),
+                Input(name="q", value=q, placeholder="Search proposals...", cls="form-control border-0 shadow-none"),
                 Button("Search", type="submit", size="sm", cls="btn-brand me-1"),
                 cls="d-flex align-items-center gap-2 app-card px-2 py-1 mb-3",
             ),
