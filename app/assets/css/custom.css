@@ -1111,7 +1111,9 @@ body {
   #exam-delete-result,
   .toast-container,
   .modal,
-  .modal-backdrop {
+  .modal-backdrop,
+  .collapse-chevron,
+  .action-buttons {
     display: none !important;
   }
   .print-only {
@@ -1122,6 +1124,8 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     max-width: 100% !important;
+    font-size: 9.5pt !important;
+    line-height: 1.35 !important;
   }
   .app-card {
     border: none !important;
@@ -1130,18 +1134,49 @@ body {
   }
   .print-page-break {
     page-break-before: always;
+    break-before: page;
   }
-  .app-card, .print-avoid-break {
-    page-break-inside: avoid;
+  .app-card, .print-avoid-break, .question-print-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
   .school-print-header {
     border-bottom: 2px solid #000 !important;
-    padding-bottom: 12px !important;
-    margin-bottom: 16px !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 12px !important;
   }
   .school-print-header h1,
   .school-print-header h2 {
     color: #000 !important;
+  }
+  .badge-status,
+  .badge {
+    border: 1.5px solid #000 !important;
+    color: #000 !important;
+    background: transparent !important;
+  }
+  .app-section-card {
+    border: 1px solid #000 !important;
+  }
+
+  /* Nigerian Eco-Print 2-Column Mode (saves up to 70% paper ream budget) */
+  .print-2col {
+    column-count: 2 !important;
+    column-gap: 20px !important;
+  }
+  .print-2col > * {
+    break-inside: avoid !important;
+  }
+  .print-inline-options {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px 16px !important;
+    font-size: 8.5pt !important;
+    margin-top: 3px !important;
+  }
+  .print-compact-q {
+    margin-bottom: 8px !important;
+    font-size: 9pt !important;
   }
 }
 
@@ -1160,17 +1195,14 @@ body {
   }
 }
 
-
 /* ============================================================
    Audit Remediation — Accessibility & Polish
    ============================================================ */
 
-/* WCAG AA: muted text must be >= #64748b on white (#4.5:1 ratio).
-   Bootstrap .text-muted is #6c757d which barely passes; any
-   custom light grey must also be at least this dark.           */
+/* WCAG AA: muted text must be >= #64748b on white (#4.5:1 ratio). */
 .text-muted-custom,
 .text-muted-light {
-  color: #64748b !important; /* was #a0aec0 — failed WCAG AA */
+  color: #64748b !important;
 }
 
 /* Registration persona cards — subtle lift on hover */
@@ -1182,18 +1214,50 @@ body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
 }
 
-/* Exam section / NERDC badge: high-contrast border for monochrome
-   laser printers used in rural school offices.                  */
-@media print {
-  .badge-status,
-  .badge {
-    border: 1.5px solid #000 !important;
-    color: #000 !important;
-    background: transparent !important;
-  }
-  .app-section-card {
-    border: 1px solid #000 !important;
-  }
+/* Standalone Answer Key / Marking Guide Styles */
+.answer-key-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  font-size: 8.5pt;
+  text-align: center;
+}
+.answer-key-cell {
+  border: 1px solid #333;
+  padding: 4px 2px;
+  background: #f8faf8;
+}
+.answer-key-cell .q-num {
+  font-weight: bold;
+  display: block;
+  font-size: 7.5pt;
+  color: #555;
+}
+.answer-key-cell .q-ans {
+  font-weight: 800;
+  font-size: 10pt;
+  color: #000;
+}
+
+/* 50-Question OMR Bubble Sheet Styles */
+.omr-sheet-container {
+  max-width: 780px;
+  margin: 0 auto;
+  border: 2px solid #000;
+  padding: 16px;
+  background: #fff;
+}
+.omr-bubble {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid #000;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 12px;
+  font-size: 8px;
+  font-weight: bold;
+  margin: 0 2px;
 }
 
 /* Card shadow: unify elevation to avoid bespoke box-shadow overrides */

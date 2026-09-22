@@ -27,6 +27,7 @@ from fasthtml.common import (
     Img,
     Input,
     Label,
+    Li,
     Option,
     P,
     Pre,
@@ -37,6 +38,7 @@ from fasthtml.common import (
     Summary,
     Textarea,
     Title,
+    Ul,
     to_xml,
 )
 from sqlalchemy import and_, select
@@ -661,31 +663,33 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         # Question block
         marks_bit = f" [{q['marks']} marks]" if q.get("marks") else ""
         q_parts = [
-            Div(Strong(f"Q{idx}. "), Span(q.get("question_text", "")), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 4px; font-size: 0.88rem;"),
+            Div(Strong(f"Q{idx}. "), Span(q.get("question_text", "")), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 3px; font-size: 0.88rem;"),
         ]
 
         if q.get("options"):
             opts = []
             for o_idx, opt in enumerate(q["options"]):
                 opt_str = format_mcq_option(opt, o_idx)
-                opts.append(Div(opt_str, style="font-size: 0.85rem; margin-bottom: 2px; flex: 1 1 45%; min-width: 200px;"))
-            q_parts.append(Div(*opts, style="display: flex; flex-wrap: wrap; margin-left: 20px; margin-bottom: 6px;"))
+                opts.append(Span(opt_str, style="margin-right: 14px; display: inline-block; font-size: 0.84rem;"))
+            q_parts.append(Div(*opts, cls="print-inline-options", style="margin-left: 16px; margin-bottom: 4px;"))
 
         if q.get("sub_parts"):
             sp_list = []
             for sp in q["sub_parts"]:
                 if isinstance(sp, dict):
                     sp_list.append(
-                        Div(f"({sp.get('part', '?')}) {sp.get('question', '')} [{sp.get('marks', 0)} marks]", style="font-size: 0.84rem; margin-left: 20px; margin-bottom: 2px;")
+                        Div(f"({sp.get('part', '?')}) {sp.get('question', '')} [{sp.get('marks', 0)} marks]", style="font-size: 0.84rem; margin-left: 16px; margin-bottom: 2px;")
                     )
             q_parts.append(Div(*sp_list))
 
-        content_blocks.append(Div(*q_parts, style="margin-bottom: 10px; page-break-inside: avoid;"))
+        content_blocks.append(Div(*q_parts, cls="print-compact-q print-avoid-break question-print-card", style="margin-bottom: 8px; page-break-inside: avoid;"))
 
     toolbar = Div(
-        Button("Print Exam Paper", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        Button("Print Exam Paper (2-Col Eco Mode)", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        A("Teacher Marking Guide", href=f"/app/exams/{exam.get('id', '')}/print/answer-key", target="_blank", cls="btn btn-outline-primary rounded-pill px-3 me-2"),
+        A("OMR Bubble Sheet", href=f"/app/exams/{exam.get('id', '')}/print/omr", target="_blank", cls="btn btn-outline-success rounded-pill px-3 me-2"),
         Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
-        cls="no-print d-flex justify-content-center p-3 mb-4 bg-light border rounded-pill shadow-sm",
+        cls="no-print d-flex flex-wrap gap-2 justify-content-center p-3 mb-4 bg-light border rounded-4 shadow-sm",
     )
 
     return Div(
@@ -693,8 +697,168 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         toolbar,
         Div(
             header,
-            *content_blocks,
+            Div(*content_blocks, cls="print-2col"),
+            style="max-width: 820px; margin: 0 auto; padding: 20px; background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111;",
+        ),
+        Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
+        style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
+    )
+
+
+def _render_answer_key_paper(exam: dict, user: dict) -> Div:
+    """Standalone, compact 1-page Teacher Marking Guide & Answer Key."""
+    school_name = user.get("school_name") or exam.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
+    questions = exam.get("questions") or []
+    mcqs = [q for q in questions if q.get("type") == "multiple_choice"]
+    theory = [q for q in questions if q.get("type") != "multiple_choice"]
+
+    header = Div(
+        H1(f"{school_name.upper()}", style="font-size: 1.25rem; font-weight: 800; text-align: center; margin-bottom: 2px;"),
+        H2(f"{str(exam.get('subject', '')).upper()} ({str(exam.get('grade_level', '')).upper()}) — MARKING GUIDE", style="font-size: 1rem; font-weight: 700; text-align: center; margin-bottom: 4px;"),
+        P("CONFIDENTIAL — FOR EXAMINER & SUPERVISOR USE ONLY", style="font-size: 0.8rem; font-weight: bold; color: #b02a37; text-align: center; margin-bottom: 8px;"),
+        style="border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px;",
+    )
+
+    grid_cells = []
+    for q in mcqs:
+        grid_cells.append(
+            Div(
+                Span(f"Q{q.get('question_number', '?')}", cls="q-num"),
+                Span(str(q.get("correct_answer") or "-"), cls="q-ans"),
+                cls="answer-key-cell",
+            )
+        )
+
+    sec_a = Div(
+        H4("SECTION A: OBJECTIVE ANSWER KEY", style="font-size: 0.9rem; font-weight: bold; margin-bottom: 6px;"),
+        Div(*grid_cells, cls="answer-key-grid mb-3"),
+    ) if mcqs else Div()
+
+    theory_items = []
+    for q in theory:
+        ms = q.get("marking_scheme") or []
+        ans = q.get("correct_answer") or ""
+        pts = [Li(str(p), style="margin-bottom: 2px;") for p in ms] if ms else [Li(ans)] if ans else [Li("Award marks per teacher rubric.")]
+        theory_items.append(
+            Div(
+                Strong(f"Q{q.get('question_number', '?')}. [{q.get('marks', 1)} marks] ", style="font-size: 0.88rem;"),
+                Span(q.get("question_text", ""), style="font-size: 0.85rem; color: #444;"),
+                Ul(*pts, style="font-size: 0.82rem; margin-top: 4px; padding-left: 20px;"),
+                style="margin-bottom: 8px; border-bottom: 1px dashed #ccc; padding-bottom: 6px;",
+            )
+        )
+
+    sec_b = Div(
+        H4("SECTION B/C: THEORY & ESSAY MARKING SCHEMES", style="font-size: 0.9rem; font-weight: bold; margin-top: 10px; margin-bottom: 6px;"),
+        *theory_items,
+    ) if theory else Div()
+
+    toolbar = Div(
+        Button("Print Marking Guide", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
+        cls="no-print d-flex justify-content-center p-3 mb-4 bg-light border rounded-pill shadow-sm",
+    )
+
+    return Div(
+        Title(f"Marking Guide - {exam.get('subject', '')}"),
+        toolbar,
+        Div(
+            header,
+            sec_a,
+            sec_b,
+            Div(
+                Div("Subject Teacher: ________________________", style="font-size: 0.82rem; font-weight: bold;"),
+                Div("HOD / Principal: ________________________", style="font-size: 0.82rem; font-weight: bold;"),
+                style="display: flex; justify-content: space-between; margin-top: 20px; padding-top: 10px; border-top: 1px solid #333;",
+            ),
             style="max-width: 800px; margin: 0 auto; padding: 20px; background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111;",
+        ),
+        Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
+        style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
+    )
+
+
+def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
+    """Standalone, printable 50-Question Student OMR Bubble Sheet."""
+    school_name = user.get("school_name") or exam.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
+
+    hdr = Div(
+        H1(f"{school_name.upper()}", style="font-size: 1.25rem; font-weight: 800; text-align: center; margin-bottom: 2px;"),
+        H2(f"{str(exam.get('subject', 'EXAMINATION')).upper()} — OMR ANSWER SHEET", style="font-size: 1rem; font-weight: 700; text-align: center; margin-bottom: 4px;"),
+        P("Instructions: Shade bubbles completely with 2B/HB pencil. Erase cleanly any change.", style="font-size: 0.8rem; text-align: center; margin-bottom: 8px; color: #555;"),
+        style="border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 12px;",
+    )
+
+    details = Div(
+        Div(
+            Div(Strong("Candidate Name: "), "_______________________________", style="font-size: 0.85rem; margin-bottom: 4px;"),
+            Div(Strong("Candidate ID: "), "_______________________________", style="font-size: 0.85rem;"),
+            style="flex: 1;",
+        ),
+        Div(
+            Div(Strong("Class: "), "___________", style="font-size: 0.85rem; margin-bottom: 4px;"),
+            Div(Strong("Date: "), "___________", style="font-size: 0.85rem;"),
+            style="flex: 1;",
+        ),
+        Div(
+            Div(Strong("Score: "), "[ &nbsp; &nbsp; / 50 ]", style="font-size: 0.95rem; font-weight: bold; border: 1.5px solid #000; padding: 6px 12px; text-align: center;"),
+            style="display: flex; align-items: center; justify-content: flex-end;",
+        ),
+        style="display: flex; border: 1px solid #000; padding: 10px; margin-bottom: 14px;",
+    )
+
+    col1 = []
+    for qn in range(1, 26):
+        col1.append(
+            Div(
+                Span(f"{qn:02d}.", style="font-weight: bold; display: inline-block; width: 26px; font-size: 0.85rem;"),
+                Span("A", cls="omr-bubble"),
+                Span("B", cls="omr-bubble"),
+                Span("C", cls="omr-bubble"),
+                Span("D", cls="omr-bubble"),
+                Span("E", cls="omr-bubble"),
+                style="margin-bottom: 4px; font-family: monospace;",
+            )
+        )
+    col2 = []
+    for qn in range(26, 51):
+        col2.append(
+            Div(
+                Span(f"{qn:02d}.", style="font-weight: bold; display: inline-block; width: 26px; font-size: 0.85rem;"),
+                Span("A", cls="omr-bubble"),
+                Span("B", cls="omr-bubble"),
+                Span("C", cls="omr-bubble"),
+                Span("D", cls="omr-bubble"),
+                Span("E", cls="omr-bubble"),
+                style="margin-bottom: 4px; font-family: monospace;",
+            )
+        )
+
+    bubble_grid = Div(
+        Div(*col1, style="flex: 1; padding-right: 15px; border-right: 1px dashed #aaa;"),
+        Div(*col2, style="flex: 1; padding-left: 15px;"),
+        style="display: flex; border: 1px solid #ddd; padding: 12px; margin-bottom: 14px;",
+    )
+
+    toolbar = Div(
+        Button("Print OMR Sheet", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
+        cls="no-print d-flex justify-content-center p-3 mb-4 bg-light border rounded-pill shadow-sm",
+    )
+
+    return Div(
+        Title(f"OMR Sheet - {exam.get('subject', '')}"),
+        toolbar,
+        Div(
+            hdr,
+            details,
+            bubble_grid,
+            Div(
+                Div("Candidate Sign: ____________________", style="font-size: 0.8rem; font-weight: bold;"),
+                Div("Invigilator Sign: ____________________", style="font-size: 0.8rem; font-weight: bold;"),
+                style="display: flex; justify-content: space-between; margin-top: 15px;",
+            ),
+            style="max-width: 800px; margin: 0 auto; padding: 20px; background: #fff; font-family: Arial, sans-serif; color: #111;",
         ),
         Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
         style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
@@ -1063,6 +1227,7 @@ def register_page_routes(app):
         )
 
     @app.get("/app/exams/{exam_id}/print")
+    @app.get("/app/exams/{exam_id}/print/student")
     async def exam_print_view(req: Request, exam_id: str):
         """Dedicated clean print view for official examination question paper."""
         guard = ensure_login(req)
@@ -1075,6 +1240,34 @@ def register_page_routes(app):
             return RedirectResponse("/app/exams", status_code=303)
 
         return _render_clean_print_paper(exam, user)
+
+    @app.get("/app/exams/{exam_id}/print/answer-key")
+    async def exam_print_answer_key(req: Request, exam_id: str):
+        """Dedicated clean print view for Teacher Marking Guide & Answer Key."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        ok, exam = await _fetch_exam(req, exam_id)
+        if not ok:
+            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
+            return RedirectResponse("/app/exams", status_code=303)
+
+        return _render_answer_key_paper(exam, user)
+
+    @app.get("/app/exams/{exam_id}/print/omr")
+    async def exam_print_omr(req: Request, exam_id: str):
+        """Dedicated clean print view for Student OMR Bubble Sheet."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        ok, exam = await _fetch_exam(req, exam_id)
+        if not ok:
+            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
+            return RedirectResponse("/app/exams", status_code=303)
+
+        return _render_omr_sheet_paper(exam, user)
 
     @app.get("/app/exams/{exam_id}/exports/{file_name}")
     async def exam_export_download(req: Request, exam_id: str, file_name: str):
@@ -1342,6 +1535,20 @@ def register_page_routes(app):
         content = _comments_tab_content(req, exam_id, comments, ok=ok, message=data.get("message") if not ok else None)
         return Div(
             _tab_strip(exam_id, exam_data, active_tab="comments"),
+            Div(content, id="tab-content"),
+        )
+
+    @app.get("/ui/exams/{exam_id}/tab/print")
+    async def tab_print(req: Request, exam_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        ok_exam, exam = await _fetch_exam(req, exam_id)
+        exam_data = exam if ok_exam else {}
+        content = _print_tab_content(exam_id, exam_data, user)
+        return Div(
+            _tab_strip(exam_id, exam_data, active_tab="print"),
             Div(content, id="tab-content"),
         )
 
@@ -2134,11 +2341,143 @@ def _tab_strip(exam_id: str, exam: dict = None, active_tab: str = "questions") -
 
     return Div(
         _tab("Questions", "questions", "questions", badge_val=q_count),
+        _tab("Print & Eco-Sheets", "print", "print"),
         _tab("Preflight", "preflight", "preflight"),
         _tab("Quality Report", "quality", "quality"),
         _tab("Audit Comments", "comments", "comments"),
         cls="app-tabs nav border-bottom mb-4",
     )
+
+
+def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
+    """Print & Paper Economy workspace: 2-column student paper, marking guide, OMR sheet & PDF exports."""
+    eco_card = Card(
+        H5("Print Ready Documents (Nigerian Classroom Standard)", cls="fw-bold text-dark mb-2"),
+        P("Optimized for monochrome laser printers and photocopiers to cut examination paper consumption by up to 60%.", cls="text-muted small mb-4"),
+        Row(
+            Col(
+                Card(
+                    Div(
+                        Icon("file-earmark-text", cls="bi text-dark fs-2 mb-2"),
+                        H6("Student Question Paper", cls="fw-bold text-dark mb-1"),
+                        P("2-column examination layout without answer leak. Ready for invigilation.", cls="text-muted small mb-3"),
+                        A(
+                            Icon("printer", cls="bi me-2"),
+                            "Print Exam Paper",
+                            href=f"/app/exams/{exam_id}/print/student",
+                            target="_blank",
+                            cls="btn btn-sm btn-dark rounded-pill px-3 w-100",
+                        ),
+                        cls="p-3 d-flex flex-column h-100",
+                    ),
+                    cls="h-100 border rounded-4 shadow-sm",
+                ),
+                span=12, md=4, cls="mb-3",
+            ),
+            Col(
+                Card(
+                    Div(
+                        Icon("check2-square", cls="bi text-primary fs-2 mb-2"),
+                        H6("Teacher Marking Guide", cls="fw-bold text-dark mb-1"),
+                        P("Compact 1-page 10-column answer grid + theory mark allocation rubrics.", cls="text-muted small mb-3"),
+                        A(
+                            Icon("printer", cls="bi me-2"),
+                            "Print Marking Guide",
+                            href=f"/app/exams/{exam_id}/print/answer-key",
+                            target="_blank",
+                            cls="btn btn-sm btn-outline-primary rounded-pill px-3 w-100",
+                        ),
+                        cls="p-3 d-flex flex-column h-100",
+                    ),
+                    cls="h-100 border rounded-4 shadow-sm",
+                ),
+                span=12, md=4, cls="mb-3",
+            ),
+            Col(
+                Card(
+                    Div(
+                        Icon("grid-3x3-gap", cls="bi text-success fs-2 mb-2"),
+                        H6("OMR Answer Sheet (50 Q)", cls="fw-bold text-dark mb-1"),
+                        P("Standardized bubble sheet for student shading with 2B/HB pencils.", cls="text-muted small mb-3"),
+                        A(
+                            Icon("printer", cls="bi me-2"),
+                            "Print OMR Sheet",
+                            href=f"/app/exams/{exam_id}/print/omr",
+                            target="_blank",
+                            cls="btn btn-sm btn-outline-success rounded-pill px-3 w-100",
+                        ),
+                        cls="p-3 d-flex flex-column h-100",
+                    ),
+                    cls="h-100 border rounded-4 shadow-sm",
+                ),
+                span=12, md=4, cls="mb-3",
+            ),
+            g=3,
+        ),
+        cls="bg-white border rounded-4 p-4 shadow-sm mb-4",
+    )
+
+    pdf_card = Card(
+        H5("Official PDF Export & WhatsApp Sharing", cls="fw-bold text-dark mb-2"),
+        P("Generate branded downloadable PDF documents and share directly with department teachers via WhatsApp.", cls="text-muted small mb-3"),
+        Form(
+            Row(
+                Col(
+                    Label("Document Type", cls="form-label small fw-semibold text-muted mb-1"),
+                    HtmlSelect(
+                        Option("Exam Question Paper (Students)", value="exam", selected=True),
+                        Option("Teacher Marking Guide & Rubrics", value="marking_guide"),
+                        Option("OMR Bubble Sheet (50 Q)", value="omr"),
+                        name="doc_type",
+                        id="tab-export-doc-type",
+                        cls="form-select form-select-sm",
+                    ),
+                    span=12, md=5, cls="mb-3",
+                ),
+                Col(
+                    Label("Options", cls="form-label small fw-semibold text-muted mb-1 d-block"),
+                    Label(
+                        Input(
+                            name="include_answers",
+                            type="checkbox",
+                            value="1",
+                            id="tab-export-answers",
+                            cls="form-check-input me-2",
+                        ),
+                        "Include answer key (Exam paper only)",
+                        cls="form-check-label small",
+                    ),
+                    span=12, md=4, cls="mb-3 pt-md-4",
+                ),
+                Col(
+                    Button(
+                        Icon("file-earmark-arrow-down", cls="bi me-2"),
+                        "Generate PDF",
+                        type="submit",
+                        variant="success",
+                        size="sm",
+                        cls="btn-brand rounded-pill px-4 py-2 w-100 mt-md-3",
+                    ),
+                    span=12, md=3, cls="mb-3",
+                ),
+            ),
+            hx_post=f"/ui/exams/{exam_id}/export",
+            hx_include="#tab-export-doc-type, #tab-export-answers",
+            hx_target="#tab-export-result",
+            hx_swap="innerHTML",
+            hx_indicator="#tab-export-spinner",
+        ),
+        Div(
+            Spinner(),
+            P("Generating PDF export...", cls="text-muted small ms-2 mb-0"),
+            id="tab-export-spinner",
+            cls="htmx-indicator d-flex align-items-center gap-2 mt-2",
+        ),
+        Div(id="tab-export-result", cls="mt-3"),
+        cls="bg-white border rounded-4 p-4 shadow-sm",
+    )
+
+    return Div(eco_card, pdf_card)
 
 
 def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
@@ -2157,8 +2496,8 @@ def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
         Div(
             Label(
                 Input(
-                    "answers",
-                    input_type="checkbox",
+                    name="answers",
+                    type="checkbox",
                     value="1",
                     hx_get=f"/ui/exams/{exam_id}/tab/questions?answers={'0' if show_answers else '1'}",
                     hx_target="#tab-content",
@@ -2196,18 +2535,26 @@ def _quality_tab_content(data: dict) -> Div:
     coverage_txt = f"{int(coverage)}%" if isinstance(coverage, (int, float)) else "6/6 levels"
     q_count = data.get("question_count", "40")
 
-    # Dimensions
-    dimensions = [
-        ("Clarity", 96, "green"),
-        ("Curriculum alignment", 92, "green"),
-        ("Difficulty balance", 89, "amber"),
-        ("Bloom's distribution", 94, "green"),
-        ("Asset integration", 88, "amber"),
-    ]
-
-    # If backend provided specific scores in distribution, use them
+    # Calculate real Bloom and difficulty metrics from actual exam distribution
     distribution = data.get("distribution") or {}
     bloom = distribution.get("bloom_levels") or {}
+    difficulty = distribution.get("difficulty") or {}
+    q_total = max(int(q_count) if str(q_count).isdigit() else 1, 1)
+
+    dimensions = []
+    for b_level in ["remember", "understand", "apply", "analyze", "evaluate", "create"]:
+        cnt = bloom.get(b_level, 0)
+        pct = round((cnt / q_total) * 100)
+        color = "green" if pct > 0 else "amber"
+        dimensions.append((f"Bloom: {b_level.capitalize()}", pct, color))
+
+    for diff_name in ["easy", "medium", "hard"]:
+        cnt = difficulty.get(diff_name, 0)
+        if cnt > 0:
+            pct = round((cnt / q_total) * 100)
+            color = "green" if diff_name in ("easy", "medium") else "amber"
+            dimensions.append((f"Difficulty: {diff_name.capitalize()}", pct, color))
+
     if bloom:
         coverage_txt = f"{len(bloom)}/6 levels"
 
@@ -2522,19 +2869,31 @@ def _export_panel(exam_id: str) -> Div:
     """Always-on export options so action button has hx-include targets."""
     return Div(
         Details(
-            Summary("Export to PDF", cls="fw-semibold"),
+            Summary("Export Options & Formats", cls="fw-semibold"),
             Form(
+                Div(
+                    Label("Document Type", cls="form-label small fw-semibold text-muted mb-1"),
+                    HtmlSelect(
+                        Option("Exam Paper (Students)", value="exam", selected=True),
+                        Option("Teacher Marking Guide & Rubrics", value="marking_guide"),
+                        Option("OMR Bubble Sheet (50 Q)", value="omr"),
+                        name="doc_type",
+                        id="export-doc-type",
+                        cls="form-select form-select-sm mb-2",
+                    ),
+                    cls="mb-2",
+                ),
                 Div(
                     Label(
                         Input(
-                            "include_answers",
+                            name="include_answers",
                             type="checkbox",
                             value="1",
                             id="export-answers",
                             cls="form-check-input me-2",
                         ),
-                        "Include answer key",
-                        cls="form-check-label",
+                        "Include answer key (Exam paper only)",
+                        cls="form-check-label small",
                     ),
                     cls="form-check mb-2",
                 ),
@@ -2549,7 +2908,7 @@ def _export_panel(exam_id: str) -> Div:
                     cls="d-flex justify-content-end",
                 ),
                 hx_post=f"/ui/exams/{exam_id}/export",
-                hx_include="#export-answers",
+                hx_include="#export-answers, #export-doc-type",
                 hx_target="#export-result",
                 hx_swap="innerHTML",
                 hx_indicator="#export-spinner",
@@ -4352,7 +4711,8 @@ def register_action_routes(app):
             return guard
         form = await req.form()
         include_answers = form.get("include_answers") == "1"
-        payload = {"format": "pdf", "include_answers": include_answers}
+        doc_type = form.get("doc_type") or "exam"
+        payload = {"format": "pdf", "include_answers": include_answers, "doc_type": doc_type}
         resp = await call_api(req, "POST", f"/exams/{exam_id}/export", payload)
         ok, data = unwrap(resp)
         if not ok:
@@ -4367,14 +4727,27 @@ def register_action_routes(app):
         download_url = data.get("download_url", "")
         file_name = data.get("file_name", "exam.pdf")
         download_link = download_url or f"/app/exams/{exam_id}/exports/{file_name}"
+        wa_text = quote(f"SkuPhase Exam Export ({file_name}): {req.base_url}app/exams/{exam_id}/exports/{file_name}")
+        wa_url = f"https://wa.me/?text={wa_text}"
         return Div(
             show_toast(f"PDF export '{file_name}' ready.", "success"),
-            A(
-                Icon("download", cls="bi me-2"),
-                f"Download {file_name}",
-                href=download_link,
-                cls="btn btn-sm btn-brand d-inline-flex align-items-center mt-2",
-                download=file_name,
+            Div(
+                A(
+                    Icon("download", cls="bi me-2"),
+                    f"Download {file_name}",
+                    href=download_link,
+                    cls="btn btn-sm btn-brand d-inline-flex align-items-center mt-2 me-2",
+                    download=file_name,
+                ),
+                A(
+                    Icon("whatsapp", cls="bi me-2"),
+                    "Share via WhatsApp",
+                    href=wa_url,
+                    target="_blank",
+                    cls="btn btn-sm btn-success d-inline-flex align-items-center mt-2",
+                    style="background-color: #25D366; border-color: #25D366; color: white;",
+                ),
+                cls="d-flex flex-wrap align-items-center",
             ),
             Script(f"window.location.assign('{download_link}');"),
             id="export-result",
@@ -4424,7 +4797,11 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
 
   const esc = v => String(v || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
 
-  const card = n => `
+  const card = (n, qData = null) => {
+    const text = qData ? esc(qData.question_text || '') : '';
+    const marks = qData ? (qData.marks || 2) : 2;
+    const type = qData ? (qData.type || 'multiple_choice') : 'multiple_choice';
+    return `
     <article class="manual-question-card bg-white rounded-4 border p-4 mb-3 shadow-sm" data-question-card>
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="d-flex align-items-center gap-2">
@@ -4437,40 +4814,43 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       </div>
       <div class="mb-3">
         <label class="form-label text-muted small fw-medium mb-1">Question</label>
-        <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text... (supports LaTeX formulas like $x^2 + 5 = 0$)" style="background-color: #F4F6F4; font-size: 0.92rem;" required></textarea>
+        <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text... (supports LaTeX formulas like $x^2 + 5 = 0$)" style="background-color: #F4F6F4; font-size: 0.92rem;" required>${text}</textarea>
       </div>
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-7">
           <label class="form-label text-muted small fw-medium mb-1">Type</label>
           <select class="form-select manual-question-type rounded-3 border-0 py-2" style="background-color: #F4F6F4; font-size: 0.92rem;">
-            <option value="multiple_choice">MCQ</option>
-            <option value="short_answer">Short Answer</option>
-            <option value="essay">Essay</option>
-            <option value="fill_in_blank">Fill in the Blank</option>
-            <option value="true_false">True / False</option>
+            <option value="multiple_choice" ${type === 'multiple_choice' ? 'selected' : ''}>MCQ</option>
+            <option value="short_answer" ${type === 'short_answer' ? 'selected' : ''}>Short Answer</option>
+            <option value="essay" ${type === 'essay' ? 'selected' : ''}>Essay</option>
+            <option value="fill_in_blank" ${type === 'fill_in_blank' ? 'selected' : ''}>Fill in the Blank</option>
+            <option value="true_false" ${type === 'true_false' ? 'selected' : ''}>True / False</option>
           </select>
         </div>
         <div class="col-12 col-md-5">
           <label class="form-label text-muted small fw-medium mb-1">Marks</label>
-          <input class="form-control manual-question-marks rounded-3 border-0 py-2" type="number" min="1" max="100" value="2" style="background-color: #F4F6F4; font-size: 0.92rem;" required>
+          <input class="form-control manual-question-marks rounded-3 border-0 py-2" type="number" min="1" max="100" value="${marks}" style="background-color: #F4F6F4; font-size: 0.92rem;" required>
         </div>
       </div>
       <div class="manual-options"></div>
     </article>`;
+  };
 
   const cards = () => [...editor.querySelectorAll('[data-question-card]')];
 
-  const options = item => {
+  const options = (item, initialOpts = null) => {
     const type = item.querySelector('.manual-question-type').value;
     const area = item.querySelector('.manual-options');
     if (type === 'multiple_choice') {
+      const placeholders = ['Option A', 'Option B', 'Option C', 'Option D'];
       area.innerHTML = `
         <label class="form-label text-muted small fw-medium mb-2">Options</label>
-        ${['Option A', 'Option B', 'Option C', 'Option D'].map((ph, idx) => `
-          <div class="mb-2">
-            <input class="form-control manual-option rounded-3 border-0 py-2 px-3" placeholder="${ph}" style="background-color: #F4F6F4; font-size: 0.88rem;">
-          </div>
-        `).join('')}
+        ${placeholders.map((ph, idx) => {
+          const val = (initialOpts && initialOpts[idx]) ? esc(initialOpts[idx]) : '';
+          return `<div class="mb-2">
+            <input class="form-control manual-option rounded-3 border-0 py-2 px-3" placeholder="${ph}" value="${val}" style="background-color: #F4F6F4; font-size: 0.88rem;">
+          </div>`;
+        }).join('')}
       `;
     } else if (type === 'true_false') {
       area.innerHTML = `
@@ -4487,6 +4867,29 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     item.querySelector('strong').textContent = `Question ${i + 1}`;
     item.querySelector('.manual-remove-question').disabled = cards().length === 1;
   });
+
+  let saveTimer = null;
+  const saveDraft = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        const questions = cards().map((item, i) => ({
+          question_number: i + 1,
+          type: item.querySelector('.manual-question-type').value,
+          question_text: item.querySelector('.manual-question-text').value.trim(),
+          marks: Number(item.querySelector('.manual-question-marks').value) || 0,
+          options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean)
+        }));
+        const subject = document.getElementById('manual-subject')?.value || '';
+        const grade = document.getElementById('manual-grade')?.value || '';
+        if (questions.some(q => q.question_text) || subject) {
+          localStorage.setItem('skuphase_manual_draft', JSON.stringify({
+            subject, grade, questions, savedAt: new Date().toLocaleTimeString()
+          }));
+        }
+      } catch (e) { /* silent storage fail */ }
+    }, 400);
+  };
 
   const update = () => {
     const subject = document.getElementById('manual-subject').value || 'Subject';
@@ -4523,11 +4926,12 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         throwOnError: false
       });
     }
+    saveDraft();
   };
 
-  const add = () => {
-    editor.insertAdjacentHTML('beforeend', card(cards().length + 1));
-    options(cards().at(-1));
+  const add = (qData = null) => {
+    editor.insertAdjacentHTML('beforeend', card(cards().length + 1, qData));
+    options(cards().at(-1), qData?.options);
     renumber();
     update();
   };
@@ -4548,12 +4952,76 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     }
   });
 
-  document.getElementById('manual-add-question').addEventListener('click', add);
+  document.getElementById('manual-add-question').addEventListener('click', () => add());
   document.getElementById('manual-preview-button').addEventListener('click', () => {
     document.getElementById('manual-preview-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.getElementById('manual-subject').addEventListener('change', update);
   document.getElementById('manual-grade').addEventListener('change', update);
+
+  const checkDraft = () => {
+    try {
+      const raw = localStorage.getItem('skuphase_manual_draft');
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft || !draft.questions || !draft.questions.length) return;
+      const hasContent = draft.questions.some(q => q.question_text) || draft.subject;
+      if (!hasContent) return;
+
+      const bannerSlot = document.getElementById('draft-rescue-banner-slot');
+      if (!bannerSlot) return;
+
+      bannerSlot.innerHTML = `
+        <div id="draft-rescue-banner" class="alert alert-warning border-0 shadow-sm rounded-4 p-3 mb-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-clock-history fs-5 text-warning-emphasis"></i>
+            <div>
+              <strong class="text-dark">Unsaved Draft Recovered</strong>
+              <span class="d-block small text-muted">Found an unsaved exam draft (${draft.questions.length} questions, saved at ${draft.savedAt || 'recently'}).</span>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" id="manual-restore-btn" class="btn btn-sm btn-dark rounded-pill px-3">Restore Draft</button>
+            <button type="button" id="manual-discard-btn" class="btn btn-sm btn-outline-secondary rounded-pill px-3">Discard</button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('manual-restore-btn').addEventListener('click', () => {
+        if (draft.subject) document.getElementById('manual-subject').value = draft.subject;
+        if (draft.grade) document.getElementById('manual-grade').value = draft.grade;
+        editor.innerHTML = '';
+        draft.questions.forEach(q => add(q));
+        bannerSlot.innerHTML = '';
+      });
+
+      document.getElementById('manual-discard-btn').addEventListener('click', () => {
+        localStorage.removeItem('skuphase_manual_draft');
+        bannerSlot.innerHTML = '';
+      });
+    } catch (e) {
+      console.warn('Draft check error:', e);
+    }
+  };
+
+  form.addEventListener('htmx:sendError', () => {
+    saveDraft();
+    const res = document.getElementById('manual-result');
+    if (res) {
+      res.innerHTML = `
+        <div class="alert alert-warning rounded-4 shadow-sm border-0 p-3 mt-3">
+          <i class="bi bi-wifi-off me-2"></i>
+          <strong>Network connection lost.</strong> Your draft is safely preserved on this device. You will not lose any questions. Click Submit again when reconnected.
+        </div>
+      `;
+    }
+  });
+
+  form.addEventListener('htmx:afterOnLoad', evt => {
+    if (evt.detail && evt.detail.successful) {
+      localStorage.removeItem('skuphase_manual_draft');
+    }
+  });
 
   window.skuPhaseManual = {
     prepare: () => {
@@ -4570,6 +5038,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
   };
 
   add();
+  checkDraft();
 })();
 """)
 
@@ -4641,6 +5110,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
             Input(name="questions_json", type="hidden", id="manual-questions-json"),
             Row(
                 Col(
+                    Div(id="draft-rescue-banner-slot"),
                     meta_card,
                     Div(id="manual-question-editor"),
                     Button(

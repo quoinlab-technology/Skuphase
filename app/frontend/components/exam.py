@@ -295,7 +295,7 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
             # Check if this option is the correct answer (e.g. letter matches or full text matches)
             letter = chr(65 + idx)
             is_correct = False
-            if correct_ans:
+            if show_answers and correct_ans:
                 if correct_ans.upper() == letter or correct_ans.upper().startswith(letter + ".") or opt_str.strip() == correct_ans:
                     is_correct = True
             

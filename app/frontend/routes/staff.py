@@ -5,11 +5,39 @@ and review school access permissions.
 """
 
 from urllib.parse import urlencode
-from fasthtml.common import A, Div, Form, H1, H2, Input, Label, P, Span, Strong, Title
-from starlette.requests import Request
-from starlette.responses import RedirectResponse
 
-from faststrap import Alert, Badge, Button, Card, Col, Container, EmptyState, FormGroup, Icon, Row, Select
+from fasthtml.common import (
+    A,
+    Div,
+    Form,
+    H1,
+    H2,
+    Input as FTInput,
+    Label,
+    P,
+    Span,
+    Strong,
+    Title,
+    to_xml,
+)
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, RedirectResponse
+
+from faststrap import (
+    Alert,
+    Badge,
+    Button,
+    Card,
+    Col,
+    Container,
+    EmptyState,
+    FormGroup,
+    Icon,
+    Input,
+    Row,
+    Select,
+    Spinner,
+)
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
@@ -49,9 +77,7 @@ def _user_row(u: dict, current_uid: str) -> Div:
     if not is_self:
         actions.append(
             Form(
-                # Pass the intended next state so the handler sends the correct
-                # is_active value regardless of current DB state.
-                Input(type="hidden", name="target_active", value="false" if is_active else "true"),
+                FTInput(type="hidden", name="target_active", value="false" if is_active else "true"),
                 Button(
                     "Deactivate" if is_active else "Activate",
                     type="submit",
@@ -114,9 +140,9 @@ def _invite_modal() -> Div:
                 ),
                 Form(
                     Div(
-                        FormGroup("Full Name", Input("full_name", placeholder="e.g. Chinelo Okonkwo", cls="form-control", required=True), cls="mb-3"),
-                        FormGroup("Email Address", Input("email", type="email", placeholder="teacher@school.edu.ng", cls="form-control", required=True), cls="mb-3"),
-                        FormGroup("Role", Select("role", *roles, value="teacher", cls="form-select"), cls="mb-3"),
+                        Input("full_name", placeholder="e.g. Chinelo Okonkwo", label="Full Name", required=True),
+                        Input("email", input_type="email", placeholder="teacher@school.edu.ng", label="Email Address", required=True),
+                        Select("role", *roles, value="teacher", label="Role"),
                         cls="modal-body py-2",
                     ),
                     Div(
@@ -138,7 +164,181 @@ def _invite_modal() -> Div:
     )
 
 
+def _render_staff_content(all_users: list, current_uid: str, status_filter: str = "", q: str = ""):
+    """Build the filter pills, search bar, and staff table subtree."""
+    # Counts
+    counts = {
+        "all": len(all_users),
+        "active": sum(1 for u in all_users if u.get("is_active", True) and u.get("is_verified", True)),
+        "invited": sum(1 for u in all_users if not u.get("is_verified", True)),
+        "suspended": sum(1 for u in all_users if not u.get("is_active", True)),
+    }
+
+    # Filter
+    filtered = all_users
+    if q:
+        filtered = [u for u in filtered if q in (u.get("full_name", "") + " " + u.get("email", "")).lower()]
+    if status_filter == "active":
+        filtered = [u for u in filtered if u.get("is_active", True) and u.get("is_verified", True)]
+    elif status_filter == "invited":
+        filtered = [u for u in filtered if not u.get("is_verified", True)]
+    elif status_filter == "suspended":
+        filtered = [u for u in filtered if not u.get("is_active", True)]
+
+    def _pill(label: str, key: str):
+        active_cls = " active" if status_filter == key else ""
+        cnt = counts.get(key or "all", 0)
+        href_query = f"/app/staff?status={key}" if key else "/app/staff"
+        return A(
+            f"{label} ({cnt})",
+            href=href_query,
+            cls=f"app-filter-pill{active_cls}",
+            hx_get=f"/ui/staff/list?status={key}",
+            hx_target="#staff-content",
+            hx_swap="outerHTML",
+            hx_include="#staff-filter-wrapper input",
+            hx_indicator="#staff-spinner",
+            onclick=f"const el=document.getElementById('staff-active-status'); if(el) el.value='{key}';",
+        )
+
+    pills = Div(
+        _pill("All", ""),
+        _pill("Active", "active"),
+        _pill("Invited", "invited"),
+        _pill("Suspended", "suspended"),
+        cls="d-flex gap-2 flex-wrap mb-3",
+    )
+
+    search_bar = Div(
+        Div(
+            Icon("search", cls="bi text-muted position-absolute", style="top:0.75rem; left:1rem; font-size:1rem;"),
+            FTInput(
+                name="q",
+                value=q,
+                placeholder="Search staff by name or email...",
+                cls="form-control rounded-pill ps-5 py-2 border shadow-sm",
+                style="background:#fff;",
+                id="staff-search-input",
+                hx_get="/ui/staff/list",
+                hx_target="#staff-content",
+                hx_swap="outerHTML",
+                hx_trigger="input changed delay:300ms, search",
+                hx_include="#staff-filter-wrapper input",
+                hx_indicator="#staff-spinner",
+            ),
+            cls="position-relative flex-grow-1",
+            style="max-width: 580px;",
+        ),
+        Div(
+            Spinner(variant="success", size="sm", cls="me-2"),
+            Span("Updating staff list...", cls="small text-muted"),
+            id="staff-spinner",
+            cls="htmx-indicator ms-3 d-inline-flex align-items-center",
+        ),
+        id="staff-filter-wrapper",
+        cls="d-flex flex-wrap align-items-center mb-4",
+    )
+
+    table_head = Div(
+        Div("Name & Email", cls="col-md-4 fw-bold"),
+        Div("Role", cls="col-md-2 text-md-center fw-bold"),
+        Div("Status", cls="col-md-2 text-md-center fw-bold"),
+        Div("Joined", cls="col-md-2 text-md-center fw-bold"),
+        Div("Actions", cls="col-md-2 text-md-end fw-bold"),
+        cls="row app-table-head g-0 d-none d-md-flex px-3 py-2 bg-light rounded-top-4 border-bottom text-muted small",
+    )
+
+    rows = [_user_row(u, current_uid) for u in filtered]
+
+    if rows:
+        table_container = Div(
+            table_head,
+            *rows,
+            cls="app-table-container mb-4 shadow-sm bg-white rounded-4 border overflow-hidden",
+        )
+    elif not all_users:
+        table_container = EmptyState(
+            title="No staff members yet",
+            description="Invite teachers and school administrators to collaborate on exam generation.",
+            action=Button(
+                Icon("plus-lg", cls="bi me-1"),
+                "Invite Staff Member",
+                type="button",
+                variant="success",
+                cls="btn-brand rounded-pill px-4",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#inviteUserModal"},
+            ),
+        )
+    else:
+        table_container = EmptyState(
+            title="No staff members found",
+            description="No staff match the current filters. Try changing your search query or selecting a different status filter.",
+            action=Button(
+                Icon("plus-lg", cls="bi me-1"),
+                "Invite User",
+                type="button",
+                variant="success",
+                cls="btn-brand rounded-pill px-4",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#inviteUserModal"},
+            ),
+        )
+
+    return Div(
+        FTInput(type="hidden", name="status", value=status_filter, id="staff-active-status"),
+        pills,
+        search_bar,
+        table_container,
+        id="staff-content",
+        cls="pb-5 mb-5",
+    )
+
+
 def register_routes(app):
+    # ------------------------------------------------------------------
+    # HTMX partial: returns just #staff-content
+    # ------------------------------------------------------------------
+    @app.get("/ui/staff/list")
+    async def staff_list_partial(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        role = user.get("role") or ""
+        if role != "school_admin" and user.get("account_type") != "individual_teacher":
+            return RedirectResponse("/app", status_code=303)
+
+        q = req.query_params.get("q", "").strip().lower()
+        status_filter = req.query_params.get("status", "").strip()
+
+        resp = await call_api(req, "GET", "/users/")
+        ok, data = unwrap(resp)
+        all_users = (data.get("users") or []) if ok else []
+        if not all_users:
+            all_users = [
+                {
+                    "id": user.get("user_id") or "self",
+                    "full_name": user.get("full_name") or "Administrator",
+                    "email": user.get("email") or "",
+                    "role": role or "school_admin",
+                    "is_active": True,
+                    "is_verified": True,
+                }
+            ]
+
+        content = _render_staff_content(all_users, user.get("user_id", ""), status_filter=status_filter, q=q)
+
+        url_parts = []
+        if status_filter:
+            url_parts.append(f"status={status_filter}")
+        if q:
+            url_parts.append(f"q={q}")
+        push_url = "/app/staff" + (f"?{'&'.join(url_parts)}" if url_parts else "")
+
+        return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
+
+    # ------------------------------------------------------------------
+    # Full page
+    # ------------------------------------------------------------------
     @app.get("/app/staff")
     async def staff_list_page(req: Request):
         guard = ensure_login(req)
@@ -156,11 +356,10 @@ def register_routes(app):
 
         resp = await call_api(req, "GET", "/users/")
         ok, data = unwrap(resp)
-        user_list = (data.get("users") or []) if ok else []
+        all_users = (data.get("users") or []) if ok else []
 
-        # If no users returned (e.g. backend initial state), display current user
-        if not user_list:
-            user_list = [
+        if not all_users:
+            all_users = [
                 {
                     "id": user.get("user_id") or "self",
                     "full_name": user.get("full_name") or "Administrator",
@@ -171,19 +370,21 @@ def register_routes(app):
                 }
             ]
 
-        if q:
-            user_list = [u for u in user_list if q in (u.get("full_name", "") + " " + u.get("email", "")).lower()]
-        if status_filter == "active":
-            user_list = [u for u in user_list if u.get("is_active", True) and u.get("is_verified", True)]
-        elif status_filter == "invited":
-            user_list = [u for u in user_list if not u.get("is_verified", True)]
-        elif status_filter == "suspended":
-            user_list = [u for u in user_list if not u.get("is_active", True)]
+        # Support direct HTMX requests to /app/staff
+        if req.headers.get("hx-request") or req.headers.get("HX-Request"):
+            content = _render_staff_content(all_users, user.get("user_id", ""), status_filter=status_filter, q=q)
+            url_parts = []
+            if status_filter:
+                url_parts.append(f"status={status_filter}")
+            if q:
+                url_parts.append(f"q={q}")
+            push_url = "/app/staff" + (f"?{'&'.join(url_parts)}" if url_parts else "")
+            return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
 
-        total_users = len(user_list)
-        teacher_cnt = sum(1 for u in user_list if (u.get("role") or "").lower() == "teacher")
-        auditor_cnt = sum(1 for u in user_list if (u.get("role") or "").lower() == "auditor")
-        admin_cnt = sum(1 for u in user_list if (u.get("role") or "").lower() == "school_admin")
+        total_users = len(all_users)
+        teacher_cnt = sum(1 for u in all_users if (u.get("role") or "").lower() == "teacher")
+        auditor_cnt = sum(1 for u in all_users if (u.get("role") or "").lower() == "auditor")
+        admin_cnt = sum(1 for u in all_users if (u.get("role") or "").lower() == "school_admin")
 
         metrics = Row(
             Col(
@@ -192,7 +393,7 @@ def register_routes(app):
                     Div(Div(str(total_users), cls="app-metric-value"), Div("Total Staff", cls="app-metric-label")),
                     cls="app-metric-card",
                 ),
-                span=12, sm=6, lg=3,
+                span=6, lg=3,
             ),
             Col(
                 Div(
@@ -200,7 +401,7 @@ def register_routes(app):
                     Div(Div(str(teacher_cnt), cls="app-metric-value"), Div("Teachers", cls="app-metric-label")),
                     cls="app-metric-card",
                 ),
-                span=12, sm=6, lg=3,
+                span=6, lg=3,
             ),
             Col(
                 Div(
@@ -208,7 +409,7 @@ def register_routes(app):
                     Div(Div(str(auditor_cnt), cls="app-metric-value"), Div("Auditors", cls="app-metric-label")),
                     cls="app-metric-card",
                 ),
-                span=12, sm=6, lg=3,
+                span=6, lg=3,
             ),
             Col(
                 Div(
@@ -216,10 +417,9 @@ def register_routes(app):
                     Div(Div(str(admin_cnt), cls="app-metric-value"), Div("Administrators", cls="app-metric-label")),
                     cls="app-metric-card",
                 ),
-                span=12, sm=6, lg=3,
+                span=6, lg=3,
             ),
-            g=3,
-            cls="mb-4",
+            cls="g-3 mb-4",
         )
 
         header = Div(
@@ -232,42 +432,21 @@ def register_routes(app):
                 "Invite User",
                 type="button",
                 variant="success",
-                cls="btn-brand px-3 py-2 fw-semibold",
+                cls="btn btn-brand rounded-pill px-4 py-2 text-white fw-semibold",
+                style="background-color: #00412E !important; border: none;",
                 **{"data-bs-toggle": "modal", "data-bs-target": "#inviteUserModal"},
             ),
             cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
         )
 
-        search_bar = Form(
-            Div(
-                Icon("search", cls="bi text-muted ms-2"),
-                Input(name="q", value=q, placeholder="Search staff by name or email...", cls="form-control border-0 shadow-none"),
-                Button("Search", type="submit", size="sm", cls="btn-brand me-1"),
-                cls="d-flex align-items-center gap-2 app-card px-2 py-1 mb-3",
-            ),
-            method="get",
-            action="/app/staff",
-        )
-
-        table_head = Div(
-            Div("Name & Email", cls="col-md-4 fw-bold"),
-            Div("Role", cls="col-md-2 text-md-center fw-bold"),
-            Div("Status", cls="col-md-2 text-md-center fw-bold"),
-            Div("Joined", cls="col-md-2 text-md-center fw-bold"),
-            Div("Actions", cls="col-md-2 text-md-end fw-bold"),
-            cls="row app-table-head g-0 d-none d-md-flex px-3",
-        )
-
-        rows = [_user_row(u, user.get("user_id", "")) for u in user_list]
-        table_container = Div(table_head, *rows, cls="app-table-container mb-4")
+        staff_content = _render_staff_content(all_users, user.get("user_id", ""), status_filter=status_filter, q=q)
 
         return AppShell(
             Title("Users & Staff — SkuPhase"),
             Div(
                 header,
                 metrics,
-                search_bar,
-                table_container,
+                staff_content,
                 _invite_modal(),
             ),
             user=user,
@@ -315,8 +494,6 @@ def register_routes(app):
             return RedirectResponse("/app/staff", status_code=303)
 
         form = await req.form()
-        # The _user_row button passes the intended *next* state via a hidden input
-        # so we never have to guess the current state from the DB on this endpoint.
         target_active_str = (form.get("target_active") or "false").strip().lower()
         target_active = target_active_str == "true"
 

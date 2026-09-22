@@ -253,12 +253,11 @@ def register_routes(app):
 
         # 4 KPI cards row
         metrics_row = Row(
-            Col(_metric_card("Exams Generating", generating_count, "lightning-charge-fill", "icon-blue-light", "/app/exams?status=generating"), span=12, sm=6, lg=3),
-            Col(_metric_card("Under Review", review_count, "eye-fill", "icon-purple-light", "/app/exams?status=teacher_review"), span=12, sm=6, lg=3),
-            Col(_metric_card("Approved", approved_count, "check-circle-fill", "icon-green-light", "/app/exams?status=approved"), span=12, sm=6, lg=3),
-            Col(_metric_card("Failed (24h)", failed_count, "exclamation-triangle-fill", "icon-red-light", "/app/exams?status=failed"), span=12, sm=6, lg=3),
-            g=3,
-            cls="mb-4",
+            Col(_metric_card("Exams Generating", generating_count, "lightning-charge-fill", "icon-blue-light", "/app/exams?status=generating"), span=6, lg=3),
+            Col(_metric_card("Under Review", review_count, "eye-fill", "icon-purple-light", "/app/exams?status=teacher_review"), span=6, lg=3),
+            Col(_metric_card("Approved", approved_count, "check-circle-fill", "icon-green-light", "/app/exams?status=approved"), span=6, lg=3),
+            Col(_metric_card("Failed (24h)", failed_count, "exclamation-triangle-fill", "icon-red-light", "/app/exams?status=failed"), span=6, lg=3),
+            cls="g-3 mb-4",
         )
 
         # Recent exams card

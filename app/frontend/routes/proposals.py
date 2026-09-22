@@ -5,11 +5,27 @@ and trigger automated exam generation.
 """
 
 from urllib.parse import urlencode
-from fasthtml.common import A, Div, Form, H1, H2, Input, Label, P, Span, Strong, Textarea, Title
+from fasthtml.common import (
+    A,
+    Div,
+    Form,
+    H1,
+    H2,
+    Input,
+    Label,
+    Option,
+    P,
+    Script,
+    Span,
+    Strong,
+    Textarea,
+    Title,
+    to_xml,
+)
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 
-from faststrap import Alert, Badge, Button, Card, Col, Container, EmptyState, FormGroup, Icon, Row, Select
+from faststrap import Alert, Badge, Button, Card, Col, Container, EmptyState, FormGroup, Icon, Row, Select, Spinner
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash, set_flash
@@ -223,7 +239,184 @@ def _proposal_card(prop: dict, is_admin: bool) -> Div:
     )
 
 
+def _sort_proposals(props: list, sort_by: str) -> list:
+    if sort_by == "oldest":
+        return sorted(props, key=lambda p: p.get("created_at") or "")
+    elif sort_by == "subject_asc":
+        return sorted(props, key=lambda p: (p.get("subject") or "").lower())
+    elif sort_by == "grade":
+        return sorted(props, key=lambda p: (p.get("grade_level") or "").lower())
+    else:  # newest default
+        return sorted(props, key=lambda p: p.get("created_at") or "", reverse=True)
+
+
+def _render_proposals_view(all_props: list, is_admin: bool, status_filter: str = "", q: str = "", sort_by: str = "newest"):
+    # Counts
+    counts = {
+        "all": len(all_props),
+        "open": sum(1 for p in all_props if (p.get("status") or "").lower() == "open"),
+        "accepted": sum(1 for p in all_props if (p.get("status") or "").lower() == "accepted"),
+        "generated": sum(1 for p in all_props if (p.get("status") or "").lower() in {"generated", "used"}),
+        "rejected": sum(1 for p in all_props if (p.get("status") or "").lower() == "rejected"),
+    }
+
+    # Filter
+    filtered = all_props
+    if status_filter:
+        filtered = [p for p in filtered if (p.get("status") or "").lower() == status_filter.lower()]
+    if q:
+        filtered = [
+            p for p in filtered
+            if q in (p.get("subject", "") + " " + p.get("grade_level", "") + " " + p.get("desired_outcomes", "")).lower()
+        ]
+    filtered = _sort_proposals(filtered, sort_by)
+
+    def _pill(label: str, key: str):
+        active_cls = " active" if status_filter == key else ""
+        cnt = counts.get(key or "all", 0)
+        href_query = f"/app/proposals?status={key}" if key else "/app/proposals"
+        return A(
+            f"{label} ({cnt})",
+            href=href_query,
+            cls=f"app-filter-pill{active_cls}",
+            hx_get=f"/ui/proposals/list?status={key}",
+            hx_target="#proposals-content",
+            hx_swap="outerHTML",
+            hx_include="#proposals-filter-wrapper input, #proposal-sort-select",
+            hx_indicator="#proposals-spinner",
+            onclick=f"const el=document.getElementById('proposal-active-status'); if(el) el.value='{key}';",
+        )
+
+    pills = Div(
+        _pill("All", ""),
+        _pill("Open", "open"),
+        _pill("Accepted", "accepted"),
+        _pill("Generated", "generated"),
+        _pill("Rejected", "rejected"),
+        cls="d-flex gap-2 flex-wrap mb-3",
+    )
+
+    search_and_sort = Div(
+        # Search input with live HTMX search
+        Div(
+            Icon("search", cls="bi text-muted position-absolute", style="top:0.75rem; left:1rem; font-size:1rem;"),
+            Input(
+                name="q",
+                value=q,
+                placeholder="Search proposals by subject, grade, or outcome...",
+                cls="form-control rounded-pill ps-5 py-2 border shadow-sm",
+                style="background:#fff;",
+                id="proposal-search-input",
+                hx_get="/ui/proposals/list",
+                hx_target="#proposals-content",
+                hx_swap="outerHTML",
+                hx_trigger="input changed delay:300ms, search",
+                hx_include="#proposals-filter-wrapper input, #proposal-sort-select",
+                hx_indicator="#proposals-spinner",
+            ),
+            cls="position-relative flex-grow-1",
+            style="max-width: 580px;",
+        ),
+        # Sort dropdown
+        Div(
+            Label("Sort:", cls="small text-muted fw-semibold me-2 mb-0 d-none d-sm-inline"),
+            Select(
+                "sort",
+                ("newest", "Newest First", sort_by == "newest" or not sort_by),
+                ("oldest", "Oldest First", sort_by == "oldest"),
+                ("subject_asc", "Subject (A-Z)", sort_by == "subject_asc"),
+                ("grade", "Grade Level", sort_by == "grade"),
+                id="proposal-sort-select",
+                cls="form-select rounded-pill border py-2 px-3 fw-medium small shadow-sm",
+                style="background-color: #fff; min-width: 155px; font-size: 0.85rem;",
+                hx_get="/ui/proposals/list",
+                hx_target="#proposals-content",
+                hx_swap="outerHTML",
+                hx_trigger="change",
+                hx_include="#proposals-filter-wrapper input",
+                hx_indicator="#proposals-spinner",
+            ),
+            cls="d-flex align-items-center ms-sm-3 mt-2 mt-sm-0",
+        ),
+        # Faststrap Spinner for visual loading feedback
+        Div(
+            Spinner(variant="success", size="sm", cls="me-2"),
+            Span("Updating...", cls="small text-muted"),
+            id="proposals-spinner",
+            cls="htmx-indicator ms-3 d-inline-flex align-items-center",
+        ),
+        id="proposals-filter-wrapper",
+        cls="d-flex flex-wrap align-items-center justify-content-between mb-4",
+    )
+
+    if filtered:
+        cards = [_proposal_card(p, is_admin) for p in filtered]
+        list_content = Div(*cards, id="proposals-items-list")
+    elif not all_props:
+        list_content = EmptyState(
+            title="How proposals work",
+            description="Teachers describe the exam they need. A school admin reviews the request and generates the exam. Everyone can then refine, preflight and export it.",
+            action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
+        )
+    else:
+        list_content = EmptyState(
+            title="No proposals found",
+            description="No proposals match the current filter. Try selecting a different status or clearing search.",
+            action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
+        )
+
+    return Div(
+        Input(type="hidden", name="status", value=status_filter, id="proposal-active-status"),
+        pills,
+        search_and_sort,
+        list_content,
+        id="proposals-content",
+    )
+
+
 def register_routes(app):
+    # ------------------------------------------------------------------
+    # HTMX partial: returns just #proposals-content (pills + search + list)
+    # ------------------------------------------------------------------
+    @app.get("/ui/proposals/list")
+    async def proposals_list_partial(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        account_type = user.get("account_type") or ""
+        role = user.get("role") or ""
+        is_admin = role == "school_admin"
+
+        if account_type == "individual_teacher":
+            push_flash(req, "Generation proposals are a school feature. As an individual teacher, you can generate exams directly from your dashboard.", "info")
+            return RedirectResponse("/app", status_code=303)
+
+        status_filter = req.query_params.get("status", "").strip()
+        q = req.query_params.get("q", "").strip().lower()
+        sort_by = req.query_params.get("sort", "newest").strip().lower()
+
+        resp = await call_api(req, "GET", "/exams/generation-proposals?include_closed=true")
+        ok, data = unwrap(resp)
+        all_props = data if (ok and isinstance(data, list)) else []
+
+        content = _render_proposals_view(all_props, is_admin, status_filter, q, sort_by)
+
+        # Build clean push URL
+        url_parts = []
+        if status_filter:
+            url_parts.append(f"status={status_filter}")
+        if q:
+            url_parts.append(f"q={q}")
+        if sort_by and sort_by != "newest":
+            url_parts.append(f"sort={sort_by}")
+        push_url = "/app/proposals" + (f"?{'&'.join(url_parts)}" if url_parts else "")
+
+        return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
+
+    # ------------------------------------------------------------------
+    # Full page
+    # ------------------------------------------------------------------
     @app.get("/app/proposals")
     async def proposals_list(req: Request):
         guard = ensure_login(req)
@@ -236,51 +429,32 @@ def register_routes(app):
         flash = pop_flash(req)
 
         # Individual teachers are not part of a school and cannot access proposals.
-        # Redirect with an explanatory message rather than letting the 403 bubble.
         if account_type == "individual_teacher":
             push_flash(req, "Generation proposals are a school feature. As an individual teacher, you can generate exams directly from your dashboard.", "info")
             return RedirectResponse("/app", status_code=303)
 
-        status_filter = req.query_params.get("status", "")
+        status_filter = req.query_params.get("status", "").strip()
         q = req.query_params.get("q", "").strip().lower()
+        sort_by = req.query_params.get("sort", "newest").strip().lower()
 
         resp = await call_api(req, "GET", "/exams/generation-proposals?include_closed=true")
         ok, data = unwrap(resp)
         all_props = data if (ok and isinstance(data, list)) else []
 
-        # Client-side search and status filter
-        filtered = all_props
-        if status_filter:
-            filtered = [p for p in filtered if (p.get("status") or "").lower() == status_filter.lower()]
-        if q:
-            filtered = [
-                p for p in filtered
-                if q in (p.get("subject", "") + " " + p.get("grade_level", "") + " " + p.get("desired_outcomes", "")).lower()
-            ]
+        # If this is an HTMX request to /app/proposals, return the partial directly
+        if req.headers.get("hx-request") or req.headers.get("HX-Request"):
+            content = _render_proposals_view(all_props, is_admin, status_filter, q, sort_by)
+            url_parts = []
+            if status_filter:
+                url_parts.append(f"status={status_filter}")
+            if q:
+                url_parts.append(f"q={q}")
+            if sort_by and sort_by != "newest":
+                url_parts.append(f"sort={sort_by}")
+            push_url = "/app/proposals" + (f"?{'&'.join(url_parts)}" if url_parts else "")
+            return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
 
-        # Filter pills with counts
-        counts = {
-            "all": len(all_props),
-            "open": sum(1 for p in all_props if (p.get("status") or "").lower() == "open"),
-            "accepted": sum(1 for p in all_props if (p.get("status") or "").lower() == "accepted"),
-            "generated": sum(1 for p in all_props if (p.get("status") or "").lower() in {"generated", "used"}),
-            "rejected": sum(1 for p in all_props if (p.get("status") or "").lower() == "rejected"),
-        }
-
-        def _pill(label: str, key: str):
-            href = f"/app/proposals?status={key}" if key else "/app/proposals"
-            active_cls = " active" if status_filter == key else ""
-            cnt = counts.get(key or "all", 0)
-            return A(f"{label} ({cnt})", href=href, cls=f"app-filter-pill{active_cls}")
-
-        pills = Div(
-            _pill("All", ""),
-            _pill("Open", "open"),
-            _pill("Accepted", "accepted"),
-            _pill("Generated", "generated"),
-            _pill("Rejected", "rejected"),
-            cls="d-flex gap-2 flex-wrap mb-3",
-        )
+        proposals_view = _render_proposals_view(all_props, is_admin, status_filter, q, sort_by)
 
         header = Div(
             Div(
@@ -293,46 +467,17 @@ def register_routes(app):
                 as_="a",
                 href="/app/proposals/new",
                 variant="success",
-                cls="btn-brand px-3 py-2 fw-semibold",
+                cls="btn btn-brand rounded-pill px-4 py-2 text-white fw-semibold",
+                style="background-color: #00412E !important; border: none;",
             ),
             cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
         )
-
-        search_bar = Form(
-            Div(
-                Icon("search", cls="bi text-muted ms-2"),
-                Input(name="q", value=q, placeholder="Search proposals...", cls="form-control border-0 shadow-none"),
-                Button("Search", type="submit", size="sm", cls="btn-brand me-1"),
-                cls="d-flex align-items-center gap-2 app-card px-2 py-1 mb-3",
-            ),
-            method="get",
-            action="/app/proposals",
-        )
-
-        if filtered:
-            cards = [_proposal_card(p, is_admin) for p in filtered]
-            list_content = Div(*cards)
-        elif not all_props:
-            # First-run explainer: school has zero proposals (audit fix-list #4).
-            list_content = EmptyState(
-                title="How proposals work",
-                description="Teachers describe the exam they need. A school admin reviews the request and generates the exam. Everyone can then refine, preflight and export it.",
-                action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
-            )
-        else:
-            list_content = EmptyState(
-                title="No proposals found",
-                description="Submit a proposal for an exam, or check back once staff creates one.",
-                action=Button("Submit Proposal", as_="a", href="/app/proposals/new", cls="btn-brand"),
-            )
 
         return AppShell(
             Title("Generation Proposals — SkuPhase"),
             Div(
                 header,
-                pills,
-                search_bar,
-                list_content,
+                proposals_view,
             ),
             user=user,
             active="proposals",
@@ -348,6 +493,13 @@ def register_routes(app):
             return guard
         user = current_user(req) or {}
         flash = pop_flash(req)
+        qp = req.query_params
+
+        default_grade = qp.get("grade_level") or qp.get("class_level") or "Primary 4"
+        default_subject = qp.get("subject") or "Mathematics"
+        default_term = qp.get("term") or "First Term"
+        default_weeks = qp.get("selected_weeks") or qp.get("weeks") or ""
+        default_outcomes = qp.get("desired_outcomes") or ""
 
         grades = [
             ("Pre-Nursery", "Pre-Nursery"),
@@ -370,68 +522,196 @@ def register_routes(app):
             ("Cultural and Creative Arts", "Cultural and Creative Arts"),
         ]
 
+        # Parse pre-selected weeks
+        preselected_weeks = set()
+        if default_weeks:
+            for part in default_weeks.replace(";", ",").split(","):
+                part = part.strip()
+                if part.isdigit():
+                    preselected_weeks.add(int(part))
+
+        week_toggle_buttons = []
+        for w in range(1, 13):
+            is_active = w in preselected_weeks
+            week_toggle_buttons.append(
+                Button(
+                    f"W{w}",
+                    type="button",
+                    cls=f"btn btn-sm rounded-pill px-3 py-1 me-1 mb-2 week-toggle-btn {'btn-dark text-white fw-semibold' if is_active else 'btn-light border text-muted'}",
+                    **{"data-week": str(w), "onclick": "toggleProposalWeek(this)"},
+                )
+            )
+
+        weeks_summary_text = (
+            f"Selected: Weeks {', '.join(str(w) for w in sorted(preselected_weeks))}"
+            if preselected_weeks
+            else "No specific weeks selected (covers full term)"
+        )
+
         form = Form(
-            Row(
-                Col(
-                    FormGroup("Grade Level", Select("grade_level", *grades, value="Primary 4", cls="form-select")),
-                    md=6,
+            Card(
+                Row(
+                    Col(
+                        Label("Grade Level", cls="form-label text-muted small fw-medium mb-1"),
+                        Select(
+                            "grade_level",
+                            *grades,
+                            value=default_grade,
+                            cls="form-select rounded-3 border-0 py-2 px-3 fw-medium",
+                            style="background-color: #F4F6F4; font-size: 0.92rem;",
+                        ),
+                        md=6,
+                        cls="mb-3",
+                    ),
+                    Col(
+                        Label("Subject", cls="form-label text-muted small fw-medium mb-1"),
+                        Select(
+                            "subject",
+                            *subjects,
+                            value=default_subject,
+                            cls="form-select rounded-3 border-0 py-2 px-3 fw-medium",
+                            style="background-color: #F4F6F4; font-size: 0.92rem;",
+                        ),
+                        md=6,
+                        cls="mb-3",
+                    ),
                 ),
-                Col(
-                    FormGroup("Subject", Select("subject", *subjects, value="Mathematics", cls="form-select")),
-                    md=6,
+                Row(
+                    Col(
+                        Label("Term", cls="form-label text-muted small fw-medium mb-1"),
+                        Select(
+                            "term",
+                            ("First Term", "First Term"),
+                            ("Second Term", "Second Term"),
+                            ("Third Term", "Third Term"),
+                            value=default_term,
+                            cls="form-select rounded-3 border-0 py-2 px-3 fw-medium",
+                            style="background-color: #F4F6F4; font-size: 0.92rem;",
+                        ),
+                        md=6,
+                        cls="mb-3",
+                    ),
+                    Col(
+                        Div(
+                            Label("Scheme of Work Weeks", cls="form-label text-muted small fw-medium mb-1 d-block"),
+                            Div(
+                                Button(
+                                    "All W1–12",
+                                    type="button",
+                                    cls="btn btn-sm btn-link text-decoration-none p-0 text-success fw-medium me-2",
+                                    onclick="toggleAllProposalWeeks(true)",
+                                    style="font-size:0.8rem;",
+                                ),
+                                Span("·", cls="text-muted me-2"),
+                                Button(
+                                    "Clear",
+                                    type="button",
+                                    cls="btn btn-sm btn-link text-decoration-none p-0 text-muted fw-medium",
+                                    onclick="toggleAllProposalWeeks(false)",
+                                    style="font-size:0.8rem;",
+                                ),
+                                cls="d-inline-flex align-items-center mb-1",
+                            ),
+                            Div(*week_toggle_buttons, cls="d-flex flex-wrap align-items-center"),
+                            Input(type="hidden", name="selected_weeks", id="proposal-weeks-input", value=default_weeks),
+                            Span(weeks_summary_text, id="proposal-weeks-hint", cls="small text-muted d-block mt-1"),
+                        ),
+                        md=6,
+                        cls="mb-3",
+                    ),
                 ),
-                cls="mb-3",
+                Div(
+                    Label("Desired Learning Outcomes & Key Topics", cls="form-label text-muted small fw-medium mb-1"),
+                    Textarea(
+                        default_outcomes,
+                        name="desired_outcomes",
+                        placeholder="Describe key topics and curriculum standards to assess (min 10 characters)...",
+                        rows=4,
+                        cls="form-control rounded-3 border-0 p-3",
+                        style="background-color: #F4F6F4; font-size: 0.92rem;",
+                        required=True,
+                    ),
+                    cls="mb-3",
+                ),
+                Div(
+                    Label("Custom Instructions for Generation (Optional)", cls="form-label text-muted small fw-medium mb-1"),
+                    Textarea(
+                        name="custom_instructions",
+                        placeholder="e.g. Focus on word problems and basic fractions. Include clear explanations and diagrams.",
+                        rows=3,
+                        cls="form-control rounded-3 border-0 p-3",
+                        style="background-color: #F4F6F4; font-size: 0.92rem;",
+                    ),
+                    cls="mb-4",
+                ),
+                Div(
+                    A("Cancel", href="/app/proposals", cls="btn btn-outline-secondary rounded-pill px-4 py-2 me-2"),
+                    Button(
+                        "Submit Proposal",
+                        type="submit",
+                        variant="success",
+                        cls="btn btn-brand rounded-pill px-4 py-2 text-white fw-semibold",
+                        style="background-color: #00412E !important; border: none;",
+                    ),
+                    cls="d-flex justify-content-end",
+                ),
+                cls="bg-white rounded-4 border p-4 p-md-5 shadow-sm mb-4",
             ),
-            Row(
-                Col(
-                    FormGroup("Term", Select("term", ("First Term", "First Term"), ("Second Term", "Second Term"), ("Third Term", "Third Term"), cls="form-select")),
-                    md=6,
-                ),
-                Col(
-                    FormGroup("Scheme of Work Weeks (comma separated)", Input("selected_weeks", placeholder="e.g. 1, 2, 3, 4, 5", cls="form-control")),
-                    md=6,
-                ),
-                cls="mb-3",
-            ),
-            FormGroup(
-                "Desired Learning Outcomes & Key Topics",
-                Textarea(
-                    name="desired_outcomes",
-                    placeholder="Describe key topics and curriculum standards to assess (min 10 characters)...",
-                    rows=4,
-                    cls="form-control",
-                    required=True,
-                ),
-                cls="mb-3",
-            ),
-            FormGroup(
-                "Custom Instructions for Generation (Optional)",
-                Textarea(
-                    name="custom_instructions",
-                    placeholder="e.g. Focus on word problems and basic fractions. Include clear explanations.",
-                    rows=3,
-                    cls="form-control",
-                ),
-                cls="mb-4",
-            ),
-            Div(
-                A("Cancel", href="/app/proposals", cls="btn btn-outline-secondary me-2"),
-                Button("Submit Proposal", type="submit", variant="success", cls="btn-brand"),
-                cls="d-flex justify-content-end",
-            ),
+            Script("""
+            function toggleProposalWeek(btn) {
+                btn.classList.toggle('btn-dark');
+                btn.classList.toggle('text-white');
+                btn.classList.toggle('fw-semibold');
+                btn.classList.toggle('btn-light');
+                btn.classList.toggle('border');
+                btn.classList.toggle('text-muted');
+                syncProposalWeeks();
+            }
+            function syncProposalWeeks() {
+                const active = Array.from(document.querySelectorAll('.week-toggle-btn.btn-dark')).map(b => b.getAttribute('data-week'));
+                const input = document.getElementById('proposal-weeks-input');
+                if (input) input.value = active.join(', ');
+                const hint = document.getElementById('proposal-weeks-hint');
+                if (hint) {
+                    hint.textContent = active.length > 0 ? 'Selected: Weeks ' + active.join(', ') : 'No specific weeks selected (covers full term)';
+                }
+            }
+            function toggleAllProposalWeeks(select) {
+                document.querySelectorAll('.week-toggle-btn').forEach(btn => {
+                    if (select) {
+                        btn.classList.add('btn-dark', 'text-white', 'fw-semibold');
+                        btn.classList.remove('btn-light', 'border', 'text-muted');
+                    } else {
+                        btn.classList.remove('btn-dark', 'text-white', 'fw-semibold');
+                        btn.classList.add('btn-light', 'border', 'text-muted');
+                    }
+                });
+                syncProposalWeeks();
+            }
+            """),
             action="/app/proposals/new",
             method="post",
-            cls="app-card p-4",
+            style="max-width: 840px; margin: 0 auto;",
         )
 
         return AppShell(
             Title("New Proposal — SkuPhase"),
-            Div(
+            Container(
                 Div(
-                    H1("Submit Generation Proposal", cls="fw-bold fs-2 text-dark mb-1"),
-                    P("Propose an exam for your class aligned with the primary curriculum scheme of work.", cls="text-muted small mb-3"),
+                    Div(
+                        Icon("journal-plus", cls="bi fs-3 text-success"),
+                        cls="p-3 bg-success-subtle rounded-circle d-inline-flex align-items-center justify-content-center me-3",
+                        style="width: 52px; height: 52px;",
+                    ),
+                    Div(
+                        H1("Submit Generation Proposal", cls="fw-bold fs-2 text-dark mb-1"),
+                        P("Propose an exam for your class aligned with the primary curriculum scheme of work.", cls="text-muted small mb-0"),
+                    ),
+                    cls="d-flex align-items-center mb-4",
+                    style="max-width: 840px; margin: 0 auto;",
                 ),
                 form,
+                cls="py-4 pt-lg-5",
             ),
             user=user,
             active="proposals",

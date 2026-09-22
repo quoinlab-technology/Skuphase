@@ -55,15 +55,22 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         expected = session.get("csrf")
         if not expected:
             return await call_next(request)
+
         provided = (
             request.headers.get("X-CSRF-Token")
+            or request.headers.get("x-csrf-token")
             or request.query_params.get("csrf_token")
         )
-        if not provided:
-            # Form posts by HTMX include the hidden input, but we still allow
-            # unauthenticated POSTs that the route handler can reject itself.
-            return await call_next(request)
-        if provided != expected:
+        if not provided and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            try:
+                content_type = request.headers.get("content-type", "")
+                if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+                    form = await request.form()
+                    provided = form.get("csrf_token")
+            except Exception:
+                provided = None
+
+        if not provided or provided != expected:
             from starlette.responses import PlainTextResponse
             return PlainTextResponse("CSRF token invalid", status_code=403)
         return await call_next(request)

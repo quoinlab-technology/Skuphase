@@ -8,7 +8,7 @@ from fasthtml.common import A, Div, H1, H2, P, Span, Strong, Title
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from faststrap import Alert, Badge, Button, Card, Col, Container, Icon, Row
+from faststrap import Alert, Badge, Button, Card, Col, Container, Icon, Row, Spinner
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import Flash, pop_flash, show_toast
@@ -26,8 +26,6 @@ async def _ops_content(req: Request, htmx: bool = False):
     user = current_user(req) or {}
     role = user.get("role") or ""
     account_type = user.get("account_type") or ""
-    # Operations is a school-admin-only page. Individual teachers and other roles
-    # are redirected or shown a flash, not crashed with a 403.
     if role != "school_admin":
         if htmx:
             return show_toast("Access restricted to school administrators.", "danger")
@@ -35,7 +33,6 @@ async def _ops_content(req: Request, htmx: bool = False):
 
     resp_health = await call_api(req, "GET", "/ops/health")
     ok_h, health_data = unwrap(resp_health)
-    # Graceful fallback: treat a failed health fetch as DEGRADED rather than crashing
     health = health_data if ok_h else {"status": "degraded", "version": "—"}
 
     resp_stats = await call_api(req, "GET", "/ops/stats")
@@ -52,19 +49,27 @@ async def _ops_content(req: Request, htmx: bool = False):
             H1("System Operations", cls="fw-bold fs-2 text-dark mb-1"),
             P("Real-time monitoring of AI generation workers, queue throughput, and service health.", cls="text-muted small mb-0"),
         ),
-        Button(
-            Icon("arrow-clockwise", cls="bi me-1"),
-            "Refresh",
-            type="button",
-            hx_get="/ui/ops/panel",
-            hx_target="#ops-panel",
-            hx_swap="outerHTML",
-            hx_indicator="#ops-refresh-spinner",
-            variant="outline-secondary",
-            size="sm",
-            cls="rounded-pill px-3 py-2",
+        Div(
+            Button(
+                Icon("arrow-clockwise", cls="bi me-1"),
+                "Refresh",
+                type="button",
+                hx_get="/ui/ops/panel",
+                hx_target="#ops-panel",
+                hx_swap="outerHTML",
+                hx_indicator="#ops-refresh-spinner",
+                variant="outline-secondary",
+                size="sm",
+                cls="rounded-pill px-3 py-2",
+            ),
+            Div(
+                Spinner(variant="success", size="sm", cls="me-2"),
+                Span("Updating...", cls="small text-muted"),
+                id="ops-refresh-spinner",
+                cls="htmx-indicator ms-2 d-inline-flex align-items-center",
+            ),
+            cls="d-flex align-items-center mt-2 mt-sm-0",
         ),
-        Span("", id="ops-refresh-spinner", cls="htmx-indicator spinner-border spinner-border-sm text-muted ms-2"),
         cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
     )
 
@@ -75,7 +80,7 @@ async def _ops_content(req: Request, htmx: bool = False):
                 Div(Div(status_str, cls="app-metric-value fs-4 text-success"), Div("System Status", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
-            span=12, sm=6, lg=3,
+            span=6, lg=3,
         ),
         Col(
             Div(
@@ -83,7 +88,7 @@ async def _ops_content(req: Request, htmx: bool = False):
                 Div(Div(str(active_workers), cls="app-metric-value"), Div("Active Workers", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
-            span=12, sm=6, lg=3,
+            span=6, lg=3,
         ),
         Col(
             Div(
@@ -91,7 +96,7 @@ async def _ops_content(req: Request, htmx: bool = False):
                 Div(Div(str(queue_depth), cls="app-metric-value"), Div("Queue Depth", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
-            span=12, sm=6, lg=3,
+            span=6, lg=3,
         ),
         Col(
             Div(
@@ -99,10 +104,9 @@ async def _ops_content(req: Request, htmx: bool = False):
                 Div(Div(str(jobs_processed), cls="app-metric-value"), Div("Jobs (24h)", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
-            span=12, sm=6, lg=3,
+            span=6, lg=3,
         ),
-        g=3,
-        cls="mb-4",
+        cls="g-3 mb-4",
     )
 
     service_card = Card(
@@ -134,7 +138,7 @@ async def _ops_content(req: Request, htmx: bool = False):
                 cls="d-flex justify-content-between align-items-center py-2",
             ),
         ),
-        cls="p-4 border-0 shadow-sm h-100",
+        cls="p-4 border-0 shadow-sm rounded-4 h-100",
     )
 
     architecture_card = Card(
@@ -149,10 +153,10 @@ async def _ops_content(req: Request, htmx: bool = False):
                 Div(Span("Curriculum Scope: ", cls="fw-bold small"), Span("Pre-Nursery to Primary 6", cls="small text-muted")),
                 Div(Span("Question Generator: ", cls="fw-bold small"), Span("Curriculum-seeded prompt engine", cls="small text-muted")),
                 Div(Span("Quality Gate: ", cls="fw-bold small"), Span("Multi-dimensional automated preflight", cls="small text-muted")),
-                cls="p-3 rounded bg-light border-start border-3 border-success",
+                cls="p-3 rounded-3 bg-light border-start border-3 border-success",
             ),
         ),
-        cls="p-4 border-0 shadow-sm h-100",
+        cls="p-4 border-0 shadow-sm rounded-4 h-100",
     )
 
     return Div(
@@ -164,14 +168,17 @@ async def _ops_content(req: Request, htmx: bool = False):
             g=4,
         ),
         id="ops-panel",
+        cls="pb-5 mb-5",
+        hx_get="/ui/ops/panel",
+        hx_trigger="every 30s",
+        hx_swap="outerHTML",
     )
 
 
 def register_routes(app):
     @app.get("/ui/ops/panel")
     async def ops_panel_partial(req: Request):
-        """HTMX partial: refresh just the ops metrics/content (audit: the
-        Refresh button previously did a full-page navigation)."""
+        """HTMX partial: refresh just the ops metrics/content."""
         guard = ensure_login(req)
         if guard:
             return guard

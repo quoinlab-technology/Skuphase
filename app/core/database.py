@@ -23,6 +23,14 @@ def _get_engine():
 
         settings = get_settings()
 
+    connect_args = {}
+    db_url_lower = settings.database_url.lower()
+    # Supabase Transaction Pooler (port 6543) or PgBouncer mode requires
+    # disabling asyncpg prepared statement caching to prevent runtime errors.
+    if ":6543" in db_url_lower or "pooler" in db_url_lower or "pgbouncer" in db_url_lower:
+        connect_args["statement_cache_size"] = 0
+        connect_args["prepared_statement_cache_size"] = 0
+
     return create_async_engine(
         settings.database_url,
         echo=False,
@@ -30,6 +38,7 @@ def _get_engine():
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
         pool_recycle=1800,
+        connect_args=connect_args,
     )
 
 

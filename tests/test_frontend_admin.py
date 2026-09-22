@@ -126,3 +126,61 @@ def test_ops_page_renders_for_admin(monkeypatch):
     assert resp.status_code == 200
     assert "System Operations" in resp.text
     assert "Active Workers" in resp.text
+
+
+def test_settings_tab_htmx_partial(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def fake_school_call(req, method, path, **kwargs):
+        if "/schools/s1/settings" in path:
+            return FakeResp(200, {"active_term": "First Term", "academic_year": "2025/2026", "min_pass_mark": 50})
+        if "/schools/s1" in path:
+            return FakeResp(200, {"name": "Greenfield Academy", "contact_email": "admin@greenfield.edu.ng"})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.settings.call_api", fake_school_call)
+    resp = client.get("/ui/settings/tab?tab=security")
+    assert resp.status_code == 200
+    assert "settings-content" in resp.text
+    assert "Change Password" in resp.text
+    assert "hx-push-url" in resp.headers
+
+
+def test_staff_list_htmx_partial(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def fake_users_call(req, method, path, **kwargs):
+        if path == "/users/":
+            return FakeResp(200, {
+                "users": [
+                    {"id": "u1", "full_name": "Admin Grace", "email": "admin@greenfield.edu.ng", "role": "school_admin", "is_active": True, "is_verified": True},
+                    {"id": "u2", "full_name": "Suspended Sam", "email": "sam@greenfield.edu.ng", "role": "teacher", "is_active": False, "is_verified": True},
+                ]
+            })
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.staff.call_api", fake_users_call)
+    resp = client.get("/ui/staff/list?status=active")
+    assert resp.status_code == 200
+    assert "staff-content" in resp.text
+    assert "Admin Grace" in resp.text
+    assert "Suspended Sam" not in resp.text
+    assert "hx-push-url" in resp.headers
+
+
+def test_ops_panel_htmx_partial(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def fake_ops_call(req, method, path, **kwargs):
+        if "/ops/health" in path:
+            return FakeResp(200, {"status": "ok", "version": "1.0.0"})
+        if "/ops/stats" in path:
+            return FakeResp(200, {"active_workers": 3, "queue_depth": 0, "jobs_processed_24h": 50})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.ops.call_api", fake_ops_call)
+    resp = client.get("/ui/ops/panel")
+    assert resp.status_code == 200
+    assert "ops-panel" in resp.text
+    assert "System Status" in resp.text
+

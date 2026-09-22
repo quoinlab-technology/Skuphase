@@ -101,3 +101,27 @@ def test_curriculum_search(monkeypatch):
     assert r.status_code == 200
     assert "Search results for" in r.text
     assert "Fractions and Decimals" in r.text
+
+
+def test_curriculum_htmx_partial_returns_content(monkeypatch):
+    client = _logged_in_client(monkeypatch, _teacher_tokens())
+
+    async def fake_call(req, method, path, **kwargs):
+        if path == "/auth/me":
+            return FakeResp(200, _teacher_tokens()["user"])
+        if path == "/curriculum/classes":
+            return FakeResp(200, {"classes": ["Primary 4"]})
+        if path == "/curriculum/subjects":
+            return FakeResp(200, {"class_level": "Primary 4", "subjects": [{"id": "1", "subject_name": "Mathematics"}]})
+        if path == "/curriculum/weeks":
+            return FakeResp(200, {"weeks": [{"week_number": 1, "topic": "Place Values", "learning_objectives": ["Identify units"]}]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.curriculum.call_api", fake_call)
+
+    r = client.get("/ui/curriculum/content?class_level=Primary%204&subject=Mathematics&term=first")
+    assert r.status_code == 200
+    assert "Place Values" in r.text
+    assert "curriculum-content" in r.text
+    assert "hx-push-url" in r.headers
+

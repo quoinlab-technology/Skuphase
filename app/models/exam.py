@@ -1,4 +1,4 @@
-﻿"""Exam and question models."""
+"""Exam and question models."""
 
 from uuid import uuid4
 
@@ -87,6 +87,8 @@ class Question(BaseModel):
     )
     
     question_number = Column(Integer, nullable=False)
+    section_number = Column(Integer, nullable=False, default=1)
+    section_name = Column(String(50), nullable=True)
     type = Column(String(30), nullable=False)  # multiple_choice, short_answer, essay
     
     question_text = Column(Text, nullable=False)

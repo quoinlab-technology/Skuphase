@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     # Database (PostgreSQL)
     database_url: str
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, v):
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if v_stripped.startswith("postgres://"):
+                return "postgresql+asyncpg://" + v_stripped[len("postgres://") :]
+            if v_stripped.startswith("postgresql://") and not v_stripped.startswith("postgresql+asyncpg://"):
+                return "postgresql+asyncpg://" + v_stripped[len("postgresql://") :]
+            return v_stripped
+        return v
+
     # Connection pool (long-lived VPS/container deployments)
     database_pool_size: int = 10
     database_max_overflow: int = 20

@@ -110,9 +110,10 @@ frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/katex@0.16.11/
 frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js", defer=True))
 frontend_app.hdrs.append(Script("""
 document.addEventListener('DOMContentLoaded', function() {
-    function renderMath() {
+    function renderMath(el) {
+        var target = el || document.body;
         if (typeof renderMathInElement === 'function') {
-            renderMathInElement(document.body, {
+            renderMathInElement(target, {
                 delimiters: [
                     {left: '$$', right: '$$', display: true},
                     {left: '$', right: '$', display: false},
@@ -123,16 +124,15 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
-    renderMath();
-    // Re-render after any HTMX content swap — including out-of-band swaps
-    // (OOB) used by the question edit/delete flows, which dispatch
-    // `htmx:oobAfterSwap` rather than `htmx:afterSwap`.
-    function onHtmxSwap() {
-        renderMath();
-    }
-    document.body.addEventListener('htmx:afterSwap', onHtmxSwap);
-    document.body.addEventListener('htmx:oobAfterSwap', onHtmxSwap);
-    document.body.addEventListener('htmx:afterSettle', onHtmxSwap);
+    renderMath(document.body);
+    // Re-render after HTMX content swap — scoped directly to the swapped subtree
+    // to avoid full-page DOM traversals on low-end mobile hardware.
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        renderMath(evt.detail && evt.detail.target ? evt.detail.target : document.body);
+    });
+    document.body.addEventListener('htmx:oobAfterSwap', function(evt) {
+        renderMath(evt.detail && evt.detail.target ? evt.detail.target : document.body);
+    });
 
     // Remove orphaned Bootstrap modal backdrops.  When a modal lives inside
     // a container that HTMX replaces via OOB swap (e.g. #tab-content on the

@@ -45,7 +45,7 @@ class SchoolSettings(BaseModel):
     secondary_color = Column(String(7))
     
     # LLM Provider preferences
-    primary_llm_provider = Column(String(50), default="grok")  # grok, openrouter
+    primary_llm_provider = Column(String(50), default="groq")  # groq, openrouter
     fallback_llm_provider = Column(String(50), default="openrouter")
     
     # Exam settings

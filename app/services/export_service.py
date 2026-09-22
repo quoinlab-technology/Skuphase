@@ -41,7 +41,7 @@ class ExportService:
 
     @staticmethod
     def _clean(text: str | None) -> str:
-        """Normalise text for PDF rendering (strip fences, control chars)."""
+        """Normalise text for PDF rendering (strip fences, control chars, simplify LaTeX)."""
         if not text:
             return ""
         cleaned = str(text)
@@ -52,7 +52,18 @@ class ExportService:
             cleaned,
             flags=re.DOTALL,
         )
-        cleaned = re.sub(r"``([a-zA-Z]*)\n?", "", cleaned)
+        cleaned = re.sub(r"```([a-zA-Z]*)\n?", "", cleaned)
+        cleaned = cleaned.replace("```", "")
+        # Simplify common LaTeX expressions for clean ReportLab text rendering
+        cleaned = re.sub(r"\\ce\{([^}]+)\}", r"\1", cleaned)  # \ce{H2SO4} -> H2SO4
+        cleaned = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1/\2)", cleaned)  # \frac{a}{b} -> (a/b)
+        cleaned = re.sub(r"\\sqrt\{([^}]+)\}", r"√(\1)", cleaned)
+        cleaned = cleaned.replace(r"\times", "×").replace(r"\pm", "±").replace(r"\div", "÷")
+        cleaned = cleaned.replace(r"\le", "≤").replace(r"\ge", "≥").replace(r"\neq", "≠")
+        cleaned = cleaned.replace(r"\degree", "°").replace(r"\pi", "π").replace(r"\theta", "θ")
+        # Strip mathematical dollar delimiters for clean reportlab text
+        cleaned = re.sub(r"(?<!\\)\$\$", "", cleaned)
+        cleaned = re.sub(r"(?<!\\)\$", "", cleaned)
         return cleaned.replace("\u0000", "").strip()
 
     @classmethod
@@ -296,9 +307,28 @@ class ExportService:
             )
 
             if q.options:
-                for idx, option in enumerate(q.options):
-                    opt_str = format_mcq_option(str(option), idx)
-                    story.append(Paragraph(esc(opt_str), option_style))
+                formatted_opts = [
+                    Paragraph(esc(format_mcq_option(str(opt), idx)), option_style)
+                    for idx, opt in enumerate(q.options)
+                ]
+                if len(formatted_opts) == 4:
+                    opt_table = Table(
+                        [[formatted_opts[0], formatted_opts[1]], [formatted_opts[2], formatted_opts[3]]],
+                        colWidths=[85 * mm, 85 * mm],
+                    )
+                    opt_table.setStyle(
+                        TableStyle([
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                            ("TOPPADDING", (0, 0), (-1, -1), 1),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                        ])
+                    )
+                    story.append(opt_table)
+                else:
+                    for opt_p in formatted_opts:
+                        story.append(opt_p)
 
             if include_answers:
                 if q.correct_answer:
@@ -316,7 +346,6 @@ class ExportService:
                 "TeacherOnlyFooter", parent=styles["Normal"], fontSize=8, leading=10, alignment=1, textColor="#777777"
             )
             story.append(Paragraph("<b>FOR TEACHER USE ONLY — NOT FOR DISTRIBUTION</b>", footer_style))
-
 
         doc = SimpleDocTemplate(
             str(output_path),
@@ -337,4 +366,235 @@ class ExportService:
             canvas.restoreState()
 
         doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+        return file_name
+
+    @classmethod
+    def export_marking_guide_pdf(
+        cls,
+        exam: Exam,
+        questions: List[Question],
+        school_name: str | None = None,
+        school_address: str | None = None,
+    ) -> str:
+        """Export a compact 1-page Teacher Answer Key & Marking Guide."""
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from xml.sax.saxutils import escape
+
+        def esc(text: str) -> str:
+            return escape(cls._clean(text)).replace("\n", "<br/>")
+
+        directory = cls.exam_dir(exam.id)
+        directory.mkdir(parents=True, exist_ok=True)
+        file_name = f"{uuid.uuid4().hex}.pdf"
+        output_path = directory / file_name
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle("MGTitle", parent=styles["Heading1"], fontSize=13, leading=16, alignment=1)
+        sub_style = ParagraphStyle("MGSub", parent=styles["Normal"], fontSize=9, leading=12, alignment=1, textColor="#b02a37")
+        body_style = ParagraphStyle("MGBody", parent=styles["Normal"], fontSize=8.5, leading=11)
+        th_style = ParagraphStyle("MGTh", parent=styles["Normal"], fontSize=8, leading=10, fontName="Helvetica-Bold", alignment=1)
+        tc_style = ParagraphStyle("MGTc", parent=styles["Normal"], fontSize=9, leading=11, fontName="Helvetica-Bold", alignment=1)
+
+        story = []
+        if school_name:
+            story.append(Paragraph(f"<b>{esc(school_name.upper())}</b>", title_style))
+        story.append(Paragraph(f"<b>{esc(exam.subject).upper()} ({esc(exam.grade_level).upper()}) — MARKING GUIDE</b>", title_style))
+        story.append(Paragraph("CONFIDENTIAL — FOR EXAMINER & SUPERVISOR USE ONLY", sub_style))
+        story.append(Spacer(1, 4 * mm))
+
+        # Separate MCQs and Theory questions
+        mcqs = [q for q in questions if getattr(q, "type", "") == "multiple_choice"]
+        theory = [q for q in questions if getattr(q, "type", "") != "multiple_choice"]
+
+        if mcqs:
+            story.append(Paragraph("<b>SECTION A: OBJECTIVE ANSWER KEY</b>", body_style))
+            story.append(Spacer(1, 2 * mm))
+
+            # Render MCQs in 10-column compact blocks
+            chunk_size = 10
+            for i in range(0, len(mcqs), chunk_size):
+                chunk = mcqs[i : i + chunk_size]
+                header_row = [Paragraph(f"Q{q.question_number}", th_style) for q in chunk]
+                ans_row = [Paragraph(f"<b>{esc(q.correct_answer or '-')}</b>", tc_style) for q in chunk]
+                # Pad to 10 columns if needed
+                while len(header_row) < 10:
+                    header_row.append(Paragraph("", th_style))
+                    ans_row.append(Paragraph("", tc_style))
+
+                table_data = [header_row, ans_row]
+                t = Table(table_data, colWidths=[17.5 * mm] * 10)
+                t.setStyle(
+                    TableStyle([
+                        ("GRID", (0, 0), (-1, -1), 0.5, "#444444"),
+                        ("BACKGROUND", (0, 0), (-1, 0), "#EAEAEA"),
+                        ("BACKGROUND", (0, 1), (-1, 1), "#F8FAF8"),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ])
+                )
+                story.append(t)
+                story.append(Spacer(1, 2 * mm))
+
+        if theory:
+            story.append(Spacer(1, 3 * mm))
+            story.append(Paragraph("<b>SECTION B / C: THEORY & ESSAY MARKING SCHEMES</b>", body_style))
+            story.append(Spacer(1, 2 * mm))
+
+            theory_rows = [[
+                Paragraph("<b>Q#</b>", th_style),
+                Paragraph("<b>Marks</b>", th_style),
+                Paragraph("<b>Expected Answer / Marking Criteria</b>", th_style),
+            ]]
+            for q in theory:
+                criteria = []
+                if q.correct_answer:
+                    criteria.append(f"<b>Key Answer:</b> {esc(q.correct_answer)}")
+                if q.marking_scheme:
+                    criteria.append("<b>Marking Scheme:</b>")
+                    for pt in q.marking_scheme:
+                        criteria.append(f"• {esc(str(pt))}")
+                if q.explanation:
+                    criteria.append(f"<i>Note: {esc(q.explanation)}</i>")
+                criteria_text = "<br/>".join(criteria) if criteria else "Award marks per teacher rubric."
+
+                theory_rows.append([
+                    Paragraph(f"Q{q.question_number}", tc_style),
+                    Paragraph(f"{q.marks}m", tc_style),
+                    Paragraph(criteria_text, body_style),
+                ])
+
+            tt = Table(theory_rows, colWidths=[15 * mm, 16 * mm, 144 * mm])
+            tt.setStyle(
+                TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, "#444444"),
+                    ("BACKGROUND", (0, 0), (-1, 0), "#EAEAEA"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ])
+            )
+            story.append(tt)
+
+        story.append(Spacer(1, 6 * mm))
+        sig_data = [[
+            Paragraph("<b>Subject Teacher:</b> ___________________________", body_style),
+            Paragraph("<b>HOD / Principal:</b> ___________________________", body_style),
+        ]]
+        sig_table = Table(sig_data, colWidths=[87 * mm, 87 * mm])
+        sig_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+        story.append(sig_table)
+
+        doc = SimpleDocTemplate(
+            str(output_path),
+            pagesize=A4,
+            leftMargin=18 * mm,
+            rightMargin=18 * mm,
+            topMargin=14 * mm,
+            bottomMargin=14 * mm,
+            title=f"Marking Guide - {exam.subject}",
+        )
+        doc.build(story)
+        return file_name
+
+    @classmethod
+    def export_omr_sheet_pdf(
+        cls,
+        exam: Exam,
+        school_name: str | None = None,
+    ) -> str:
+        """Export a standardized 50-question A4 OMR Bubble Sheet for optical/rapid marking."""
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from xml.sax.saxutils import escape
+
+        def esc(text: str) -> str:
+            return escape(cls._clean(text))
+
+        directory = cls.exam_dir(exam.id)
+        directory.mkdir(parents=True, exist_ok=True)
+        file_name = f"{uuid.uuid4().hex}.pdf"
+        output_path = directory / file_name
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle("OMRTitle", parent=styles["Heading1"], fontSize=13, leading=16, alignment=1)
+        sub_style = ParagraphStyle("OMRSub", parent=styles["Normal"], fontSize=8.5, leading=11, alignment=1)
+        field_style = ParagraphStyle("OMRField", parent=styles["Normal"], fontSize=9, leading=13)
+        cell_style = ParagraphStyle("OMRCell", parent=styles["Normal"], fontSize=8.5, leading=11, fontName="Courier")
+
+        story = []
+        if school_name:
+            story.append(Paragraph(f"<b>{esc(school_name.upper())}</b>", title_style))
+        story.append(Paragraph(f"<b>{esc(exam.subject).upper()} — OMR ANSWER SHEET</b>", title_style))
+        story.append(Paragraph("Instructions: Shade bubbles completely with 2B/HB pencil. Erase cleanly any change.", sub_style))
+        story.append(Spacer(1, 3 * mm))
+
+        # Candidate Details Header Table
+        hdr_data = [
+            [
+                Paragraph("<b>Candidate Name:</b> ___________________________", field_style),
+                Paragraph("<b>Class:</b> ____________", field_style),
+                Paragraph("<b>Score:</b> [ &nbsp; &nbsp; / 50 ]", field_style),
+            ],
+            [
+                Paragraph("<b>Candidate ID:</b> ___________________________", field_style),
+                Paragraph("<b>Date:</b> _____________", field_style),
+                Paragraph("<b>Supervisor Sign:</b> _________", field_style),
+            ],
+        ]
+        ht = Table(hdr_data, colWidths=[75 * mm, 45 * mm, 54 * mm])
+        ht.setStyle(
+            TableStyle([
+                ("BOX", (0, 0), (-1, -1), 1, "#000000"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ])
+        )
+        story.append(ht)
+        story.append(Spacer(1, 4 * mm))
+
+        # 50 Questions in 2 columns of 25 rows each
+        left_rows = []
+        right_rows = []
+        for qnum in range(1, 26):
+            left_rows.append(Paragraph(f"<b>{qnum:02d}.</b> &nbsp;[A] &nbsp;[B] &nbsp;[C] &nbsp;[D] &nbsp;[E]", cell_style))
+        for qnum in range(26, 51):
+            right_rows.append(Paragraph(f"<b>{qnum:02d}.</b> &nbsp;[A] &nbsp;[B] &nbsp;[C] &nbsp;[D] &nbsp;[E]", cell_style))
+
+        omr_table_data = []
+        for i in range(25):
+            omr_table_data.append([left_rows[i], right_rows[i]])
+
+        omr_table = Table(omr_table_data, colWidths=[87 * mm, 87 * mm])
+        omr_table.setStyle(
+            TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, "#cccccc"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
+            ])
+        )
+        story.append(omr_table)
+
+        doc = SimpleDocTemplate(
+            str(output_path),
+            pagesize=A4,
+            leftMargin=18 * mm,
+            rightMargin=18 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
+            title=f"OMR Sheet - {exam.subject}",
+        )
+        doc.build(story)
         return file_name

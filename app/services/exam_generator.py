@@ -274,17 +274,13 @@ class ExamGenerator:
 SECTION 1: CURRICULUM CONTEXT
 ═══════════════════════════════════════════════════════════════
 
-════════════════════════════════════════════════════════════════
-SECTION 1: CURRICULUM CONTEXT
-════════════════════════════════════════════════════════════════
-
 {curriculum_context['combined_context']}
 
 → All questions MUST align with this curriculum content.
 → Use terminology and examples from the provided context.
 
 ═══════════════════════════════════════════════════════════════
-SECTION 2: NIGERIAN EDUCATION CONTEXT
+SECTION 2: NIGERIAN EDUCATION CONTEXT & PEDAGOGY
 ═══════════════════════════════════════════════════════════════
 
 Language & Style:
@@ -294,9 +290,15 @@ Language & Style:
 
 Cultural Context:
 • Use Nigerian names: Chidi, Amina, Tunde, Ngozi, Emeka, Fatima
-• Local examples: cassava farming, Lagos market, harmattan season, NEPA
-• Locations: Lagos, Kano, Abuja, Ibadan, Port Harcourt
+• Local examples: agriculture, commerce, harmattan season, geographical zones
+• Locations: Lagos, Kano, Abuja, Ibadan, Port Harcourt, Enugu, Kaduna
 • Units: Metric system (km, kg, litres) + Naira (₦) for money
+
+Pedagogy & Distractor Craft (Strict Standard):
+• For Multiple Choice Questions, distractors MUST be plausible and based on common student misconceptions or typical calculation missteps.
+• NEVER use absurd options or lazy filler distractors.
+• For Chemistry formulas, ALWAYS use mhchem notation inside LaTeX: $\\ce{{...}}$ (e.g. $\\ce{{H2SO4}}$, $\\ce{{CuSO4}}$, $\\ce{{2H2 + O2 -> 2H2O}}$).
+• For Mathematics, write formulas in clean LaTeX: e.g. $x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$.
 
 ═══════════════════════════════════════════════════════════════
 SECTION 3: EXAM STRUCTURE
@@ -317,37 +319,7 @@ Duration: {request.duration_minutes} minutes
 {primary_layout_block}
 
 ═══════════════════════════════════════════════════════════════
-SECTION 4: INTERNAL PLANNING
-═══════════════════════════════════════════════════════════════
-
-<internal_planning>
-Before generating, analyze:
-1. Main topics from curriculum context (prioritize by emphasis)
-2. Appropriate question distribution for {request.grade_level}
-3. Difficulty calibration (what's "easy" vs "hard" at this level)
-4. Nigerian context examples that fit naturally
-5. Section-specific requirements (MCQ vs theory, sub-parts, etc.)
-
-DO NOT OUTPUT THIS SECTION.
-</internal_planning>
-
-═══════════════════════════════════════════════════════════════
-SECTION 5: QUALITY STANDARDS
-═══════════════════════════════════════════════════════════════
-
-<self_check>
-After generating each question, verify:
-✓ Clarity: No ambiguous wording
-✓ Accuracy: Factually correct based on curriculum
-✓ Relevance: Directly tied to curriculum content
-✓ Age-appropriate: Language matches {request.grade_level}
-✓ Nigerian context: Uses local examples and British English
-
-DO NOT OUTPUT THIS SECTION.
-</self_check>
-
-═══════════════════════════════════════════════════════════════
-SECTION 6: OUTPUT FORMAT (STRICT JSON)
+SECTION 4: OUTPUT FORMAT (STRICT JSON)
 ═══════════════════════════════════════════════════════════════
 
 Return ONLY valid JSON in this exact format (no markdown, no preamble):
@@ -807,11 +779,15 @@ PRIMARY EXAM RENDERING RULES
             # Create questions (batch)
             question_number = 1
             for section in parsed_exam["sections"]:
+                sec_num = int(section.get("section_number", 1))
+                sec_name = section.get("section_title") or f"Section {chr(64 + sec_num)}"
                 for q_data in section["questions"]:
                     question = Question(
                         id=uuid.uuid4(),
                         exam_id=exam.id,
                         question_number=question_number,
+                        section_number=sec_num,
+                        section_name=sec_name,
                         type=q_data.get("type", "multiple_choice"),
                         question_text=q_data.get("question", ""),
                         marks=q_data.get("marks", 0),

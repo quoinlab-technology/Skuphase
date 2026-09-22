@@ -124,3 +124,41 @@ def test_proposals_generate_by_admin(monkeypatch):
     resp = client.post("/app/proposals/p1/generate", follow_redirects=False)
     assert resp.status_code in (302, 303)
     assert resp.headers.get("location") == "/app/exams/e1"
+
+
+def test_proposals_htmx_partial_filters(monkeypatch):
+    client = _logged_in_client(monkeypatch, role="school_admin")
+
+    async def fake_proposals_call(req, method, path, **kwargs):
+        if "/exams/generation-proposals" in path:
+            return FakeResp(200, [
+                PROPOSAL,
+                {
+                    "id": "p2",
+                    "subject": "Basic Science",
+                    "grade_level": "Primary 2",
+                    "term": "First Term",
+                    "selected_weeks": [1],
+                    "desired_outcomes": "Living things.",
+                    "status": "rejected",
+                    "created_at": "2026-05-11T10:00:00",
+                }
+            ])
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.proposals.call_api", fake_proposals_call)
+
+    # Test filtering by status=open
+    resp = client.get("/ui/proposals/list?status=open")
+    assert resp.status_code == 200
+    assert "Primary 4 Mathematics" in resp.text
+    assert "Primary 2 Basic Science" not in resp.text
+    assert "proposals-content" in resp.text
+    assert "hx-push-url" in resp.headers
+
+    # Test filtering by status=rejected
+    resp_rej = client.get("/ui/proposals/list?status=rejected")
+    assert resp_rej.status_code == 200
+    assert "Primary 2 Basic Science" in resp_rej.text
+    assert "Primary 4 Mathematics" not in resp_rej.text
+

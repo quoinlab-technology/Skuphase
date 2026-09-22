@@ -324,6 +324,7 @@ class ExamExportRequest(BaseModel):
 
     format: str = Field(default="pdf", description="Export format (pdf only for MVP)")
     include_answers: bool = Field(default=False, description="Include answers/marking hints")
+    doc_type: Optional[str] = Field(default="exam", description="exam | marking_guide | omr")
 
 
 class ExamExportResponse(BaseModel):

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, update
 
 from app.core.dependencies import get_current_user
 from app.core.permissions import require_llm_permission, is_workspace_admin
@@ -210,7 +210,7 @@ async def _run_exam_preflight(
                     formula_fields.append((f"sub_parts[{idx}]", str(sub_part)))
 
         for field_name, field_value in formula_fields:
-            issues.extend(
+            warnings.extend(
                 _formula_issues_from_text(
                     text=field_value,
                     question_id=question.id,
@@ -236,6 +236,31 @@ async def _run_exam_preflight(
                 "field": "marks",
                 "message": f"Question {question.question_number} must have positive marks.",
             })
+        if question.type == "multiple_choice":
+            if not question.options or len(question.options) < 2:
+                warnings.append({
+                    "code": "mcq_few_options",
+                    "question_id": str(question.id),
+                    "question_number": question.question_number,
+                    "field": "options",
+                    "message": f"Question {question.question_number} has fewer than 2 options.",
+                })
+            if not question.correct_answer:
+                warnings.append({
+                    "code": "mcq_no_answer",
+                    "question_id": str(question.id),
+                    "question_number": question.question_number,
+                    "field": "correct_answer",
+                    "message": f"Question {question.question_number} has no correct answer selected.",
+                })
+
+    # Total marks sanity check
+    actual_marks_sum = sum((q.marks or 0) for q in questions)
+    if exam.total_marks and actual_marks_sum != exam.total_marks:
+        warnings.append({
+            "code": "total_marks_mismatch",
+            "message": f"Sum of question marks ({actual_marks_sum}) does not match exam total ({exam.total_marks}).",
+        })
 
     return {
         "passed": len(issues) == 0,
@@ -852,7 +877,11 @@ async def import_questions_from_bank(
             topic=item.topic,
         )
         db.add(q)
-        item.usage_count = (item.usage_count or 0) + 1
+        await db.execute(
+            update(QuestionBankItem)
+            .where(QuestionBankItem.id == item.id)
+            .values(usage_count=QuestionBankItem.usage_count + 1)
+        )
         imported_count += 1
 
     # Recalculate total marks
@@ -2504,16 +2533,32 @@ async def export_exam(
             if settings_obj and isinstance(settings_obj, SchoolSettings) and getattr(settings_obj, "logo_url", None):
                 school_logo_url = getattr(settings_obj, "logo_url", None)
 
-        file_name = await asyncio.to_thread(
-            ExportService.export_exam_pdf,
-            exam=exam,
-            questions=list(questions),
-            include_answers=request.include_answers,
-            passages=passages,
-            school_name=school_name,
-            school_address=school_address,
-            school_logo_path=school_logo_url,
-        )
+        doc_type = (getattr(request, "doc_type", None) or "exam").lower()
+        if doc_type == "marking_guide":
+            file_name = await asyncio.to_thread(
+                ExportService.export_marking_guide_pdf,
+                exam=exam,
+                questions=list(questions),
+                school_name=school_name,
+                school_address=school_address,
+            )
+        elif doc_type == "omr":
+            file_name = await asyncio.to_thread(
+                ExportService.export_omr_sheet_pdf,
+                exam=exam,
+                school_name=school_name,
+            )
+        else:
+            file_name = await asyncio.to_thread(
+                ExportService.export_exam_pdf,
+                exam=exam,
+                questions=list(questions),
+                include_answers=request.include_answers,
+                passages=passages,
+                school_name=school_name,
+                school_address=school_address,
+                school_logo_path=school_logo_url,
+            )
         download_url = (
             f"/api/v1/exams/{exam_id}/exports/{file_name}"
         )
