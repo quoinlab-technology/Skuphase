@@ -11,6 +11,16 @@ from app.models.exam import Exam, Question
 from app.utils.exam_utils import format_mcq_option
 
 
+
+def _font_registered(name: str) -> bool:
+    """Return True if *name* is already registered with ReportLab's pdfmetrics."""
+    try:
+        from reportlab.pdfbase import pdfmetrics as _pm
+        return name in _pm.getRegisteredFontNames()
+    except Exception:
+        return False
+
+
 class ExportService:
     """Generate export files for exams (PDF MVP).
 
@@ -41,29 +51,84 @@ class ExportService:
 
     @staticmethod
     def _clean(text: str | None) -> str:
-        """Normalise text for PDF rendering (strip fences, control chars, simplify LaTeX)."""
+        """Normalise text for ReportLab PDF rendering.
+
+        Converts common LaTeX / markdown notation to plain text or ReportLab
+        Paragraph XML tags (<super>, <sub>, <b>, <i>).  Strips code fences and
+        math delimiters that would appear as raw characters in the PDF.
+        """
         if not text:
             return ""
         cleaned = str(text)
-        # Mermaid blocks cannot render in reportlab: keep a caption placeholder.
+
+        # ── Code fences ────────────────────────────────────────────────────────
         cleaned = re.sub(
             r"```mermaid\s*(.*?)\s*```",
             lambda m: f"[Diagram: {m.group(1).splitlines()[0] if m.group(1).splitlines() else 'see question'}]",
             cleaned,
             flags=re.DOTALL,
         )
-        cleaned = re.sub(r"```([a-zA-Z]*)\n?", "", cleaned)
+        cleaned = re.sub(r"```[a-zA-Z]*\n?", "", cleaned)
         cleaned = cleaned.replace("```", "")
-        # Simplify common LaTeX expressions for clean ReportLab text rendering
-        cleaned = re.sub(r"\\ce\{([^}]+)\}", r"\1", cleaned)  # \ce{H2SO4} -> H2SO4
-        cleaned = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1/\2)", cleaned)  # \frac{a}{b} -> (a/b)
+
+        # ── LaTeX: fractions ───────────────────────────────────────────────────
+        cleaned = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", lambda m: f"({m.group(1)}/{m.group(2)})", cleaned)
+
+        # ── LaTeX: other common commands ────────────────────────────────────────
+        cleaned = re.sub(r"\\ce\{([^}]+)\}", r"\1", cleaned)
         cleaned = re.sub(r"\\sqrt\{([^}]+)\}", r"√(\1)", cleaned)
-        cleaned = cleaned.replace(r"\times", "×").replace(r"\pm", "±").replace(r"\div", "÷")
-        cleaned = cleaned.replace(r"\le", "≤").replace(r"\ge", "≥").replace(r"\neq", "≠")
-        cleaned = cleaned.replace(r"\degree", "°").replace(r"\pi", "π").replace(r"\theta", "θ")
-        # Strip mathematical dollar delimiters for clean reportlab text
-        cleaned = re.sub(r"(?<!\\)\$\$", "", cleaned)
+        cleaned = re.sub(r"\\text\{([^}]+)\}", r"\1", cleaned)
+        cleaned = re.sub(r"\\mathrm\{([^}]+)\}", r"\1", cleaned)
+        cleaned = re.sub(r"\\mathbf\{([^}]+)\}", r"\1", cleaned)
+        cleaned = re.sub(r"\\left[\(\[\{]", "(", cleaned)
+        cleaned = re.sub(r"\\right[\)\]\}]", ")", cleaned)
+
+        # ── LaTeX: superscripts / subscripts → ReportLab XML ───────────────────
+        cleaned = re.sub(r"\^\{([^}]+)\}", r"<super>\1</super>", cleaned)
+        cleaned = re.sub(r"\^([0-9A-Za-z])", r"<super>\1</super>", cleaned)
+        cleaned = re.sub(r"_\{([^}]+)\}", r"<sub>\1</sub>", cleaned)
+        cleaned = re.sub(r"_([0-9A-Za-z])", r"<sub>\1</sub>", cleaned)
+
+        # ── LaTeX: Greek letters & math symbols ────────────────────────────────
+        _greek = {
+            r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
+            r"\epsilon": "ε", r"\zeta": "ζ", r"\eta": "η", r"\theta": "θ",
+            r"\iota": "ι", r"\kappa": "κ", r"\lambda": "λ", r"\mu": "μ",
+            r"\nu": "ν", r"\xi": "ξ", r"\pi": "π", r"\rho": "ρ",
+            r"\sigma": "σ", r"\tau": "τ", r"\upsilon": "υ", r"\phi": "φ",
+            r"\chi": "χ", r"\psi": "ψ", r"\omega": "ω",
+            r"\Alpha": "Α", r"\Beta": "Β", r"\Gamma": "Γ", r"\Delta": "Δ",
+            r"\Theta": "Θ", r"\Lambda": "Λ", r"\Pi": "Π", r"\Sigma": "Σ",
+            r"\Phi": "Φ", r"\Psi": "Ψ", r"\Omega": "Ω",
+            r"\times": "×", r"\div": "÷", r"\pm": "±", r"\mp": "∓",
+            r"\cdot": "·", r"\cdots": "···", r"\ldots": "…",
+            r"\le": "≤", r"\leq": "≤", r"\ge": "≥", r"\geq": "≥",
+            r"\neq": "≠", r"\approx": "≈", r"\equiv": "≡", r"\sim": "∼",
+            r"\infty": "∞", r"\partial": "∂", r"\nabla": "∇",
+            r"\forall": "∀", r"\exists": "∃",
+            r"\in": "∈", r"\notin": "∉", r"\subset": "⊂", r"\cup": "∪",
+            r"\cap": "∩", r"\emptyset": "∅",
+            r"\rightarrow": "→", r"\leftarrow": "←", r"\Rightarrow": "⇒",
+            r"\Leftrightarrow": "⟺",
+            r"\degree": "°", r"\circ": "°",
+        }
+        for latex, sym in _greek.items():
+            cleaned = cleaned.replace(latex, sym)
+
+        # ── Markdown: bold / italic → ReportLab XML ────────────────────────────
+        cleaned = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", cleaned)
+        cleaned = re.sub(r"__(.+?)__", r"<b>\1</b>", cleaned)
+        cleaned = re.sub(r"\*(.+?)\*", r"<i>\1</i>", cleaned)
+
+        # ── Math delimiters: strip $$ / $ wrappers (content already converted) ─
+        cleaned = re.sub(r"(?<!\\)\$\$([^$]*)\$\$", r"\1", cleaned)
+        cleaned = re.sub(r"(?<!\\)\$([^$\n]*)\$", r"\1", cleaned)
         cleaned = re.sub(r"(?<!\\)\$", "", cleaned)
+
+        # ── Strip leftover \command{...} and bare \command ─────────────────────
+        cleaned = re.sub(r"\\[a-zA-Z]+\{([^}]*)\}", r"\1", cleaned)
+        cleaned = re.sub(r"\\[a-zA-Z]+\b", "", cleaned)
+
         return cleaned.replace("\u0000", "").strip()
 
     @classmethod
@@ -98,8 +163,38 @@ class ExportService:
                 TableStyle,
                 Image as ReportLabImage,
             )
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
         except Exception as e:  # pragma: no cover - env without reportlab
             raise ValueError(f"PDF export dependencies are not available: {e}") from e
+
+        # ── Font registration (Arial for full Unicode coverage: ₦, π, α …) ─────
+        import os as _os
+        _arial_path = r"C:\Windows\Fonts\arial.ttf"
+        _arial_bd_path = r"C:\Windows\Fonts\arialbd.ttf"
+        _arial_it_path = r"C:\Windows\Fonts\ariali.ttf"
+        if _os.path.exists(_arial_path) and not _font_registered("ExamArial"):
+            try:
+                pdfmetrics.registerFont(TTFont("ExamArial", _arial_path))
+                if _os.path.exists(_arial_bd_path):
+                    pdfmetrics.registerFont(TTFont("ExamArial-Bold", _arial_bd_path))
+                if _os.path.exists(_arial_it_path):
+                    pdfmetrics.registerFont(TTFont("ExamArial-Italic", _arial_it_path))
+                from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                registerFontFamily(
+                    "ExamArial",
+                    normal="ExamArial",
+                    bold="ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "ExamArial",
+                    italic="ExamArial-Italic" if _os.path.exists(_arial_it_path) else "ExamArial",
+                )
+                _base_font = "ExamArial"
+                _bold_font = "ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "ExamArial"
+            except Exception:
+                _base_font = "Helvetica"
+                _bold_font = "Helvetica-Bold"
+        else:
+            _base_font = "ExamArial" if _os.path.exists(_arial_path) else "Helvetica"
+            _bold_font = "ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "Helvetica-Bold"
 
         directory = cls.exam_dir(exam.id)
         directory.mkdir(parents=True, exist_ok=True)
@@ -108,51 +203,52 @@ class ExportService:
 
         styles = getSampleStyleSheet()
         school_name_style = ParagraphStyle(
-            "SchoolName", parent=styles["Title"], fontSize=15, leading=18, alignment=1, spaceAfter=1 * mm
+            "SchoolName", parent=styles["Title"], fontName=_bold_font,
+            fontSize=14, leading=17, alignment=1, spaceAfter=0.5 * mm,
         )
         school_addr_style = ParagraphStyle(
-            "SchoolAddr", parent=styles["Normal"], fontSize=9, leading=12, alignment=1, textColor="#555555", spaceAfter=2 * mm
+            "SchoolAddr", parent=styles["Normal"], fontName=_base_font,
+            fontSize=8.5, leading=11, alignment=1, textColor="#555555", spaceAfter=1 * mm,
         )
         title_style = ParagraphStyle(
-            "ExamTitle", parent=styles["Heading1"], fontSize=12, leading=15, alignment=1, spaceAfter=2 * mm
+            "ExamTitle", parent=styles["Normal"], fontName=_bold_font,
+            fontSize=11, leading=14, alignment=1, spaceAfter=1.5 * mm,
         )
         meta_style = ParagraphStyle(
-            "ExamMeta", parent=styles["Normal"], fontSize=9.5, leading=13, alignment=1, spaceAfter=1.5 * mm
+            "ExamMeta", parent=styles["Normal"], fontName=_base_font,
+            fontSize=9, leading=12, alignment=1, spaceAfter=1 * mm,
         )
         instruction_style = ParagraphStyle(
-            "ExamInstructions", parent=styles["Normal"], fontSize=9, leading=12, spaceAfter=1 * mm
+            "ExamInstructions", parent=styles["Normal"], fontName=_base_font,
+            fontSize=8.5, leading=11, spaceAfter=0.5 * mm,
         )
         section_style = ParagraphStyle(
-            "SectionHeader",
-            parent=styles["Heading2"],
-            fontSize=11,
-            spaceBefore=5 * mm,
-            spaceAfter=2 * mm,
+            "SectionHeader", parent=styles["Normal"], fontName=_bold_font,
+            fontSize=10.5, leading=13, spaceBefore=3 * mm, spaceAfter=1.5 * mm,
+            borderPad=2, borderWidth=0,
         )
         question_style = ParagraphStyle(
-            "QuestionText",
-            parent=styles["Normal"],
-            fontSize=10,
-            leading=14,
-            spaceBefore=3 * mm,
-            spaceAfter=1 * mm,
+            "QuestionText", parent=styles["Normal"], fontName=_base_font,
+            fontSize=10, leading=13.5, spaceBefore=2 * mm, spaceAfter=0.5 * mm,
         )
         option_style = ParagraphStyle(
-            "OptionText", parent=styles["Normal"], fontSize=10, leading=13, leftIndent=18
+            "OptionText", parent=styles["Normal"], fontName=_base_font,
+            fontSize=9.5, leading=12.5, leftIndent=14, spaceAfter=0,
         )
         answer_style = ParagraphStyle(
-            "AnswerText",
-            parent=styles["Normal"],
-            fontSize=9,
-            leading=12,
-            leftIndent=18,
-            textColor="#333333",
+            "AnswerText", parent=styles["Normal"], fontName=_base_font,
+            fontSize=9, leading=11.5, leftIndent=14, textColor="#333333",
         )
 
-        def esc(text: str) -> str:
-            from xml.sax.saxutils import escape
+        from xml.sax.saxutils import escape as _xml_escape
 
-            return escape(cls._clean(text)).replace("\n", "<br/>")
+        def esc(raw: str) -> str:
+            """XML-escape then convert LaTeX/markdown → ReportLab XML tags."""
+            # Escape &, <, > so they become &amp;, &lt;, &gt; BEFORE _clean()
+            # processes the rest of the text into ReportLab tags.
+            safe = _xml_escape(str(raw) if raw else "")
+            cleaned = cls._clean(safe)
+            return cleaned.replace("\n", "<br/>")
 
         story: list = []
 
@@ -231,49 +327,49 @@ class ExportService:
                 ])
             )
         story.append(header_table)
-        story.append(Spacer(1, 4 * mm))
+        story.append(Spacer(1, 2 * mm))
 
-        # Pre-compute section marks
-        section_marks: dict = {}
+        # ── Helper: infer section title from question type ─────────────────────
+        def _sec_title(q: Any) -> str:
+            t = getattr(q, "section_title", None)
+            if t:
+                return t
+            qtype = getattr(q, "type", "multiple_choice")
+            if qtype == "multiple_choice":
+                return "SECTION A — OBJECTIVE QUESTIONS"
+            if qtype in ("short_answer", "theory"):
+                return "SECTION B — SHORT ANSWER / THEORY"
+            if qtype == "essay":
+                return "SECTION C — ESSAY QUESTIONS"
+            return "SECTION A"
+
+        # Pre-compute total marks per section
+        section_marks: dict[str, int] = {}
         for q in questions:
-            stitle = getattr(q, "section_title", None)
-            if not stitle:
-                qtype = getattr(q, "type", "multiple_choice")
-                if qtype == "multiple_choice":
-                    stitle = "SECTION A — OBJECTIVE QUESTIONS"
-                elif qtype in ("short_answer", "theory"):
-                    stitle = "SECTION B — SHORT ANSWER / THEORY"
-                elif qtype == "essay":
-                    stitle = "SECTION C — ESSAY QUESTIONS"
-                else:
-                    stitle = "SECTION A"
-            section_marks[stitle] = section_marks.get(stitle, 0) + (getattr(q, "marks", 0) or 0)
+            st = _sec_title(q)
+            section_marks[st] = section_marks.get(st, 0) + (getattr(q, "marks", 0) or 0)
 
-        current_section = None
+        # ── Question loop ──────────────────────────────────────────────────────
+        current_section: str | None = None
+        section_q_counter: dict[str, int] = {}   # per-section numbering
         rendered_passage_ids: set = set()
+
+        # Build passage lookup
         passage_meta: dict = {}
         for p in (passages or []):
             pid = getattr(p, "id", None)
             if pid is None:
                 continue
-            p_title = getattr(p, "title", None) or ""
-            p_body = getattr(p, "body", "") or ""
-            p_section = getattr(p, "section_number", None) or ""
-            passage_meta[str(pid)] = (p_title, p_body, p_section)
+            passage_meta[str(pid)] = (
+                getattr(p, "title", None) or "",
+                getattr(p, "body", "") or "",
+                getattr(p, "section_number", None) or "",
+            )
 
         for q in questions:
-            sec_title = getattr(q, "section_title", None)
-            if not sec_title:
-                qtype = getattr(q, "type", "multiple_choice")
-                if qtype == "multiple_choice":
-                    sec_title = "SECTION A — OBJECTIVE QUESTIONS"
-                elif qtype in ("short_answer", "theory"):
-                    sec_title = "SECTION B — SHORT ANSWER / THEORY"
-                elif qtype == "essay":
-                    sec_title = "SECTION C — ESSAY QUESTIONS"
-                else:
-                    sec_title = "SECTION A"
+            sec_title = _sec_title(q)
 
+            # ── Section header (only when section changes) ─────────────────────
             if sec_title != current_section:
                 current_section = sec_title
                 tot_m = section_marks.get(sec_title, 0)
@@ -281,16 +377,21 @@ class ExportService:
                 story.append(
                     Paragraph(f"<b>{esc(sec_title.upper())}{marks_suffix}</b>", section_style)
                 )
-                story.append(Spacer(1, 1.5 * mm))
+                story.append(Spacer(1, 1 * mm))
 
+            # ── Per-section question numbering ────────────────────────────────
+            section_q_counter[sec_title] = section_q_counter.get(sec_title, 0) + 1
+            q_num = section_q_counter[sec_title]
+
+            # ── Render passage (first time seen for this passage) ─────────────
             pid = str(getattr(q, "passage_id", "") or "")
             if pid in passage_meta and pid not in rendered_passage_ids:
                 rendered_passage_ids.add(pid)
                 p_title, p_body, p_section = passage_meta[pid]
-                section_label = f"Section {p_section}: " if p_section else ""
+                sec_lbl = f"Section {p_section}: " if p_section else ""
                 story.append(
                     Paragraph(
-                        f"<b>{esc(section_label)}Read the passage and answer the questions that follow.</b>",
+                        f"<b>{esc(sec_lbl)}Read the passage and answer the questions that follow.</b>",
                         question_style,
                     )
                 )
@@ -299,37 +400,44 @@ class ExportService:
                 for para in p_body.splitlines():
                     if para.strip():
                         story.append(Paragraph(esc(para), question_style))
-                story.append(Spacer(1, 3 * mm))
+                story.append(Spacer(1, 2 * mm))
 
-            marks_bit = f"&nbsp;&nbsp;<b>[{q.marks}]</b>" if q.marks else ""
+            # ── Question text ─────────────────────────────────────────────────
+            marks_bit = f"&nbsp;&nbsp;<b>[{q.marks}m]</b>" if q.marks else ""
             story.append(
-                Paragraph(f"<b>Q{q.question_number}.</b> {esc(q.question_text)}{marks_bit}", question_style)
+                Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
             )
 
+            # ── MCQ Options ────────────────────────────────────────────────────
             if q.options:
-                formatted_opts = [
-                    Paragraph(esc(format_mcq_option(str(opt), idx)), option_style)
-                    for idx, opt in enumerate(q.options)
-                ]
-                if len(formatted_opts) == 4:
+                raw_opts = [format_mcq_option(str(opt), idx) for idx, opt in enumerate(q.options)]
+                # Use 2-column layout only if ALL options are short (<= 55 chars each)
+                _all_short = all(len(o) <= 55 for o in raw_opts)
+                if len(raw_opts) == 4 and _all_short:
+                    # Compact 2×2 table — A/B on row 1, C/D on row 2
+                    fmt_opts = [Paragraph(esc(o), option_style) for o in raw_opts]
+                    usable_w = A4[0] - 28 * mm   # page width minus margins
+                    col_w = usable_w / 2
                     opt_table = Table(
-                        [[formatted_opts[0], formatted_opts[1]], [formatted_opts[2], formatted_opts[3]]],
-                        colWidths=[85 * mm, 85 * mm],
+                        [[fmt_opts[0], fmt_opts[1]], [fmt_opts[2], fmt_opts[3]]],
+                        colWidths=[col_w, col_w],
                     )
                     opt_table.setStyle(
                         TableStyle([
                             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 6),
                             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                             ("TOPPADDING", (0, 0), (-1, -1), 1),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
                         ])
                     )
                     story.append(opt_table)
                 else:
-                    for opt_p in formatted_opts:
-                        story.append(opt_p)
+                    # Single-column stacking for long options or non-4-option sets
+                    for o in raw_opts:
+                        story.append(Paragraph(esc(o), option_style))
 
+            # ── Answer key (when include_answers) ─────────────────────────────
             if include_answers:
                 if q.correct_answer:
                     story.append(Paragraph(f"<b>Answer:</b> {esc(q.correct_answer)}", answer_style))
@@ -341,32 +449,34 @@ class ExportService:
                     story.append(Paragraph(f"<i>{esc(q.explanation)}</i>", answer_style))
 
         if include_answers:
-            story.append(Spacer(1, 6 * mm))
+            story.append(Spacer(1, 5 * mm))
             footer_style = ParagraphStyle(
-                "TeacherOnlyFooter", parent=styles["Normal"], fontSize=8, leading=10, alignment=1, textColor="#777777"
+                "TeacherOnlyFooter", parent=styles["Normal"], fontName=_base_font,
+                fontSize=8, leading=10, alignment=1, textColor="#777777",
             )
             story.append(Paragraph("<b>FOR TEACHER USE ONLY — NOT FOR DISTRIBUTION</b>", footer_style))
 
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=A4,
-            leftMargin=18 * mm,
-            rightMargin=18 * mm,
-            topMargin=16 * mm,
-            bottomMargin=16 * mm,
+            leftMargin=14 * mm,
+            rightMargin=14 * mm,
+            topMargin=14 * mm,
+            bottomMargin=14 * mm,
             title=f"{exam.subject} {exam.grade_level}",
         )
 
         def _footer(canvas, _doc):
             canvas.saveState()
-            canvas.setFont("Helvetica", 8)
+            canvas.setFont(_base_font, 8)
             canvas.drawCentredString(
-                A4[0] / 2, 10 * mm, f"Page {_doc.page}"
+                A4[0] / 2, 8 * mm, f"Page {_doc.page}"
             )
             canvas.restoreState()
 
         doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
         return file_name
+
 
     @classmethod
     def export_marking_guide_pdf(
