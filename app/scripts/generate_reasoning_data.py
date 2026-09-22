@@ -1,0 +1,2713 @@
+"""
+Generate authoritative Verbal Reasoning & Quantitative Reasoning curriculum dataset.
+
+Covers Primary 1 to Primary 6 across all 3 terms (12 weeks per term)
+Total: 2 subjects x 6 classes x 3 terms x 12 weeks = 432 scheme-of-work records.
+
+Follows the schema of `data/nerdc_scheme_database.final.json`.
+"""
+
+import json
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+def generate_curriculum() -> List[Dict[str, Any]]:
+    # Data definitions for Verbal Reasoning & Quantitative Reasoning
+    records: List[Dict[str, Any]] = []
+
+    # Map of classes and their levels
+    classes = [
+        "Primary 1", "Primary 2", "Primary 3",
+        "Primary 4", "Primary 5", "Primary 6"
+    ]
+    terms = ["First Term", "Second Term", "Third Term"]
+
+    # --- VERBAL REASONING SYLLABUS DEFINITIONS ---
+    verbal_data = {
+        "Primary 1": {
+            "First Term": [
+                ("Alphabet Recognition (Capital & Small Letters)", [
+                    "i. Identify and recite the 26 letters of the English alphabet in order.",
+                    "ii. Match uppercase letters with their corresponding lowercase letters (A-a, B-b).",
+                    "iii. Distinguish between letters that look similar (b/d, p/q).",
+                    "iv. Write capital and small letters correctly on ruled lines."
+                ]),
+                ("Vowel and Consonant Sounds Identification", [
+                    "i. Identify the five English vowels (a, e, i, o, u).",
+                    "ii. Distinguish consonants from vowels in the alphabet.",
+                    "iii. Circle vowels in given simple words.",
+                    "iv. Pronounce short vowel sounds accurately."
+                ]),
+                ("Missing Letters in Alphabetical Sequence", [
+                    "i. Complete missing letters in a forward alphabet sequence (e.g., A, B, __, D).",
+                    "ii. Identify letters that come immediately before or after a given letter.",
+                    "iii. Arrange three consecutive letters in correct order.",
+                    "iv. Solve simple letter-fill puzzles."
+                ]),
+                ("Two-Letter Word Formation", [
+                    "i. Blend a vowel and a consonant to form 2-letter words (am, an, at, in, on, up, is).",
+                    "ii. Read and pronounce 2-letter words clearly.",
+                    "iii. Match 2-letter words with simple picture contexts.",
+                    "iv. Identify the missing letter in a 2-letter word."
+                ]),
+                ("Three-Letter CVC Words with Short 'a'", [
+                    "i. Form 3-letter consonant-vowel-consonant (CVC) words using short 'a' (cat, bat, mat, fan, pan).",
+                    "ii. Match short 'a' words with corresponding illustrations.",
+                    "iii. Substitute the initial consonant to make new words (cat -> bat -> hat).",
+                    "iv. Read simple sentences containing short 'a' words."
+                ]),
+                ("Three-Letter CVC Words with Short 'e' and 'i'", [
+                    "i. Form and read CVC words with short 'e' (bed, pen, hen, net).",
+                    "ii. Form and read CVC words with short 'i' (pin, tin, sit, pig).",
+                    "iii. Differentiate between short 'e' and short 'i' sounds in word pairs (pen/pin).",
+                    "iv. Complete 3-letter words by supplying the missing middle vowel."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review alphabet identification, vowels, consonants, and 2-letter words.",
+                    "ii. Complete mid-term verbal aptitude assessment exercises.",
+                    "iii. Mid-term break and restful consolidation."
+                ]),
+                ("Three-Letter CVC Words with Short 'o' and 'u'", [
+                    "i. Form and read CVC words with short 'o' (pot, hot, dog, box).",
+                    "ii. Form and read CVC words with short 'u' (cup, sun, bus, bug).",
+                    "iii. Discriminate vowel sounds among 'a', 'e', 'i', 'o', 'u' in CVC sets.",
+                    "iv. Group words by their middle vowel sound."
+                ]),
+                ("Simple Rhyming Words", [
+                    "i. Define rhyming words as words that end with the same sound.",
+                    "ii. Identify rhyming word pairs from pictures and text (cat/hat, bed/red, pin/tin).",
+                    "iii. Pick the odd word that does not rhyme in a set of three words.",
+                    "iv. Produce a rhyming word when given a base word."
+                ]),
+                ("Picture-Word Association and Matching", [
+                    "i. Match familiar objects and animals to their written names.",
+                    "ii. Identify initial letter sounds of illustrated objects.",
+                    "iii. Select the correct word that names a given picture from options.",
+                    "iv. Spell out 3-letter names of depicted everyday items."
+                ]),
+                ("Words with the Same Beginning Sound", [
+                    "i. Identify words that start with the same consonant or vowel sound.",
+                    "ii. Sort words into groups based on their initial letter.",
+                    "iii. Spot the intruder word that starts with a different sound.",
+                    "iv. Practice alliteration games using common classroom words."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision of all First Term verbal reasoning concepts.",
+                    "ii. Practice typical Primary 1 verbal aptitude examination test formats.",
+                    "iii. End of First Term written evaluation."
+                ])
+            ],
+            "Second Term": [
+                ("Word Families with '-an' and '-at'", [
+                    "i. Form words ending in '-an' (can, fan, man, pan, run).",
+                    "ii. Form words ending in '-at' (bat, cat, fat, hat, mat).",
+                    "iii. Complete sentences using '-an' and '-at' family words.",
+                    "iv. Discriminate between the two word families."
+                ]),
+                ("Word Families with '-en' and '-in'", [
+                    "i. Form words ending in '-en' (hen, men, pen, ten).",
+                    "ii. Form words ending in '-in' (bin, fin, pin, tin, win).",
+                    "iii. Match word family members to corresponding pictures.",
+                    "iv. Read aloud simple rhymes using '-en' and '-in' words."
+                ]),
+                ("Simple Opposites / Antonyms (Physical Features)", [
+                    "i. Understand the concept of opposite words as word partners with contrary meanings.",
+                    "ii. Identify opposites for basic physical attributes (hot/cold, big/small, tall/short).",
+                    "iii. Match words with their opposite pairs using pictures.",
+                    "iv. Complete sentences by providing the opposite of an underlined word."
+                ]),
+                ("More Common Opposites (Directions and States)", [
+                    "i. Identify opposite pairs for positions and states (up/down, in/out, open/shut, good/bad).",
+                    "ii. Select the opposite of a given word from multiple choices.",
+                    "iii. Role-play and demonstrate opposite actions (stand/sit, smile/cry).",
+                    "iv. Write opposite word pairs in workbooks."
+                ]),
+                ("Odd One Out from a Group of Objects", [
+                    "i. Examine groups of four pictures and determine the shared property of three.",
+                    "ii. Identify the single object that does not belong to the category.",
+                    "iii. State simple reasons why an object is the odd one out.",
+                    "iv. Circle the odd picture in various classifications (animals, fruits, clothes)."
+                ]),
+                ("Odd One Out from a Group of Words", [
+                    "i. Read sets of four simple words and find the word that does not belong.",
+                    "ii. Categorize words by semantic class (e.g., dog, cat, goat, spoon).",
+                    "iii. Explain the category connection for the remaining three words.",
+                    "iv. Complete odd-one-out exercises independently."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review word families, opposites, and category classification.",
+                    "ii. Mid-term aptitude progress check.",
+                    "iii. Mid-term holiday and rest."
+                ]),
+                ("Singular and Plural Nouns with '-s'", [
+                    "i. Understand that singular means one and plural means more than one.",
+                    "ii. Add '-s' to simple nouns to form plurals (book/books, cat/cats, boy/boys).",
+                    "iii. Identify whether a given word represents one or many items.",
+                    "iv. Supply the plural form of common classroom objects."
+                ]),
+                ("Male and Female Words (Gender Basics)", [
+                    "i. Identify male and female word pairings for humans (boy/girl, man/woman, king/queen).",
+                    "ii. Match basic animal male and female pairs (cock/hen, bull/cow).",
+                    "iii. Distinguish between masculine and feminine names in simple stories.",
+                    "iv. Complete fill-in-the-blank gender partner exercises."
+                ]),
+                ("Action Words / Verbs Identification", [
+                    "i. Identify action words that tell what someone or something does (run, jump, eat, sleep).",
+                    "ii. Circle action words in simple 3-word sentences.",
+                    "iii. Match action pictures with appropriate action verbs.",
+                    "iv. Choose the action word that completes a sentence logically."
+                ]),
+                ("Sorting Words by Initial Letter", [
+                    "i. Place given lists of 4-5 words into alphabetical bins by their initial letters.",
+                    "ii. Recognize alphabetical progression among dissimilar starting letters.",
+                    "iii. Order flashcards sequentially from A to Z.",
+                    "iv. Solve simple alphabetical sorting drills."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive review of Second Term verbal aptitude topics.",
+                    "ii. Practice multi-question verbal reasoning worksheets.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Alphabetical Ordering of Two Words", [
+                    "i. Compare two words with different first letters.",
+                    "ii. Determine which word comes first in the alphabet.",
+                    "iii. Use the alphabet reference strip to verify order.",
+                    "iv. Arrange 5 pairs of words alphabetically."
+                ]),
+                ("Alphabetical Ordering of Three Words", [
+                    "i. Compare three words with distinct beginning letters (e.g., dog, ant, cat).",
+                    "ii. Number the words 1, 2, and 3 according to alphabetical order.",
+                    "iii. Write the arranged words neatly in correct sequence.",
+                    "iv. Solve multiple-choice questions on alphabetical order."
+                ]),
+                ("Compound Words Basics", [
+                    "i. Understand that two small words can join to make one new word.",
+                    "ii. Combine word pairs into compound words (sun + flower = sunflower, rain + bow = rainbow).",
+                    "iii. Separate given compound words into their two component words.",
+                    "iv. Match word halves from two columns to make sensible compound words."
+                ]),
+                ("Words with Double Letters", [
+                    "i. Identify words containing identical twin letters (ball, book, tree, bell, egg).",
+                    "ii. Pronounce and spell double-letter words correctly.",
+                    "iii. Fill in missing double letters in incomplete words (e.g., b__k).",
+                    "iv. Group words by the specific double letter they contain (ll, oo, ee)."
+                ]),
+                ("Making New Words by Changing the First Letter", [
+                    "i. Change the initial consonant of a word to form a new word (bat -> cat -> fat -> mat).",
+                    "ii. Read rhyming word chains created by letter substitution.",
+                    "iii. Select the letter from a box that turns '_op' into a kitchen tool (m -> mop).",
+                    "iv. Solve simple word-transformation riddles."
+                ]),
+                ("Making New Words by Changing the Middle Vowel", [
+                    "i. Substitute the middle vowel of a CVC word to create another valid word (hat -> hit -> hot).",
+                    "ii. Identify how changing a vowel transforms the meaning and pronunciation.",
+                    "iii. Complete vowel-swap word matrices.",
+                    "iv. Read contrasting pairs in context (e.g., 'The cat sat on the cot')."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review alphabetical order, compound words, and letter substitution.",
+                    "ii. Mid-term progress evaluation.",
+                    "iii. Mid-term break."
+                ]),
+                ("Homophones Basics (Words that Sound Alike)", [
+                    "i. Discover that some words sound the same but have different spellings and meanings.",
+                    "ii. Learn simple homophone pairs (to/two, see/sea, sun/son, no/know).",
+                    "iii. Match the correct homophone to an explanatory picture.",
+                    "iv. Select the right word to complete a sentence (e.g., 'I have ___ eyes')."
+                ]),
+                ("Question Words and Meanings", [
+                    "i. Recognize the standard question words: Who, What, Where, When.",
+                    "ii. Understand what each question word asks for (Who = person, Where = place, What = thing).",
+                    "iii. Match questions to appropriate answers.",
+                    "iv. Fill in the correct question starter for given questions."
+                ]),
+                ("Simple Word Completion from Picture Clues", [
+                    "i. Look at a picture and identify the word it depicts.",
+                    "ii. Complete skeletal words with missing consonants and vowels.",
+                    "iii. Unscramble 3-letter jumbled words with picture support (t-a-c -> cat).",
+                    "iv. Write complete labels under various everyday illustrations."
+                ]),
+                ("Word Shape and Letter Box Puzzles", [
+                    "i. Differentiate between tall letters (b, d, h, k, l, t), short letters (a, c, e, m, n, o, r, s, u, v, w, x, z), and hanging letters (g, j, p, q, y).",
+                    "ii. Fit words into corresponding shape-box outlines.",
+                    "iii. Match given words to their physical visual box profiles.",
+                    "iv. Solve letter-shape deduction problems."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 1 verbal reasoning concepts.",
+                    "ii. Practice full-length end-of-year verbal aptitude papers.",
+                    "iii. Third Term Promotional Examination."
+                ])
+            ]
+        },
+        "Primary 2": {
+            "First Term": [
+                ("Alphabetical Order of 3 to 4 Words by First Letter", [
+                    "i. Master arranging four words in alphabetical order when initial letters differ.",
+                    "ii. Use alphabetical position to rapidly locate words.",
+                    "iii. Identify which word among four would appear first or last in an index.",
+                    "iv. Number given lists 1 to 4 in alphabetical order."
+                ]),
+                ("Initial Consonant Blends (bl-, cl-, fl-, gl-, pl-)", [
+                    "i. Pronounce and recognize 'l-blends' at the beginning of words.",
+                    "ii. Form words using bl-, cl-, fl-, gl-, pl- (black, clock, flag, glass, plum).",
+                    "iii. Identify the initial blend in depicted objects.",
+                    "iv. Discriminate between blend sounds in word pairs."
+                ]),
+                ("Initial Consonant Blends (br-, cr-, dr-, fr-, gr-, tr-)", [
+                    "i. Pronounce and identify 'r-blends' in common words (bread, crab, drum, frog, grass, train).",
+                    "ii. Fill in the missing blend to complete vocabulary items.",
+                    "iii. Categorize words based on whether they begin with an l-blend or an r-blend.",
+                    "iv. Read aloud sentences rich in consonant blends."
+                ]),
+                ("Terminal Consonant Blends (-st, -nd, -nt, -mp)", [
+                    "i. Identify ending consonant blends in words (nest, hand, tent, lamp).",
+                    "ii. Supply ending blends to complete incomplete words.",
+                    "iii. Match words ending in the same blend.",
+                    "iv. Differentiate between initial and terminal blends."
+                ]),
+                ("Synonyms of Everyday Words", [
+                    "i. Define synonyms as words having similar or nearly identical meanings.",
+                    "ii. Match common synonyms (small/tiny, big/large, happy/glad, shut/close, quick/fast).",
+                    "iii. Replace an underlined word in a sentence with its suitable synonym.",
+                    "iv. Identify the non-synonym in a group of three words."
+                ]),
+                ("Antonyms of Everyday Words", [
+                    "i. Deepen understanding of antonyms as words of opposite meaning.",
+                    "ii. Match antonym pairs (clean/dirty, fast/slow, hard/soft, rich/poor, heavy/light).",
+                    "iii. Rewrite sentences by replacing specified words with their opposites.",
+                    "iv. Select the correct antonym from multiple-choice options."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review alphabetical order, blends, synonyms, and antonyms.",
+                    "ii. Complete Mid-Term assessment test.",
+                    "iii. Mid-term break."
+                ]),
+                ("Compound Words Formation and Separation", [
+                    "i. Construct compound words from two independent root words (cup + board = cupboard).",
+                    "ii. Separate compound words into two valid constituent words (football, bedroom, classroom).",
+                    "iii. Identify which pair of words can logically combine to make a single new word.",
+                    "iv. Complete compound word equations."
+                ]),
+                ("Animals and Their Young Ones", [
+                    "i. Identify the names of animal babies (dog/puppy, cat/kitten, cow/calf, goat/kid, sheep/lamb).",
+                    "ii. Learn names of bird and insect young (hen/chick, duck/duckling, horse/foal).",
+                    "iii. Match adult animals to their respective offspring in two columns.",
+                    "iv. Solve fill-in-the-blank animal relationship questions."
+                ]),
+                ("Animals and Their Homes", [
+                    "i. Identify homes of domestic and wild animals (bird/nest, lion/den, horse/stable, dog/kennel, cow/shed).",
+                    "ii. Connect animal species to their natural living shelters.",
+                    "iii. Complete analogies based on animal habitats (Bird is to Nest as Lion is to ___).",
+                    "iv. Answer multiple-choice questions on animal dwellings."
+                ]),
+                ("Two-Letter Word Substitution Codes (A=1, B=2, C=3)", [
+                    "i. Understand numerical substitution where letters correspond to their alphabet rank.",
+                    "ii. Encode simple 2-letter and 3-letter words into number series (CAT -> 3-1-20).",
+                    "iii. Decode number sequences back into meaningful English words.",
+                    "iv. Calculate the sum of letter values for short words."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Review all First Term Primary 2 verbal aptitude topics.",
+                    "ii. Solve timed aptitude test papers.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Alphabetical Order by Second Letter", [
+                    "i. Learn the rule: when words begin with the same letter, look at the second letter.",
+                    "ii. Arrange words with the same first letter alphabetically (e.g., bag, bed, bin, box, bun).",
+                    "iii. Compare words starting with various identical letters (cat, cow, cup).",
+                    "iv. Solve multiple-choice questions identifying which word comes 2nd or 3rd."
+                ]),
+                ("Words with Silent Letters", [
+                    "i. Identify silent letters in common vocabulary (silent 'k' in knife, knee, knock; silent 'w' in write, wrong).",
+                    "ii. Recognize silent 'b' in comb, lamb, thumb.",
+                    "iii. Pronounce words with silent letters accurately.",
+                    "iv. Fill in missing silent letters in incomplete words."
+                ]),
+                ("Finding Smaller Words Hidden in a Bigger Word", [
+                    "i. Locate smaller valid English words inside longer words without rearranging letters.",
+                    "ii. Extract words from 'teacher' (tea, each, her, ache).",
+                    "iii. Find 2-letter and 3-letter words inside words like 'cupboard' and 'stand'.",
+                    "iv. Solve standard Lantern-style hidden word extraction drills."
+                ]),
+                ("Common Prefixes (un- and re-)", [
+                    "i. Define a prefix as a group of letters added to the beginning of a root word to alter its meaning.",
+                    "ii. Form opposites using prefix 'un-' (unhappy, untie, unlock, unclean).",
+                    "iii. Understand prefix 're-' as meaning 'again' (reread, remake, replay, rewrite).",
+                    "iv. Separate prefixes from their root words."
+                ]),
+                ("Common Suffixes (-ing and -ed)", [
+                    "i. Define a suffix as letters added to the end of a word to alter its grammatical function.",
+                    "ii. Add '-ing' to verbs to indicate ongoing actions (jump -> jumping, walk -> walking).",
+                    "iii. Add '-ed' to show past actions (look -> looked, wash -> washed).",
+                    "iv. Observe spelling rules when adding suffixes (doubling final consonant or dropping silent e)."
+                ]),
+                ("Suffixes (-ful and -less)", [
+                    "i. Understand '-ful' as 'full of' (careful, helpful, painful).",
+                    "ii. Understand '-less' as 'without' (careless, helpless, painless).",
+                    "iii. Match words with '-ful' to their direct antonyms ending in '-less'.",
+                    "iv. Use words with '-ful' and '-less' appropriately in sentences."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review alphabetical order by second letter, silent letters, prefixes, and suffixes.",
+                    "ii. Mid-term aptitude evaluation.",
+                    "iii. Mid-term break."
+                ]),
+                ("Analogies - Part to Whole Relationships", [
+                    "i. Understand the concept of analogies as relationships between word pairs.",
+                    "ii. Identify part-to-whole connections (finger:hand, page:book, wheel:car, leaf:tree).",
+                    "iii. Complete analogies formatted as 'A is to B as C is to ___'.",
+                    "iv. Choose the best pair that mirrors a given relationship."
+                ]),
+                ("Odd One Out by Semantic Classification", [
+                    "i. Group words into higher-order classes (cutlery, furniture, vehicles, stationery).",
+                    "ii. Spot the intruder that does not share the common classification.",
+                    "iii. Provide a written or oral justification for the excluded item.",
+                    "iv. Formulate odd-one-out sets for peers to solve."
+                ]),
+                ("Occupations and Their Tools / Workplaces", [
+                    "i. Associate workers with their primary tools (carpenter/saw, doctor/stethoscope, tailor/needle).",
+                    "ii. Associate workers with their typical workplace (teacher/school, nurse/hospital, chef/kitchen).",
+                    "iii. Solve occupational analogy problems.",
+                    "iv. Fill in blanks regarding community helpers and their duties."
+                ]),
+                ("Letter Substitution Ciphers (Shift +1)", [
+                    "i. Learn simple Caesar shift ciphers where each letter is replaced by the next (A->B, B->C, ... Z->A).",
+                    "ii. Encode short words using the +1 rule (CAT -> DBU).",
+                    "iii. Decode cipher strings back into original words.",
+                    "iv. Identify the coding rule used in a given example."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision of Second Term verbal concepts.",
+                    "ii. Practice multi-format reasoning questions.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Simple Anagrams of 3 and 4-Letter Words", [
+                    "i. Understand anagrams as words formed by rearranging the letters of another word.",
+                    "ii. Form anagram pairs from simple words (pat/tap, pot/top, rat/tar, star/rats).",
+                    "iii. Unscramble jumbled letter sets to name depicted objects.",
+                    "iv. Verify that no letters are added or omitted in an anagram."
+                ]),
+                ("Similes - Everyday 'As ... As' Expressions", [
+                    "i. Define similes as figurative comparisons using 'as ... as'.",
+                    "ii. Learn classic similes (as brave as a lion, as cold as ice, as busy as a bee, as white as snow).",
+                    "iii. Match descriptive adjectives to corresponding simile subjects.",
+                    "iv. Complete similes in multiple-choice exercises."
+                ]),
+                ("Collective Nouns for Common Groups", [
+                    "i. Define collective nouns as special single words denoting a group of people, animals, or objects.",
+                    "ii. Learn essential collective nouns (a flock of birds/sheep, a pride of lions, a bunch of keys/bananas).",
+                    "iii. Match animal and object groups with their correct collective terms.",
+                    "iv. Supply missing collective nouns in descriptive sentences."
+                ]),
+                ("Homophones and Word Discrimination", [
+                    "i. Deepen understanding of homophones through common problem pairs (hear/here, write/right, there/their).",
+                    "ii. Differentiate homophones by context in sentences.",
+                    "iii. Circle the correct word in sentence frames (e.g., 'I can ___ the bell ringing').",
+                    "iv. Identify spelling errors caused by homophone confusion."
+                ]),
+                ("Words Associated with the School and Classroom", [
+                    "i. Expand vocabulary related to educational environments (chalkboard, library, principal, syllabus).",
+                    "ii. Complete cloze passages using school-related vocabulary.",
+                    "iii. Classify school terms into personnel, furniture, and academic subjects.",
+                    "iv. Solve school-themed word search grids."
+                ]),
+                ("Words Associated with the Hospital and Health", [
+                    "i. Learn key health and hospital terms (patient, physician, pharmacy, ward, injection).",
+                    "ii. Match health workers with their primary functions.",
+                    "iii. Complete analogies based on medical care.",
+                    "iv. Spell and define common health-related words."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review anagrams, similes, collective nouns, and contextual registers.",
+                    "ii. Mid-term progress assessment.",
+                    "iii. Mid-term break."
+                ]),
+                ("Forming Opposites with Prefixes (un-, dis-, im-)", [
+                    "i. Apply prefix 'dis-' to create antonyms (appear/disappear, obey/disobey, like/dislike).",
+                    "ii. Apply prefix 'im-' before words beginning with 'p' or 'm' (possible/impossible, polite/impolite).",
+                    "iii. Distinguish when to use 'un-', 'dis-', or 'im-'.",
+                    "iv. Convert positive sentences into negative ones using prefix antonyms."
+                ]),
+                ("Jumbled Letters to Form Meaningful Words", [
+                    "i. Rearrange scrambled letters into valid words using semantic clues.",
+                    "ii. Solve 4-letter and 5-letter jumbles with hints (e.g., E M H O -> HOME).",
+                    "iii. Identify which letter arrangement does not make an English word.",
+                    "iv. Speed drills on unscrambling word puzzles."
+                ]),
+                ("Word Ladders (Changing One Letter at a Time)", [
+                    "i. Navigate from a starting word to an ending word by altering a single letter at each step.",
+                    "ii. Step through 3-letter chains (CAT -> BAT -> BAG -> BEG -> BED).",
+                    "iii. Verify that every intermediate step forms a valid dictionary word.",
+                    "iv. Complete missing rungs on provided word ladders."
+                ]),
+                ("Following Step-by-Step Coded Instructions", [
+                    "i. Read and execute multi-step verbal directives accurately.",
+                    "ii. Solve orientation and position puzzles (left, right, between, above).",
+                    "iii. Determine final positions on a letter or number grid.",
+                    "iv. Answer comprehension questions based on coded rules."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 2 verbal aptitude topics.",
+                    "ii. Full-length practice examination simulating end-of-year testing.",
+                    "iii. Promotional Examination into Primary 3."
+                ])
+            ]
+        },
+        "Primary 3": {
+            "First Term": [
+                ("Alphabetical Arrangement up to the Third Letter", [
+                    "i. Compare words where the first two letters are identical (e.g., plant, plastic, plate, play).",
+                    "ii. Look at the third letter to determine precise alphabetical sequence.",
+                    "iii. Order lists of up to six vocabulary words accurately.",
+                    "iv. Locate the relative dictionary position of words rapidly."
+                ]),
+                ("Dictionary Skills - Guide Words and Headwords", [
+                    "i. Understand the function of guide words at the top of dictionary pages.",
+                    "ii. Determine whether a given word falls between two specified guide words.",
+                    "iii. Practice looking up definitions and phonetic pronunciations.",
+                    "iv. Order multiple words using simulated dictionary pages."
+                ]),
+                ("Root Words, Base Forms, and Word Families", [
+                    "i. Identify root words within complex affixed words (e.g., 'help' in helplessness).",
+                    "ii. Generate word family clusters from a common base (play -> player, playful, playground).",
+                    "iii. Strip prefixes and suffixes to recover the core root word.",
+                    "iv. Match derivative words to their fundamental root meanings."
+                ]),
+                ("Synonyms in Sentences and Contextual Usage", [
+                    "i. Select synonyms that match the nuanced meaning of a word in a specific sentence.",
+                    "ii. Differentiate between general and precise synonyms (e.g., look vs gaze, big vs gigantic).",
+                    "iii. Substitute words without changing the truth value of the sentence.",
+                    "iv. Complete Lantern-style paired synonym multiple-choice items."
+                ]),
+                ("Antonyms in Context and Contrasting Sentences", [
+                    "i. Determine the opposite of words as determined by their sentence context.",
+                    "ii. Recognize that words with multiple meanings have different antonyms (e.g., light -> heavy / dark).",
+                    "iii. Complete sentences containing contrasting clauses joined by 'but' or 'while'.",
+                    "iv. Solve antonym pairing grids."
+                ]),
+                ("Word Relationships - Worker and Product / Function", [
+                    "i. Analyze associations where an agent creates or handles a specific outcome (baker/bread, author/book, architect/building).",
+                    "ii. Complete verbal analogies based on functional production.",
+                    "iii. Identify the worker when given the tool and the finished product.",
+                    "iv. Differentiate between consumer, seller, and producer."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review dictionary indexing, roots, synonyms, and functional relationships.",
+                    "ii. Mid-term aptitude testing.",
+                    "iii. Mid-term break."
+                ]),
+                ("Compound Words with Hyphens and Specialized Terms", [
+                    "i. Distinguish between closed compound words (sunflower) and hyphenated compound words (mother-in-law).",
+                    "ii. Form compound nouns and adjectives (well-known, high-tech, blackboard).",
+                    "iii. Break compound structures into their grammatical components.",
+                    "iv. Solve compound word completion puzzles."
+                ]),
+                ("Words Denoting Sounds Made by Animals and Objects", [
+                    "i. Learn vocabulary for animal sounds (lion/roar, horse/neigh, donkey/bray, snake/hiss, bee/buzz).",
+                    "ii. Learn vocabulary for inanimate sounds (clock/tick, door/creak, fire/crackle, rain/patter).",
+                    "iii. Match sound words to their sources in analogy formats.",
+                    "iv. Complete sound-association descriptive sentences."
+                ]),
+                ("Gender Nouns - Specialized Human and Animal Forms", [
+                    "i. Learn formal masculine and feminine nouns for animals (drake/duck, gander/goose, stallion/mare, ram/ewe).",
+                    "ii. Learn formal human titles (monk/nun, wizard/witch, bachelor/spinster, emperor/empress).",
+                    "iii. Solve gender pair matching and fill-in-the-blank drills.",
+                    "iv. Complete gender analogies (Bull is to Cow as Ram is to ___)."
+                ]),
+                ("Number-Letter Substitution Codes (Direct and Reverse)", [
+                    "i. Master the standard A1 to Z26 number-letter code.",
+                    "ii. Explore the reverse alphabet code where A=26, B=25, ... Z=1.",
+                    "iii. Encode and decode vocabulary words using both direct and reverse systems.",
+                    "iv. Solve mathematical addition equations using letter values."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision of First Term verbal reasoning concepts.",
+                    "ii. Complete past test papers under exam conditions.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Anagrams of 4-Letter and 5-Letter Words", [
+                    "i. Identify anagrammatic relationships in longer vocabulary words (silent/listen, heart/earth, peach/cheap).",
+                    "ii. Rearrange scrambled letters into target words based on clue definitions.",
+                    "iii. Spot the word among four options that is an anagram of a given stimulus.",
+                    "iv. Solve anagram cross-matching puzzles."
+                ]),
+                ("Prefixes of Negation and Time (mis-, non-, pre-, post-)", [
+                    "i. Understand 'mis-' as wrongly (misbehave, miscount, misunderstand).",
+                    "ii. Understand 'non-' as not (non-smoker, non-stop, non-violent).",
+                    "iii. Understand 'pre-' as before (pretest, preview, prepay) and 'post-' as after (postpone, post-test).",
+                    "iv. Complete sentences by adding appropriate prefixes to root words."
+                ]),
+                ("Suffixes Forming Adjectives (-able, -ous, -ish)", [
+                    "i. Learn how '-able' creates adjectives meaning 'capable of being' (washable, readable, breakable).",
+                    "ii. Learn how '-ous' creates adjectives meaning 'full of' (danger/dangerous, fame/famous).",
+                    "iii. Learn how '-ish' conveys tendency or likeness (childish, reddish, foolish).",
+                    "iv. Spell derived adjectives correctly following base word modifications."
+                ]),
+                ("Odd Word Out with Logical Justification", [
+                    "i. Evaluate four words and detect subtle semantic or grammatical differences.",
+                    "ii. Identify outliers based on part of speech (three verbs and one noun).",
+                    "iii. Identify outliers based on functional properties (three flying insects and one crawling insect).",
+                    "iv. Write clear one-sentence justifications for selected exclusions."
+                ]),
+                ("Analogies - Cause and Effect, Purpose, Degree", [
+                    "i. Analyze cause-and-effect analogies (Rain is to Flood as Drought is to Famine).",
+                    "ii. Analyze purpose analogies (Pen is to Write as Knife is to Cut).",
+                    "iii. Complete degree analogies (Warm is to Hot as Cool is to Cold).",
+                    "iv. Select the most logical completing term from multiple choices."
+                ]),
+                ("Finding Words Hidden Across Word Boundaries", [
+                    "i. Identify words concealed across consecutive words in a sentence (e.g. 'He is a ca[t o]ffering milk' -> TO).",
+                    "ii. Learn scanning strategies to inspect junction points between adjacent words.",
+                    "iii. Find names of animals, fruits, or objects hidden in everyday sentences.",
+                    "iv. Solve standard Lantern Books hidden word challenges."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review anagrams, advanced affixes, multi-type analogies, and hidden words.",
+                    "ii. Mid-term aptitude examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Homonyms - Words with Multiple Meanings", [
+                    "i. Understand homonyms as words sharing spelling and sound but having different meanings.",
+                    "ii. Analyze multiple meanings of words like bark (tree/dog), wave (hand/sea), and ring (jewel/bell).",
+                    "iii. Identify which single word fits into two distinctly different sentence contexts.",
+                    "iv. Write sentences demonstrating different meanings of identical words."
+                ]),
+                ("Completing Verbal Analogies (Mixed Typologies)", [
+                    "i. Solve complex mixed analogies incorporating synonyms, antonyms, and functions.",
+                    "ii. Identify relationship patterns: Worker:Tool, Tool:Material, Animal:Habitat.",
+                    "iii. Translate word equations into clear logical statements.",
+                    "iv. Evaluate multiple answer options to find the closest relational match."
+                ]),
+                ("Category Classification and Semantic Exclusion", [
+                    "i. Classify diverse groups of words into precise overarching domains.",
+                    "ii. Create hierarchical categories (Living Thing -> Animal -> Mammal -> Dog).",
+                    "iii. Detect non-fitting words based on specialized category definitions.",
+                    "iv. Complete Venn diagram verbal sorting activities."
+                ]),
+                ("Letter Sequences and Missing Letter Patterns", [
+                    "i. Identify rules in letter series (e.g. skipping one letter: A, C, E, G, __).",
+                    "ii. Solve alternating letter sequences (e.g. A, Z, B, Y, C, X, __).",
+                    "iii. Decode dual-letter step patterns (AB, CD, EF, __).",
+                    "iv. Supply missing elements in letter matrices."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive review of all Second Term verbal topics.",
+                    "ii. Timed practice tests simulating competitive entrance conditions.",
+                    "iii. Second Term written evaluation."
+                ])
+            ],
+            "Third Term": [
+                ("Jumbled Sentences Reconstruction", [
+                    "i. Rearrange scrambled words into grammatically correct and meaningful sentences.",
+                    "ii. Identify subject, verb, and object positions to anchor sentence structure.",
+                    "iii. Determine which word is superfluous in an intentionally disrupted sentence.",
+                    "iv. Punctuate reconstructed sentences appropriately."
+                ]),
+                ("Analogies Involving Antonyms and Synonyms", [
+                    "i. Identify whether a pair exhibits a synonym or antonym relationship.",
+                    "ii. Replicate the relationship in the second half of the analogy.",
+                    "iii. Tackle mixed-contrast analogies (e.g. Good:Bad :: Joy:Sorrow).",
+                    "iv. Avoid common distractor traps in multiple-choice analogy questions."
+                ]),
+                ("Words of Similar Meaning But Different Contexts", [
+                    "i. Distinguish between words with overlapping definitions but distinct applications (tall vs high, slim vs skinny).",
+                    "ii. Select the contextually appropriate adjective for describing people versus inanimate objects.",
+                    "iii. Correct misused vocabulary in provided sample sentences.",
+                    "iv. Enhance precision in descriptive verbal aptitude tasks."
+                ]),
+                ("Reverse Alphabet Codes (A=Z, B=Y, C=X)", [
+                    "i. Master the reciprocal substitution cipher where opposite ends of the alphabet swap.",
+                    "ii. Use the 13-pair alphabet bridge (A-Z, B-Y, C-X ... M-N) for fast lookup.",
+                    "iii. Encode and decode messages using the Atbash/reverse code method.",
+                    "iv. Solve multi-word secret phrases."
+                ]),
+                ("True, False, or Cannot Tell Logical Deductions", [
+                    "i. Read short 2-sentence premises and evaluate derived statements.",
+                    "ii. Understand 'Cannot Tell' as lack of sufficient information in the premise.",
+                    "iii. Avoid making assumptions beyond the strictly stated facts.",
+                    "iv. Practice basic deductive reasoning exercises."
+                ]),
+                ("Word Deduction from Riddle Clues", [
+                    "i. Analyze descriptive riddles containing 3-4 distinct criteria.",
+                    "ii. Cross-reference clues to narrow down potential word solutions.",
+                    "iii. Identify objects, occupations, or animals described in figurative terms.",
+                    "iv. Create original verbal deduction riddles."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review jumbled sentences, reverse codes, and deductive logic.",
+                    "ii. Mid-term aptitude testing.",
+                    "iii. Mid-term break."
+                ]),
+                ("Word Mathematics and Equations", [
+                    "i. Solve word addition and subtraction equations (e.g., Scare - S = Care; Foot + Ball = Football).",
+                    "ii. Extract letters or words based on operational arithmetic instructions.",
+                    "iii. Form new words by removing specified prefixes or suffixes.",
+                    "iv. Solve verbal balance puzzles."
+                ]),
+                ("Common Nigerian Proverbs and Idioms Interpretation", [
+                    "i. Understand figurative language and metaphorical meaning in proverbs.",
+                    "ii. Interpret widely used African and English proverbs ('A bird in hand...', 'Make hay...').",
+                    "iii. Match idioms with their plain English explanations.",
+                    "iv. Complete proverbial phrases with missing traditional terms."
+                ]),
+                ("Sentence Completion with Best-Fitting Options", [
+                    "i. Read complex sentence stems with missing key words.",
+                    "ii. Analyze surrounding grammatical and semantic context to predict the missing word.",
+                    "iii. Eliminate options that create logical inconsistencies.",
+                    "iv. Complete single-blank and double-blank verbal items."
+                ]),
+                ("Speed Puzzles and Verbal Crosswords", [
+                    "i. Navigate criss-cross verbal grids using numbered clues.",
+                    "ii. Solve time-pressured aptitude speed drills (20 questions in 15 minutes).",
+                    "iii. Develop strategies for skipping and returning to difficult items.",
+                    "iv. Score and self-assess performance."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 3 verbal reasoning themes.",
+                    "ii. Promotional Examination into Primary 4.",
+                    "iii. Post-examination review and analysis."
+                ])
+            ]
+        },
+        "Primary 4": {
+            "First Term": [
+                ("Advanced Alphabetical Indexing and Sorting Large Lists", [
+                    "i. Alphabetize extensive lists of words where first three or four letters match.",
+                    "ii. Order geographical names, scientific terms, and biographical entries.",
+                    "iii. Locate telephone directory and encyclopedia entries rapidly.",
+                    "iv. Identify the exact middle word when five or seven words are sorted."
+                ]),
+                ("Greek and Latin Roots (tele-, phon-, bio-, auto-, geo-)", [
+                    "i. Learn common classical roots and their core definitions (tele=distant, phon=sound, bio=life, auto=self, geo=earth).",
+                    "ii. Decipher meanings of unfamiliar words based on root knowledge (telephone, autobiography, biology).",
+                    "iii. Match roots to their English interpretations.",
+                    "iv. Complete word construction matrices using prefixes and classical roots."
+                ]),
+                ("Advanced Synonyms and Nuanced Vocabulary", [
+                    "i. Master high-register synonyms required for entrance examinations (abundant/plentiful, cautious/wary, weary/exhausted).",
+                    "ii. Differentiate subtle nuances between closely related terms.",
+                    "iii. Select the most appropriate synonym in complex reading passages.",
+                    "iv. Complete Lantern-style paired synonym multiple-choice items."
+                ]),
+                ("Advanced Antonyms in Extended Contexts", [
+                    "i. Identify antonyms for sophisticated vocabulary (artificial/natural, arrogant/humble, vacant/occupied).",
+                    "ii. Identify words that are nearly opposite versus exactly opposite.",
+                    "iii. Recognize antonyms formed by prefixes (literate/illiterate, regular/irregular).",
+                    "iv. Solve contextual antonym replacement exercises."
+                ]),
+                ("Complex Anagrams and Word Scrambles", [
+                    "i. Solve 5-letter and 6-letter anagrams (stream/master, garden/danger, kitchen/thicken).",
+                    "ii. Rearrange jumbled letters under time constraints with definition prompts.",
+                    "iii. Verify that all letters are accounted for with exact 1-to-1 correspondence.",
+                    "iv. Form two distinct anagrams from a single pool of letters."
+                ]),
+                ("Letter Shift Codes (+2, +3, -2, -3 Shifts)", [
+                    "i. Master multi-step Caesar ciphers moving forward and backward in the alphabet.",
+                    "ii. Calculate wrap-around letter shifts (e.g. Y + 3 = B).",
+                    "iii. Identify the constant mathematical shift rule governing a coded word pair.",
+                    "iv. Encode and decode complete sentences using shift algorithms."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review classical roots, advanced synonyms, and letter shift ciphers.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Similes, Metaphors, and Figures of Speech in Reasoning", [
+                    "i. Differentiate between similes (comparisons using like/as) and metaphors (direct equivalence).",
+                    "ii. Interpret common metaphorical idioms ('cold feet', 'spill the beans', 'apple of my eye').",
+                    "iii. Complete analogies based on figurative language.",
+                    "iv. Identify figures of speech in short analytical excerpts."
+                ]),
+                ("Word Class Conversions (Noun to Adjective, Verb to Noun)", [
+                    "i. Convert nouns to adjectives using suffixes (courage/courageous, beauty/beautiful, hero/heroic).",
+                    "ii. Convert verbs to abstract nouns (perform/performance, decide/decision, grow/growth).",
+                    "iii. Complete morphological transformation grids.",
+                    "iv. Solve grammatical analogy questions (e.g. Decide is to Decision as Conclude is to ___)."
+                ]),
+                ("Registers of Science, Law, and Technology", [
+                    "i. Build domain-specific vocabulary for science (hypothesis, specimen, organism).",
+                    "ii. Learn vocabulary of law and justice (verdict, witness, prosecutor, testimony).",
+                    "iii. Match specialized words to their technical definitions.",
+                    "iv. Spot vocabulary misfits across different occupational fields."
+                ]),
+                ("Alternating Letter Series and Letter Pattern Logic", [
+                    "i. Solve complex alternating letter series (e.g. A, C, B, D, C, E, __).",
+                    "ii. Deduce skip patterns with variable intervals (+1, +2, +3, +4).",
+                    "iii. Complete dual-letter and triple-letter progression blocks.",
+                    "iv. Determine missing letters in 3x3 letter matrices."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term verbal topics.",
+                    "ii. Timed practice examinations.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Analogies - Degree of Intensity", [
+                    "i. Analyze relationships governed by gradient of intensity (cool:cold:freezing, warm:hot:boiling).",
+                    "ii. Recognize subtle emotional intensities (annoyed:angry:furious, pleased:happy:ecstatic).",
+                    "iii. Replicate intensity progressions in comparative pairs.",
+                    "iv. Solve multiple-choice questions involving scale analogies."
+                ]),
+                ("Analogies - Worker, Workplace, Tools, and Functions", [
+                    "i. Master 4-way associative analogies (Doctor:Hospital:Scalpel:Heal).",
+                    "ii. Formulate paired analogies bridging occupation and specialized equipment.",
+                    "iii. Identify incongruous worker-tool pairings in multiple options.",
+                    "iv. Complete multi-choice vocational analogies."
+                ]),
+                ("Specific Collective Nouns for Fauna and Objects", [
+                    "i. Master higher-level collective nouns (a parliament of owls, a gaggle of geese, an archipelago of islands).",
+                    "ii. Learn collective nouns for specialized human groups (a bench of judges, a crew of sailors, a troupe of actors).",
+                    "iii. Match nouns with appropriate collective terms in entrance exam formats.",
+                    "iv. Eliminate incorrect collective combinations."
+                ]),
+                ("Specialized Gender Forms and Diminutives", [
+                    "i. Identify uncommon masculine and feminine pairs (fox/vixen, boar/sow, stag/hind).",
+                    "ii. Master diminutive forms for young creatures (cygnet for swan, gosling for goose, leveret for hare).",
+                    "iii. Solve animal relationship analogies under timed conditions.",
+                    "iv. Complete cross-matching gender and juvenile tables."
+                ]),
+                ("Missing Vowels and Consonants in Skeletal Words", [
+                    "i. Reconstruct complete words from consonant skeletons (e.g. C_MP_T_R -> COMPUTER).",
+                    "ii. Determine which single vowel can fill blanks in two different words.",
+                    "iii. Identify words when only the vowels are provided and consonants are missing.",
+                    "iv. Solve skeletal vocabulary puzzles rapidly."
+                ]),
+                ("Coded Messages and Sentence Cipher Decoding", [
+                    "i. Decipher complete coded sentences using substitution keys.",
+                    "ii. Identify the coding rule from an exemplar sentence before applying to new text.",
+                    "iii. Differentiate between forward shifts, reverse shifts, and positional swaps.",
+                    "iv. Write secret responses using the determined cipher."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review analogies, collective nouns, diminutives, and sentence ciphers.",
+                    "ii. Mid-term aptitude testing.",
+                    "iii. Mid-term break."
+                ]),
+                ("Introduction to Syllogisms and Deductive Reasoning", [
+                    "i. Understand formal deductive logic using premises (Major premise: All birds lay eggs; Minor premise: An eagle is a bird).",
+                    "ii. Draw valid, logically necessary conclusions (Therefore, eagles lay eggs).",
+                    "iii. Identify invalid conclusions that do not strictly follow from premises.",
+                    "iv. Practice basic categorical syllogisms."
+                ]),
+                ("Semantic Exclusion - The Outlier in Sophisticated Lists", [
+                    "i. Analyze five vocabulary words to identify the subtle odd one out.",
+                    "ii. Detect exclusions based on origin, grammatical inflection, or semantic connotation.",
+                    "iii. State clear, concise criteria for the selected exclusion.",
+                    "iv. Solve challenging Metropolitan-style oddity problems."
+                ]),
+                ("Formation of Abstract Nouns (-hood, -ship, -dom, -ance)", [
+                    "i. Form abstract nouns denoting state or condition (child/childhood, friend/friendship, king/kingdom).",
+                    "ii. Add '-ance' and '-ence' to form abstract qualities (tolerate/tolerance, obey/obedience).",
+                    "iii. Identify whether a word is concrete or abstract in meaning.",
+                    "iv. Complete morphological word transformation drills."
+                ]),
+                ("Double Letter Pattern Sequences in Verbal Logic", [
+                    "i. Spot patterns involving letter doubling rules (e.g. A, BB, CCC, DDDD).",
+                    "ii. Solve alternating single and double letter progressions.",
+                    "iii. Identify the next term in compound letter blocks.",
+                    "iv. Solve letter matrix puzzles with double-letter logic."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision of Second Term verbal topics.",
+                    "ii. Mock examination simulating competitive entrance papers.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Hidden Words Across Multiple Sentence Boundaries", [
+                    "i. Master the technique of spotting 4-letter and 5-letter words spanning word breaks.",
+                    "ii. Example: 'The man ga[ve nom]ads shelter' -> VENOM.",
+                    "iii. Learn systematic scanning of word junctions without reading aloud.",
+                    "iv. Solve 20 hidden word problems in 15 minutes."
+                ]),
+                ("Logical Deduction from Short Informational Paragraphs", [
+                    "i. Read 3-4 sentence passages containing factual constraints.",
+                    "ii. Answer deductive questions without relying on outside knowledge.",
+                    "iii. Differentiate between explicitly stated facts and unproven assumptions.",
+                    "iv. Select the single conclusion that is definitively true based on the text."
+                ]),
+                ("Word Matrices and Verbal 2x2 Grids", [
+                    "i. Complete verbal analogy matrices arranged in 2x2 and 3x3 grids.",
+                    "ii. Identify row-wise rules and column-wise rules simultaneously.",
+                    "iii. Pick the missing word that satisfies both horizontal and vertical conditions.",
+                    "iv. Construct original verbal matrices for peer problem-solving."
+                ]),
+                ("Rhyming Patterns and Phonetic Transcriptions", [
+                    "i. Distinguish between words that look alike versus words that sound alike (cough, bough, rough).",
+                    "ii. Identify phonetic rhymes despite disparate spelling patterns (e.g. through/flew, steak/cake).",
+                    "iii. Match words sharing identical vowel sounds.",
+                    "iv. Solve entrance examination phonetic discrimination questions."
+                ]),
+                ("Crossword Vocabulary and Context Clues", [
+                    "i. Solve interlocking verbal crossword grids using concise dictionary definitions.",
+                    "ii. Utilize intersecting letters to verify tentative word guesses.",
+                    "iii. Develop speed in cross-referencing horizontal and vertical entries.",
+                    "iv. Complete 10-minute crossword sprint tests."
+                ]),
+                ("Combined Letter-and-Number Codes (Alphanumeric Arithmetic)", [
+                    "i. Solve codes where letters represent numerical operators or values.",
+                    "ii. Example: If CAT = 3+1+20 = 24, calculate the value of DOG.",
+                    "iii. Solve cryptarithmetic equations where letters stand for missing digits.",
+                    "iv. Decode alphanumeric serial codes."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review hidden words, deductive paragraphs, verbal matrices, and alphanumeric codes.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Dual-Word Sentence Completions (Two Blanks)", [
+                    "i. Tackle sentences containing two missing vocabulary words.",
+                    "ii. Evaluate answer pairs to ensure both words fit grammatically and semantically.",
+                    "iii. Recognize contrast conjunctions (however, although, yet) signaling opposing pairs.",
+                    "iv. Eliminate option pairs where only one word fits."
+                ]),
+                ("Idiomatic Expressions and Phrasal Verb Deductions", [
+                    "i. Master common phrasal verbs and their idiomatic meanings (give up, take after, look into, bring about).",
+                    "ii. Interpret traditional British and Nigerian English idioms accurately.",
+                    "iii. Replace formal verbs with equivalent phrasal verb idioms.",
+                    "iv. Solve idiom-matching aptitude items."
+                ]),
+                ("Denotation vs Connotation in Verbal Discrimination", [
+                    "i. Distinguish between the neutral dictionary meaning (denotation) and emotional coloring (connotation).",
+                    "ii. Compare positive, neutral, and negative word pairs (e.g. thrifty vs stingy, proud vs arrogant).",
+                    "iii. Choose the word that conveys the exact emotional tone intended in a sentence.",
+                    "iv. Rank words according to the strength of their positive or negative connotation."
+                ]),
+                ("Verbal Aptitude Timed Speed Drills", [
+                    "i. Complete 50 mixed verbal aptitude questions under 35-minute time pressure.",
+                    "ii. Practice rapid question-skipping and triage tactics.",
+                    "iii. Analyze personal error patterns and weak question typologies.",
+                    "iv. Track score improvement across repeated timed drills."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 4 verbal aptitude curriculum.",
+                    "ii. Promotional Examination into Primary 5.",
+                    "iii. End of session results and preparation for Common Entrance master year."
+                ])
+            ]
+        },
+        "Primary 5": {
+            "First Term": [
+                ("Master Study of NCEE Verbal Aptitude Question Types (Lantern 1–6)", [
+                    "i. Familiarize with the 15 standard Lantern Books and National Common Entrance question formats.",
+                    "ii. Identify the specific rule required for Type 1 (Word Building) through Type 6 (Letter Shifts).",
+                    "iii. Practice model questions for each category with zero distractor confusion.",
+                    "iv. Score at least 90% accuracy on foundational NCEE typologies."
+                ]),
+                ("Dictionary Guide Words and Complex Word Derivations", [
+                    "i. Solve high-difficulty dictionary guide word problems under tight time limits.",
+                    "ii. Trace root derivations from classical origins to modern English.",
+                    "iii. Determine which words from a list of five cannot appear on a designated dictionary page.",
+                    "iv. Order multiple prefixed and suffixed words alphabetically."
+                ]),
+                ("High-Frequency Common Entrance Synonyms", [
+                    "i. Master 100 high-frequency vocabulary words commonly appearing in entrance exams (e.g. authentic, candid, desolate, frugal, perilous).",
+                    "ii. Select the closest synonym from carefully designed distractor options.",
+                    "iii. Understand subtle shades of meaning in formal literary prose.",
+                    "iv. Complete paired synonym tests with speed and accuracy."
+                ]),
+                ("High-Frequency Common Entrance Antonyms", [
+                    "i. Master 100 high-frequency antonym pairs for entrance examinations (e.g. abundance/scarcity, amateur/professional, voluntary/compulsory).",
+                    "ii. Discriminate between true antonyms and words that are merely different.",
+                    "iii. Supply antonyms for words used in technical or formal sentences.",
+                    "iv. Solve antonym pairing grids under timed constraints."
+                ]),
+                ("Compound Word Decomposition and Semantic Shifts", [
+                    "i. Analyze complex compound words where meaning is not simply the sum of parts (e.g. understand, butterfly, deadline).",
+                    "ii. Break down multi-syllabic compound nouns and adjectives.",
+                    "iii. Form novel compound words that conform to standard English usage.",
+                    "iv. Solve compound word matrix completion drills."
+                ]),
+                ("Complex Skip-Letter and Mirror-Letter Cipher Decoding", [
+                    "i. Master dual-rule ciphers (e.g. reverse alphabet combined with a -2 shift).",
+                    "ii. Decode words encrypted via mirror-reflection letter transformations.",
+                    "iii. Discover the secret algorithm from a given coded example word.",
+                    "iv. Encode target phrases accurately using complex multi-step rules."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review NCEE question types 1-6, advanced vocabulary, and mirror ciphers.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Words Formed from Letters of a Key Word", [
+                    "i. Form maximum number of 4-letter, 5-letter, and 6-letter words from a master word (e.g. CONSTITUTION, DICTIONARY).",
+                    "ii. Verify that no letter is used more times than it appears in the master word.",
+                    "iii. Identify which word from options CANNOT be formed from the stimulus word.",
+                    "iv. Solve Lantern Type 8 word generation items."
+                ]),
+                ("Registers and Specialized Vocabulary (Aviation, Banking, Medicine)", [
+                    "i. Master aviation terms: fuselage, cockpit, altitude, tarmac, air traffic control.",
+                    "ii. Master banking terms: collateral, debit, dividend, overdraft, mortgage.",
+                    "iii. Master legal and medical registers: plaintiff, anesthesia, diagnosis, verdict.",
+                    "iv. Complete domain-specific cloze passages."
+                ]),
+                ("Inverted Analogies and Relationship Reproduction", [
+                    "i. Analyze inverted analogy pairs where order of terms is flipped (e.g. B:A :: D:C).",
+                    "ii. Maintain relational symmetry when solving multiple-choice analogies.",
+                    "iii. Replicate grammatical parts of speech between corresponding analogy halves.",
+                    "iv. Avoid tempting reversed distractor choices."
+                ]),
+                ("Verbal Relationship Matrices and Multi-Column Tables", [
+                    "i. Solve verbal relationship problems presented in tabular formats.",
+                    "ii. Track multiple variables (Name, Occupation, City, Vehicle) using deduction grids.",
+                    "iii. Fill in missing cells in cross-referenced verbal tables.",
+                    "iv. Answer analytical questions based on complex tabular data."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 5 verbal aptitude curriculum.",
+                    "ii. Full-length mock entrance exam paper.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Logic and Inference from Short Factual Passages", [
+                    "i. Read dense, 4-sentence informational passages carefully.",
+                    "ii. Distinguish between valid deductions and speculative inferences.",
+                    "iii. Answer questions assessing what MUST be true according to the passage.",
+                    "iv. Identify logical leaps that cannot be substantiated by the text."
+                ]),
+                ("Syllogistic Deductions (All, Some, None Premise Rules)", [
+                    "i. Apply Euler circles or Venn diagrams to evaluate categorical syllogisms.",
+                    "ii. Understand 'Some' as meaning 'at least one' in logical reasoning.",
+                    "iii. Deduce conclusions from negative premises (No mammals are reptiles; all dogs are mammals).",
+                    "iv. Identify fallacies of undistributed middle terms."
+                ]),
+                ("Identification of Subtle Morphological Outliers", [
+                    "i. Scrutinize five words to identify the outlier based on prefix/suffix origin or grammatical structure.",
+                    "ii. Identify words with false prefixes (e.g. uncle is not 'un-' + 'cle').",
+                    "iii. Classify words by Latinate vs Germanic origins.",
+                    "iv. Solve challenging Metropolitan-style oddity problems."
+                ]),
+                ("Heteronyms and Words with Shift of Stress / Part of Speech", [
+                    "i. Understand heteronyms as words spelled identically but pronounced differently with distinct meanings (record, present, produce).",
+                    "ii. Identify shifts in meaning when stress moves from first syllable (noun) to second syllable (verb).",
+                    "iii. Select the appropriate pronunciation and meaning for sentences.",
+                    "iv. Solve verbal aptitude questions testing grammatical category shifts."
+                ]),
+                ("Proverbial Reasoning and Idiomatic Completions", [
+                    "i. Complete complex classical and indigenous proverbs with missing key words.",
+                    "ii. Explain the moral or practical lesson conveyed by each proverb.",
+                    "iii. Match traditional proverbs to real-life situational vignettes.",
+                    "iv. Solve entrance examination multiple-choice proverbial tests."
+                ]),
+                ("Symbol-Letter Replacement and Mathematical Ciphers", [
+                    "i. Decode ciphers where abstract geometric symbols represent alphabet letters.",
+                    "ii. Solve alphanumeric equations requiring substitution and arithmetic computation.",
+                    "iii. Differentiate between constant symbol mappings and variable cipher rules.",
+                    "iv. Translate encrypted symbol paragraphs into clear English."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review syllogisms, heteronyms, proverbs, and symbol ciphers.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Sentence Completion with Contextual Contrast Words", [
+                    "i. Analyze sentences containing transition words (whereas, conversely, notwithstanding, nevertheless).",
+                    "ii. Predict the required semantic direction of missing clauses.",
+                    "iii. Select words that complete nuanced, multi-clause academic sentences.",
+                    "iv. Eliminate choices that contradict the transitional marker."
+                ]),
+                ("Paragraph Coherence - Reordering Scrambled Sentences", [
+                    "i. Reassemble five scrambled sentences into a cohesive, logical paragraph.",
+                    "ii. Identify the introductory topic sentence.",
+                    "iii. Trace chronological markers and pronoun referents to establish sequence.",
+                    "iv. Determine which sentence would appear 3rd or 4th in the restored order."
+                ]),
+                ("Identifying Logical Fallacies and Contradictions", [
+                    "i. Detect logical inconsistencies and self-contradicting statements.",
+                    "ii. Identify faulty generalizations (e.g. concluding all birds fly from a single observation).",
+                    "iii. Spot circular reasoning and false cause assumptions.",
+                    "iv. Select the statement that directly contradicts a given argument."
+                ]),
+                ("Multi-Word Anagrammatic Expressions and Phrases", [
+                    "i. Form multi-word anagrams from compound words and short phrases (e.g. eleven plus two = twelve plus one).",
+                    "ii. Solve entrance exam phrase scrambles under time pressure.",
+                    "iii. Use letter frequency analysis to crack anagrammatic puzzles.",
+                    "iv. Verify letter conservation across multi-word solutions."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term Primary 5 verbal aptitude curriculum.",
+                    "ii. Full-length practice entrance examination.",
+                    "iii. End of Second Term Examination."
+                ])
+            ],
+            "Third Term": [
+                ("Dual-Rule Cipher Decoding and Substitution Matrices", [
+                    "i. Crack encrypted messages governed by two simultaneous cipher rules.",
+                    "ii. Navigate 5x5 Polybius square grids and coordinates.",
+                    "iii. Translate complex coded sentences into legible answers.",
+                    "iv. Solve National Common Entrance cipher challenges."
+                ]),
+                ("Analysis of Common Entrance Past Questions (Section A Verbal)", [
+                    "i. Dissect authentic past papers from NCEE, Lagos State, and Federal Unity Colleges.",
+                    "ii. Identify the most frequent 10 question formats used by exam bodies.",
+                    "iii. Review historical cut-off marks and time allocations.",
+                    "iv. Implement systematic elimination strategies for 5-option questions."
+                ]),
+                ("Complex Multi-Layered Analogies", [
+                    "i. Solve high-order analogies involving secondary or tertiary relationships.",
+                    "ii. Balance analogies incorporating antonyms, synonyms, and functional properties concurrently.",
+                    "iii. Verify relational symmetry across all four terms (A:B :: C:D).",
+                    "iv. Achieve zero error rate on advanced analogy sets."
+                ]),
+                ("Root, Prefix, and Suffix Syntheses for Unknown Words", [
+                    "i. Synthesize meanings of never-before-seen words using morphological dissection.",
+                    "ii. Identify Greek and Latin building blocks in biological, chemical, and astronomical terminology.",
+                    "iii. Accurately predict dictionary definitions from affixes.",
+                    "iv. Complete advanced morphological matching tests."
+                ]),
+                ("Grid Logic Deductions and Seating Arrangement Problems", [
+                    "i. Solve complex linear and circular seating arrangement puzzles.",
+                    "ii. Deduce relative positions using clues ('A sits immediately to the left of B', 'C is between D and E').",
+                    "iii. Construct tabular deduction grids to organize multiple constraints.",
+                    "iv. Answer multi-part questions based on a single seating scenario."
+                ]),
+                ("Evaluating Statement Validity (Definitely True, Probably True, False)", [
+                    "i. Classify deductions into: Definitely True, Probably True, Insufficient Data, Probably False, Definitely False.",
+                    "ii. Avoid over-interpreting circumstantial information.",
+                    "iii. Ground evaluations strictly in stated premises.",
+                    "iv. Complete standard critical reasoning battery tests."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review dual ciphers, past papers, grid logic, and validity evaluation.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Timed Reading Comprehension and Deductive Reasoning", [
+                    "i. Read academic passages under timed conditions (3 minutes per 300 words).",
+                    "ii. Answer deductive inference and vocabulary-in-context questions.",
+                    "iii. Locate specific evidence within the text to justify selected answers.",
+                    "iv. Avoid distractors that contain true external facts not mentioned in the passage."
+                ]),
+                ("Verbal Aptitude Speed and Accuracy Drills (60 Questions in 45 Min)", [
+                    "i. Complete full-length 60-question tests adhering strictly to 45-minute limits.",
+                    "ii. Master bubbling accuracy on OMR answer sheets.",
+                    "iii. Develop pacing: allocate 40 seconds per question with 5 minutes for final review.",
+                    "iv. Analyze incorrect answers and maintain an error correction journal."
+                ]),
+                ("Examination Strategies - Elimination, Guessing Penalties, and Time Budgeting", [
+                    "i. Apply the process of elimination to discard obviously incorrect options.",
+                    "ii. Calculate risk vs reward when guessing is not penalized.",
+                    "iii. Manage examination anxiety and maintain cognitive stamina.",
+                    "iv. Formulate a personalized test-taking game plan."
+                ]),
+                ("Common Entrance Mock Examination and Paper Review", [
+                    "i. Participate in a simulated National Common Entrance mock examination.",
+                    "ii. Experience authentic test conditions with external invigilation.",
+                    "iii. Receive detailed item analysis showing class percentiles and topic breakdowns.",
+                    "iv. Attend comprehensive review sessions addressing common stumbling blocks."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 5 verbal reasoning curriculum.",
+                    "ii. Promotional Examination into Primary 6 (Common Entrance Master Class).",
+                    "iii. Final grade computation and holiday preparatory assignment."
+                ])
+            ]
+        },
+        "Primary 6": {
+            "First Term": [
+                ("Comprehensive NCEE Verbal Aptitude Question Typologies Review", [
+                    "i. Exhaustive review of all 20 standard Lantern Books and NCEE question types.",
+                    "ii. Classify any given test item into its correct structural typology within 5 seconds.",
+                    "iii. Apply specialized shortcuts for rapid solving of each format.",
+                    "iv. Achieve 95%+ baseline accuracy across all foundational typologies."
+                ]),
+                ("Elite Entrance Vocabulary - Nuanced Synonyms and Distractors", [
+                    "i. Master 150 elite vocabulary words frequent in competitive scholarship exams (e.g. ephemeral, meticulous, pragmatic, resilient, ubiquitous).",
+                    "ii. Discriminate between near-synonyms with opposing emotional valences.",
+                    "iii. Identify subtle distractor traps designed to catch careless test-takers.",
+                    "iv. Complete rapid synonym flashcard drills."
+                ]),
+                ("Elite Entrance Vocabulary - Context-Dependent Antonyms", [
+                    "i. Master 150 elite antonym pairings (e.g. superficial/profound, transparent/opaque, volatile/stable).",
+                    "ii. Identify antonyms where the stimulus word carries multiple secondary meanings.",
+                    "iii. Handle antonyms requiring knowledge of formal Latinate prefixes.",
+                    "iv. Solve speed-pressured antonym matching tests."
+                ]),
+                ("Complex Analogy Reproduction across Varied Disciplines", [
+                    "i. Solve high-difficulty analogies spanning literature, science, geography, and history.",
+                    "ii. Master abstract mathematical and spatial analogies in verbal formats.",
+                    "iii. Verify that grammatical class and tense match symmetrically.",
+                    "iv. Eliminate choices with inverted or approximate relationships."
+                ]),
+                ("Advanced Cryptograms and Algebraic Letter Codes", [
+                    "i. Decipher multi-stage ciphers where letter shifts vary according to word position.",
+                    "ii. Solve cryptarithms where unique letters represent digits in multi-digit operations.",
+                    "iii. Crack secret messages using frequency analysis of common English vowels and consonants.",
+                    "iv. Encode complex sentences using algebraic algorithms."
+                ]),
+                ("Single-Letter Insertion to Complete Two Words Concurrently", [
+                    "i. Master the classic entrance exam format: find one letter that completes the first word and begins the second.",
+                    "ii. Example: PEA(R)OAD -> PEAR and ROAD.",
+                    "iii. Complete double-word brackets with precision.",
+                    "iv. Solve 25 single-letter insertion problems in 10 minutes."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review elite vocabulary, cryptograms, and single-letter insertion formats.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Multi-Sentence Hidden Words in Continuous Prose", [
+                    "i. Locate hidden words concealed across multiple sentences or paragraphs of literary text.",
+                    "ii. Apply rapid visual scanning to spot embedded words without reading word-for-word.",
+                    "iii. Find hidden words that conform to specific semantic category constraints (e.g. find a hidden European capital).",
+                    "iv. Score 100% on Lantern Type 12 hidden word assessments."
+                ]),
+                ("Etymological Word Derivation (Greek, Latin, French Loanwords)", [
+                    "i. Study loanword origins in English (e.g. French: rendezvous, bouquet; Latin: post-mortem, ad hoc).",
+                    "ii. Understand how historical etymology influences spelling and pronunciation.",
+                    "iii. Decipher unfamiliar legal, scientific, and culinary terms using etymology.",
+                    "iv. Complete etymological derivation tests."
+                ]),
+                ("Idioms, Figures of Speech, and Proverbial Deductions", [
+                    "i. Master 100 idioms and proverbial expressions essential for Common Entrance success.",
+                    "ii. Interpret figurative language in poetry and argumentative prose.",
+                    "iii. Replace informal colloquialisms with standard idiomatic English.",
+                    "iv. Answer multiple-choice questions on figurative meaning."
+                ]),
+                ("Formal Logical Deduction - Testing Valid Conclusions", [
+                    "i. Evaluate multi-premise logical syllogisms under timed pressure.",
+                    "ii. Detect invalid deductions caused by false premises or flawed reasoning.",
+                    "iii. Distinguish between necessary conclusions and merely possible conclusions.",
+                    "iv. Complete advanced critical reasoning practice batteries."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 6 verbal aptitude topics.",
+                    "ii. Mock Common Entrance Examination 1.",
+                    "iii. Detailed performance review and score diagnostic."
+                ])
+            ],
+            "Second Term": [
+                ("Advanced Sentence Completion with Technical Vocabulary", [
+                    "i. Complete complex, two-clause sentences from academic textbooks.",
+                    "ii. Select words that maintain grammatical agreement, formal tone, and semantic coherence.",
+                    "iii. Eliminate options with incorrect collocations or inappropriate registers.",
+                    "iv. Solve double-blank sentence completion questions rapidly."
+                ]),
+                ("Dual-Word and Inverted Analogies under Timed Pressure", [
+                    "i. Master analogies where two words are missing simultaneously (A is to __ as C is to __).",
+                    "ii. Test all paired options systematically to discover the linking relationship.",
+                    "iii. Solve inverted analogies without falling into order-reversal traps.",
+                    "iv. Complete 30 complex analogies in 20 minutes."
+                ]),
+                ("Anagram Clues with Contextual Definitions", [
+                    "i. Unscramble multi-syllable anagrams accompanied by cryptic definition clues.",
+                    "ii. Example: Rearrange 'SILENT' to find another word for a quiet person (LISTEN).",
+                    "iii. Identify anagrammatic pairs in rhyming poetry.",
+                    "iv. Solve competitive scholarship anagram challenges."
+                ]),
+                ("Alphanumeric Coding and Matrix Transposition", [
+                    "i. Solve complex alphanumeric codes involving matrix coordinates (Row, Column notation).",
+                    "ii. Transpose letters using grid rotation and reflection rules.",
+                    "iii. Decode messages using keypad and telephone cipher systems.",
+                    "iv. Encode secret operational passwords."
+                ]),
+                ("Logical Sequencing of Events and Narrative Flow", [
+                    "i. Order six randomized sentences into a seamless chronological narrative.",
+                    "ii. Identify transition markers indicating cause, consequence, or temporal progression.",
+                    "iii. Determine the opening and closing sentences of the restored paragraph.",
+                    "iv. Solve sentence sequence problems with zero errors."
+                ]),
+                ("Critical Thinking - Detecting Assumptions and Biases", [
+                    "i. Read persuasive speeches and identify unstated underlying assumptions.",
+                    "ii. Differentiate between objective facts, subjective opinions, and emotional appeals.",
+                    "iii. Evaluate arguments for fairness, validity, and evidentiary support.",
+                    "iv. Answer critical thinking questions in entrance exam comprehension papers."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review sentence completion, dual analogies, alphanumeric matrices, and critical thinking.",
+                    "ii. Mid-term examination.",
+                    "iii. Mid-term break."
+                ]),
+                ("Identifying Missing Premises in Logical Arguments", [
+                    "i. Given an incomplete argument (Premise + Conclusion), identify the missing assumption required to make it valid.",
+                    "ii. Discard distractors that are true in reality but do not logically bridge the argument.",
+                    "iii. Solve enthymeme reasoning puzzles.",
+                    "iv. Strengthen or weaken arguments by introducing new premises."
+                ]),
+                ("Full-Length Timed Common Entrance Mock 1 (Federal Unity Colleges)", [
+                    "i. Sit for a full-length 60-question Verbal Aptitude mock simulating the National Common Entrance Examination.",
+                    "ii. Adhere strictly to the 45-minute official time limit using authentic OMR bubbling sheets.",
+                    "iii. Experience real examination pressure and environmental conditions.",
+                    "iv. Submit papers for standardized machine scoring."
+                ]),
+                ("Common Entrance Mock 1 Detailed Review and Correction", [
+                    "i. Conduct an in-depth, question-by-question post-mortem of Mock 1.",
+                    "ii. Identify high-frequency error patterns across the cohort.",
+                    "iii. Master alternative shortcut methods for questions that consumed excessive time.",
+                    "iv. Update individual revision logs with targeted remediation topics."
+                ]),
+                ("Full-Length Timed Common Entrance Mock 2 (State & Private Colleges)", [
+                    "i. Sit for a second full-length mock focusing on prestigious private college entrance formats (Loyola, Jesuit, Corona, King's/Queen's).",
+                    "ii. Tackle higher-difficulty critical reasoning and vocabulary items.",
+                    "iii. Benchmark scores against competitive admission percentiles.",
+                    "iv. Refine personal pacing and time management."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision of Second Term Primary 6 verbal aptitude topics.",
+                    "ii. Second Term examination.",
+                    "iii. Final countdown preparation for the National Common Entrance Examination."
+                ])
+            ],
+            "Third Term": [
+                ("Intensive Common Entrance Revision - Tricky Question Analysis", [
+                    "i. Dissect the 50 most tricky, ambiguous, and misunderstood questions from the past decade of NCEE papers.",
+                    "ii. Learn how examination bodies construct distractors and how to bypass them.",
+                    "iii. Develop absolute certainty in answering borderline items.",
+                    "iv. Practice high-speed elimination techniques."
+                ]),
+                ("Resolving Ambiguous Analogies and False Cognates", [
+                    "i. Tackle analogies with multiple plausible interpretations and identify the primary intended relationship.",
+                    "ii. Identify false cognates (words that appear related in spelling but have completely unrelated meanings).",
+                    "iii. Avoid cognitive bias towards familiar words over logically correct choices.",
+                    "iv. Solve 30 challenging ambiguous analogy problems."
+                ]),
+                ("Advanced Coded Comprehension Passages", [
+                    "i. Read passages containing embedded coded words or cipher references.",
+                    "ii. Decipher information on the fly while extracting factual answers.",
+                    "iii. Answer higher-order inferential questions under timed pressure.",
+                    "iv. Achieve full marks on complex comprehension tasks."
+                ]),
+                ("Past 5 Years NCEE Verbal Aptitude Walkthrough", [
+                    "i. Complete complete verbal papers from the last 5 years of the National Common Entrance Examination.",
+                    "ii. Track score progression and target 100% on recurring question archetypes.",
+                    "iii. Note subtle curriculum shifts in recent NECO examination trends.",
+                    "iv. Solidify confidence through repeated mastery."
+                ]),
+                ("Final Review of the 20 Core Verbal Aptitude Patterns", [
+                    "i. Rapid-fire review of all 20 core verbal reasoning problem typologies.",
+                    "ii. Execute 5 model questions for each of the 20 typologies in a single session.",
+                    "iii. Verify speed: solve 100 mixed questions in 70 minutes.",
+                    "iv. Address any remaining individual doubts or uncertainties."
+                ]),
+                ("Speed and Accuracy Sprint Drills", [
+                    "i. Daily 15-minute speed sprints (25 questions per sprint).",
+                    "ii. Train visual scanning speed and mental calculation of letter positions.",
+                    "iii. Reduce hesitation and second-guessing during test execution.",
+                    "iv. Achieve peak cognitive conditioning for examination day."
+                ]),
+                ("Mid-Term / Final Readiness Assessment", [
+                    "i. Final diagnostic assessment simulating official examination conditions.",
+                    "ii. Final score verification and readiness certification.",
+                    "iii. Brief respite before the official examination date."
+                ]),
+                ("Post-Mock Corrections and Test-Taking Psychology", [
+                    "i. Review the final assessment and eliminate any lingering misconceptions.",
+                    "ii. Discuss strategies for managing test anxiety, panic, and fatigue.",
+                    "iii. Learn relaxation and focus techniques to maintain mental clarity.",
+                    "iv. Set personal target scores for the upcoming national exam."
+                ]),
+                ("Examination Etiquette, OMR Sheet Bubbling Mastery, and Accuracy Check", [
+                    "i. Master OMR sheet shading with 2B pencils (shading cleanly within bubbles, avoiding stray marks, erasing completely).",
+                    "ii. Practice aligning question numbers on the exam booklet with numbers on the answer sheet.",
+                    "iii. Learn pre-exam verification checklist (candidate number, center number, subject code).",
+                    "iv. Conduct mock bubbling drills with strict supervision."
+                ]),
+                ("Final Pre-Examination Readiness Drills", [
+                    "i. Relaxed, confidence-building review of core vocabulary and key cipher formulas.",
+                    "ii. Light problem-solving to keep minds sharp without inducing fatigue.",
+                    "iii. Receive final motivational briefing and logistical guidance.",
+                    "iv. Prepare examination stationery kit."
+                ]),
+                ("Entrance Examination Overview and Confidence Building", [
+                    "i. Final pep talk and affirmation of months of rigorous preparation.",
+                    "ii. Reiterate core test-taking rules: Read instructions carefully, budget time, skip and return, check bubbling.",
+                    "iii. Foster a calm, victorious mindset for the National Common Entrance Examination.",
+                    "iv. Celebrate academic growth and peer support."
+                ]),
+                ("Third Term Final Revision and Valedictory Evaluation", [
+                    "i. Post-examination debrief and celebration of candidate efforts.",
+                    "ii. Transition to Junior Secondary School curriculum overview.",
+                    "iii. Award certificates of excellence in Primary School Verbal Reasoning Mastery.",
+                    "iv. Valedictory session and end of Primary Education."
+                ])
+            ]
+        }
+    }
+
+    # --- QUANTITATIVE REASONING SYLLABUS DEFINITIONS ---
+    quantitative_data = {
+        "Primary 1": {
+            "First Term": [
+                ("Counting and Matching Objects to Numbers (1 to 20)", [
+                    "i. Count sets of physical objects and pictorial items accurately up to 20.",
+                    "ii. Match quantities of objects to their correct numeral symbols.",
+                    "iii. Write numerals 1 to 20 in response to counted groups.",
+                    "iv. Identify the numeral that represents an empty set (zero)."
+                ]),
+                ("Greater Than, Less Than, and Equal Quantities", [
+                    "i. Compare two sets of objects to determine which has 'more' and which has 'less'.",
+                    "ii. Use pictorial representations to establish equivalence ('equal to').",
+                    "iii. Identify the larger or smaller numeral in pairs up to 20.",
+                    "iv. Arrange two groups so that one has one more or one less than the other."
+                ]),
+                ("Ordering Numbers in Ascending and Descending Order (1 to 20)", [
+                    "i. Arrange numbers from smallest to largest (ascending order) up to 20.",
+                    "ii. Arrange numbers from largest to smallest (descending order).",
+                    "iii. Complete missing numbers in linear number tracks.",
+                    "iv. Identify numbers that come immediately before, between, or after."
+                ]),
+                ("Number Patterns - Counting Forward in 2s", [
+                    "i. Skip count objects in pairs (2, 4, 6, 8, 10 ... up to 20).",
+                    "ii. Complete missing numbers in counting-in-twos sequences.",
+                    "iii. Identify patterns of even quantities using pair arrangements.",
+                    "iv. Color numbers on a 1-20 grid when counting in 2s."
+                ]),
+                ("Number Patterns - Counting Forward in 5s", [
+                    "i. Skip count in fives using hand/finger models (5, 10, 15, 20).",
+                    "ii. Recognize the recurring final digit pattern (5, 0, 5, 0).",
+                    "iii. Complete number sequences jumping in 5s.",
+                    "iv. Solve simple quantitative word puzzles involving groups of five."
+                ]),
+                ("Addition Models - Combining Sets of Objects", [
+                    "i. Combine two groups of objects to find their total sum.",
+                    "ii. Represent addition using '+' and '=' symbols in horizontal statements.",
+                    "iii. Solve picture addition models where items are counted together.",
+                    "iv. Find the total when adding to a group of known size."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review counting, comparisons, ascending/descending order, and addition models.",
+                    "ii. Mid-term quantitative aptitude test.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Subtraction Models - Takeaway and Difference Patterns", [
+                    "i. Model subtraction as taking away objects from a set.",
+                    "ii. Cross out items to represent subtraction pictorially.",
+                    "iii. Write subtraction number sentences using '-' and '=' symbols.",
+                    "iv. Solve quantitative problems finding the difference between two sets."
+                ]),
+                ("Number Bonds to 10 (Pairs that Make 10)", [
+                    "i. Identify all number pairs that add up to 10 (1+9, 2+8, 3+7, 4+6, 5+5).",
+                    "ii. Complete missing addends in number bond diagrams (e.g. 3 + [ ] = 10).",
+                    "iii. Use ten-frames to visualize complementary pairs.",
+                    "iv. Rapidly recall the partner number needed to make 10."
+                ]),
+                ("Domino Dot and Dice Patterns Logic", [
+                    "i. Recognize standard dice and domino dot configurations without counting.",
+                    "ii. Calculate the total dots on double-sided domino tiles.",
+                    "iii. Match domino patterns to numeral cards.",
+                    "iv. Find the missing half of a domino to reach a specified total."
+                ]),
+                ("Missing Numbers in Simple Linear Sequences", [
+                    "i. Determine the rule in simple addition sequences (+1, +2).",
+                    "ii. Fill in the missing numbers in sequences (e.g., 2, 4, __, 8; 1, 3, 5, __).",
+                    "iii. Detect the incorrect number in a disrupted number sequence.",
+                    "iv. Create original number patterns using small counters."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term quantitative reasoning topics.",
+                    "ii. Practice timed quantitative aptitude worksheets.",
+                    "iii. First Term written examination."
+                ])
+            ],
+            "Second Term": [
+                ("Hundred Chart Navigation and Patterns up to 50", [
+                    "i. Locate numbers 1 to 50 on a standard hundred chart.",
+                    "ii. Recognize patterns in rows (counting in 1s) and columns (counting in 10s).",
+                    "iii. Find 1 more, 1 less, 10 more, and 10 less on the hundred square.",
+                    "iv. Fill in missing numbers in puzzle cut-outs from the hundred chart."
+                ]),
+                ("Skip Counting in 10s up to 100", [
+                    "i. Count forward in tens from 10 to 100 (10, 20, 30 ... 100).",
+                    "ii. Count backward in tens from 100 to 10.",
+                    "iii. Solve bundle-of-ten quantitative counting puzzles.",
+                    "iv. Complete missing numbers in sequences counting in tens."
+                ]),
+                ("Addition Pyramids (Two Bottom Numbers Make Top)", [
+                    "i. Understand the quantitative rule of addition brick pyramids.",
+                    "ii. Add two adjacent base numbers to calculate the brick above them.",
+                    "iii. Complete 2-tier pyramids with given base numbers.",
+                    "iv. Work backward to find a missing base brick when the top is known."
+                ]),
+                ("Subtraction Boxes (Finding the Missing Number)", [
+                    "i. Solve open sentence addition/subtraction boxes (e.g., 4 + [ ] = 9; [ ] - 3 = 5).",
+                    "ii. Use inverse operations to find the unknown quantity.",
+                    "iii. Solve balance scales with missing weights on one side.",
+                    "iv. Complete multiple-choice open sentence items."
+                ]),
+                ("Even and Odd Numbers Recognition using Pairs", [
+                    "i. Define even numbers as quantities that can be grouped into exact pairs.",
+                    "ii. Define odd numbers as quantities that leave one unpaired object.",
+                    "iii. Identify even and odd numbers up to 20.",
+                    "iv. Color even numbers blue and odd numbers red on a number chart."
+                ]),
+                ("Repeating Shape Patterns and Sequences", [
+                    "i. Identify repeating units in shape sequences (Circle, Triangle, Square, Circle...).",
+                    "ii. Predict the next shape in an alternating or repeating geometric series.",
+                    "iii. Draw the missing element in a patterned sequence.",
+                    "iv. Create original repeating patterns using colored geometric blocks."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review hundred chart, skip counting in 10s, pyramids, and even/odd numbers.",
+                    "ii. Mid-term quantitative aptitude test.",
+                    "iii. Mid-term break."
+                ]),
+                ("Place Value Patterns: Tens and Units (10 to 50)", [
+                    "i. Understand 2-digit numbers as combinations of Tens and Units.",
+                    "ii. Decompose numbers into expanded form (e.g. 24 = 2 Tens + 4 Units).",
+                    "iii. Count bundles of ten sticks and loose single units.",
+                    "iv. Match expanded forms with standard numerals."
+                ]),
+                ("Comparing Numbers using Symbols (<, >, =)", [
+                    "i. Learn the meaning of greater than (>), less than (<), and equal to (=) signs.",
+                    "ii. Use the 'open mouth eats the bigger number' mnemonic.",
+                    "iii. Insert the correct comparison symbol between two 2-digit numbers.",
+                    "iv. Solve quantitative reasoning drills choosing true statements."
+                ]),
+                ("Nigerian Currency Patterns (Kobo Coins and Naira Notes)", [
+                    "i. Identify Nigerian Naira notes (₦5, ₦10, ₦20, ₦50) and historical Kobo coins.",
+                    "ii. Compare the value of different currency denominations.",
+                    "iii. Calculate simple sums using play money notes.",
+                    "iv. Determine which note is needed to purchase a priced item."
+                ]),
+                ("Simple Number Puzzles in 2x2 Grids", [
+                    "i. Understand row and column rules in simple 2x2 number grids.",
+                    "ii. Calculate missing numbers where rows add up to a specified constant.",
+                    "iii. Solve diagonal addition boxes.",
+                    "iv. Complete number grid puzzle cards."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term quantitative topics.",
+                    "ii. Solve timed aptitude test papers.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Quantitative Circle with Two Ears (Addition Rule Model)", [
+                    "i. Understand the classic Lantern model: circle flanked by two smaller side circles ('ears').",
+                    "ii. Discover the rule: Left Ear + Right Ear = Center Circle.",
+                    "iii. Calculate the center value when both ears are given.",
+                    "iv. Calculate a missing ear by subtracting the known ear from the center."
+                ]),
+                ("Number Line Jump Patterns (Forward and Backward)", [
+                    "i. Navigate number lines to solve addition and subtraction jumps.",
+                    "ii. Determine the constant jump size in a numbered trajectory.",
+                    "iii. Calculate the landing number after multiple equal jumps.",
+                    "iv. Complete missing numbers along labeled number lines."
+                ]),
+                ("Ordinal Numbers (1st to 10th) in Reasoning Sequences", [
+                    "i. Recite and write ordinal numbers from 1st (first) to 10th (tenth).",
+                    "ii. Identify the ordinal position of depicted objects in a queue.",
+                    "iii. Solve positioning puzzles ('The third car is red; what color is the 5th?').",
+                    "iv. Follow directions referencing ordinal locations."
+                ]),
+                ("Fractions in Reasoning - Halves (1/2) of Shapes and Numbers", [
+                    "i. Understand half as dividing a whole into two equal parts.",
+                    "ii. Identify shapes partitioned into two identical halves.",
+                    "iii. Calculate half (1/2) of even numbers up to 20 (half of 6 is 3).",
+                    "iv. Solve quantitative shape diagrams based on halving."
+                ]),
+                ("Fractions in Reasoning - Quarters (1/4) of Shapes and Numbers", [
+                    "i. Understand a quarter as dividing a whole into four equal parts.",
+                    "ii. Identify shapes correctly divided into four quarters.",
+                    "iii. Calculate one quarter (1/4) of 4, 8, 12, 16, and 20.",
+                    "iv. Match fractional shaded diagrams to numeric fraction symbols."
+                ]),
+                ("Clock Face Logic - Reading O'clock and Half Past", [
+                    "i. Identify the hour hand and minute hand on an analog clock.",
+                    "ii. Read times showing 'o'clock' (minute hand on 12).",
+                    "iii. Read times showing 'half past' (minute hand on 6).",
+                    "iv. Determine how many hours elapse between two clock displays."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review circle-ear models, number lines, fractions, and clock logic.",
+                    "ii. Mid-term quantitative test.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Measurement Logic - Comparing Length and Weight", [
+                    "i. Compare lengths of objects using terms: longer, shorter, tallest.",
+                    "ii. Compare weights using simple two-pan balance scale illustrations.",
+                    "iii. Deduce which object is heavier based on which pan sinks.",
+                    "iv. Order three items from lightest to heaviest."
+                ]),
+                ("Simple Magic Triangles (Sum of Numbers Along Each Side)", [
+                    "i. Understand magic triangles where three circles form vertices.",
+                    "ii. Calculate the sum along each side to verify the magic constant.",
+                    "iii. Fill in missing circle values so that both sides equal the same target.",
+                    "iv. Solve simple 3-circle triangle puzzles."
+                ]),
+                ("Translation of Word Problems into Quantitative Models", [
+                    "i. Read short mathematical story problems carefully.",
+                    "ii. Identify the underlying operation (+ or -) required for solution.",
+                    "iii. Translate stories into quantitative diagram formats.",
+                    "iv. Verify calculated answers against the original story premise."
+                ]),
+                ("Pattern Completion in Geometric Diagrams", [
+                    "i. Analyze 2x2 pictorial grids with one missing quadrant.",
+                    "ii. Deduce patterns based on rotation, shape change, or number of dots.",
+                    "iii. Select the correct completing tile from four multiple-choice options.",
+                    "iv. Develop non-verbal reasoning visual discrimination."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 1 quantitative reasoning topics.",
+                    "ii. Promotional Examination into Primary 2.",
+                    "iii. Results computation and holiday enrichment assignments."
+                ])
+            ]
+        },
+        "Primary 2": {
+            "First Term": [
+                ("Place Value Logic - Hundreds, Tens, and Units (up to 500)", [
+                    "i. Identify hundreds, tens, and units in 3-digit numbers up to 500.",
+                    "ii. Decompose numbers into standard expanded forms (e.g. 348 = 300 + 40 + 8).",
+                    "iii. Complete missing elements in place-value quantitative diagrams.",
+                    "iv. State the value of underlined digits in 3-digit numbers."
+                ]),
+                ("Skip Counting in 3s and 4s Forward and Backward", [
+                    "i. Count forward in 3s (3, 6, 9, 12 ... 36) and backward in 3s.",
+                    "ii. Count forward in 4s (4, 8, 12, 16 ... 48) and backward in 4s.",
+                    "iii. Complete missing numbers in linear tracks skip-counting by 3s and 4s.",
+                    "iv. Solve quantitative leap-frog puzzles."
+                ]),
+                ("Addition and Subtraction Fact Families (3-Number Relations)", [
+                    "i. Understand that three numbers form four interrelated facts (e.g. 7, 5, 12 -> 7+5=12, 5+7=12, 12-5=7, 12-7=5).",
+                    "ii. Complete missing members of fact family triangles.",
+                    "iii. Use inverse operations to verify arithmetic calculations.",
+                    "iv. Solve quantitative relationship boxes."
+                ]),
+                ("3-Number Quantitative Boxes (Top Number as Sum or Difference)", [
+                    "i. Master the standard Lantern 3-box module (one top box over two bottom boxes).",
+                    "ii. Determine the governing rule from worked examples (e.g. Top = Left + Right).",
+                    "iii. Calculate missing top boxes by adding bottom values.",
+                    "iv. Calculate missing bottom boxes by subtracting the known bottom from the top."
+                ]),
+                ("Number Bonds to 20 and 50", [
+                    "i. Recall number bonds that sum to 20 (e.g. 14 + 6 = 20, 11 + 9 = 20).",
+                    "ii. Extend bonds to multiples of 10 up to 50 (e.g. 35 + 15 = 50, 42 + 8 = 50).",
+                    "iii. Complete quantitative wheels with outer numbers summing to the center.",
+                    "iv. Solve rapid mental addition drills."
+                ]),
+                ("Number Wheels (Center Number as Operator)", [
+                    "i. Analyze circular wheels with a central number and surrounding segments.",
+                    "ii. Determine the operation applied between center and rim (e.g. Center + 5 = Outer).",
+                    "iii. Fill in missing outer sector values.",
+                    "iv. Calculate the central operator when outer pairs are provided."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review place value, skip counting in 3s/4s, fact families, and number wheels.",
+                    "ii. Mid-term quantitative aptitude test.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Triangle Puzzles (Base Numbers Combined to Equal Vertex)", [
+                    "i. Analyze quantitative triangles with numbers at all three corners and center.",
+                    "ii. Deduce whether corners add or multiply to yield the central value.",
+                    "iii. Solve triangles where two base corners sum to equal the apex.",
+                    "iv. Calculate missing corner numbers under time limits."
+                ]),
+                ("Number Grids - Row and Column Constant Sums", [
+                    "i. Analyze 3x3 grids where every row and column sums to the same total.",
+                    "ii. Identify the constant sum from a completely filled row.",
+                    "iii. Calculate missing values in rows or columns with one unknown.",
+                    "iv. Verify that diagonal sums also adhere to the grid constant."
+                ]),
+                ("Comparing 2-Digit and 3-Digit Numbers with Reasoning", [
+                    "i. Compare numbers up to 500 using <, >, and = signs.",
+                    "ii. Arrange five 3-digit numbers in ascending and descending order.",
+                    "iii. Determine which number among four is closest to a given target.",
+                    "iv. Solve inequality puzzles with open boxes."
+                ]),
+                ("Missing Operation Signs (+ or -) in Number Sentences", [
+                    "i. Determine whether '+' or '-' makes an equation true (e.g. 15 [ ] 7 = 8).",
+                    "ii. Supply signs in compound two-step expressions (e.g. 10 [ ] 4 [ ] 2 = 12).",
+                    "iii. Complete quantitative diagrams where operational signs are omitted.",
+                    "iv. Solve multiple-choice operator deduction items."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 2 quantitative curriculum.",
+                    "ii. Solve timed aptitude test papers.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Multiplication as Repeated Addition Patterns (2, 3, 4, 5, 10 Tables)", [
+                    "i. Relate repeated addition arrays to multiplication facts.",
+                    "ii. Master 2, 3, 4, 5, and 10 times tables in reasoning problems.",
+                    "iii. Complete multiplication grids and factor trees.",
+                    "iv. Solve quantitative diagrams using multiplication rules."
+                ]),
+                ("Division as Equal Sharing and Grouping Patterns", [
+                    "i. Model division as inverse multiplication (sharing equally into groups).",
+                    "ii. Divide 2-digit numbers by 2, 3, 4, 5, and 10 without remainders.",
+                    "iii. Solve quantitative shapes with division arrows.",
+                    "iv. Calculate missing dividends and divisors in open boxes."
+                ]),
+                ("4-Pointed Star Models with Corner Operations", [
+                    "i. Analyze 4-pointed stars with numbers on northern, southern, eastern, and western points.",
+                    "ii. Deduce whether opposite points add/subtract to equal the center point.",
+                    "iii. Solve for missing star points from worked examples.",
+                    "iv. Differentiate between vertical and horizontal operation axes."
+                ]),
+                ("Fractions of Sets (1/2, 1/3, 1/4 of Whole Numbers up to 24)", [
+                    "i. Calculate 1/2, 1/3, and 1/4 of whole quantities (e.g. 1/3 of 12 = 4, 1/4 of 20 = 5).",
+                    "ii. Apply unit fractions to solve word problems involving collections.",
+                    "iii. Complete quantitative fractional diagrams.",
+                    "iv. Compare fractions of quantities using < and >."
+                ]),
+                ("Money Calculations - Change from 50 and 100 Naira", [
+                    "i. Calculate total purchase costs for multiple priced items.",
+                    "ii. Calculate change due from ₦50 and ₦100 notes.",
+                    "iii. Determine how many ₦10 or ₦20 notes equal a larger denomination.",
+                    "iv. Solve shopping transaction quantitative models."
+                ]),
+                ("Calendar Logic - Days of the Week and Months Sequences", [
+                    "i. Recite and order the 7 days of the week and 12 months of the year.",
+                    "ii. Solve day-calculation word problems ('If today is Tuesday, what day was 3 days ago?').",
+                    "iii. Know how many days are in each month (30 days has September...).",
+                    "iv. Calculate dates in future weeks."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review multiplication, division, star models, fractions, and money logic.",
+                    "ii. Mid-term quantitative assessment.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("3x3 Magic Squares (Sum Equals 15)", [
+                    "i. Understand the classic 3x3 magic square using digits 1 to 9.",
+                    "ii. Recognize that the center number is always 5 and opposite pairs sum to 10.",
+                    "iii. Fill in missing cells in rotated or reflected 15-sum magic squares.",
+                    "iv. Verify all 8 lines (3 rows, 3 columns, 2 diagonals) sum to 15."
+                ]),
+                ("Clock Logic - Reading Intervals of 5 Minutes", [
+                    "i. Read analog clock times to 5-minute accuracy.",
+                    "ii. Calculate elapsed time in simple scenarios ('School starts at 8:00 and lunch is at 11:30').",
+                    "iii. Draw clock hands to represent given digital times.",
+                    "iv. Solve quantitative clock progression series."
+                ]),
+                ("Weight and Capacity Comparison Problems", [
+                    "i. Understand standard units of mass (kilograms, grams) and capacity (litres).",
+                    "ii. Solve two-pan balance scale puzzles with labeled metric weights.",
+                    "iii. Calculate unknown weights needed to achieve balance.",
+                    "iv. Compare container capacities in reasoning problems."
+                ]),
+                ("Number Balance Scales (Equalizing Both Sides)", [
+                    "i. Treat equations as balance scales where both sides must evaluate to the same value.",
+                    "ii. Solve equations formatted as: 12 + 8 = 15 + [ ].",
+                    "iii. Balance scales with mixed addition and subtraction operations.",
+                    "iv. Solve multiple-choice equivalence items."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term Primary 2 quantitative curriculum.",
+                    "ii. Practice multi-format reasoning questions.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Combined Operations in Shapes (Add Two, Subtract One)", [
+                    "i. Analyze quantitative shapes governed by compound rules (e.g. (A + B) - C = Center).",
+                    "ii. Identify the exact operation sequence from given examples.",
+                    "iii. Apply the compound rule to compute missing values.",
+                    "iv. Solve reverse operations to isolate an unknown component."
+                ]),
+                ("Sequences with Increasing Differences (+2, +3, +4, +5...)", [
+                    "i. Identify non-linear sequences where the difference increases by 1 at each step (e.g. 1, 3, 6, 10, 15...).",
+                    "ii. Recognize triangular number sequences.",
+                    "iii. Complete missing terms in increasing difference series.",
+                    "iv. Formulate the rule governing step intervals."
+                ]),
+                ("Missing Operational Signs (+, -, x) in Compound Expressions", [
+                    "i. Insert two operations to make multi-step sentences correct (e.g. 4 [ ] 3 [ ] 2 = 10 -> 4 x 3 - 2 = 10).",
+                    "ii. Apply basic order of operations (perform multiplication before addition/subtraction).",
+                    "iii. Complete quantitative shape modules with missing operational symbols.",
+                    "iv. Solve operator deduction puzzles."
+                ]),
+                ("2x2 Number Grids with Diagonal Rules", [
+                    "i. Analyze 2x2 grids where diagonal pairs interact (e.g. Product of Diagonal 1 = Sum of Diagonal 2).",
+                    "ii. Deduce cross-diagonal relationships from sample boxes.",
+                    "iii. Calculate the missing number in incomplete 2x2 grids.",
+                    "iv. Verify row, column, and diagonal interactions."
+                ]),
+                ("Identifying the Pattern Intruder in Number Sets", [
+                    "i. Analyze groups of five numbers to spot the one that violates a hidden rule.",
+                    "ii. Identify exclusions based on divisibility (four multiples of 3 and one non-multiple).",
+                    "iii. Identify exclusions based on digit sums or parity (even/odd).",
+                    "iv. Write the reason for the excluded number."
+                ]),
+                ("Multi-Step Quantitative Word Problems", [
+                    "i. Deconstruct word problems requiring two distinct arithmetic steps.",
+                    "ii. Example: 'Ade buys 3 pencils at ₦10 each and pays with ₦50. What is his change?'.",
+                    "iii. Represent the problem using formal quantitative notation.",
+                    "iv. Compute the final answer with units."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review combined operations, increasing sequences, diagonal grids, and multi-step word problems.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Perimeter Reasoning - Counting Boundary Units of Shapes", [
+                    "i. Define perimeter as the total distance around the outside of a 2D shape.",
+                    "ii. Calculate perimeters of shapes drawn on square centimetre grids.",
+                    "iii. Deduce missing side lengths when the total perimeter is given.",
+                    "iv. Compare perimeters of different geometric shapes."
+                ]),
+                ("Data Reasoning - Interpreting Simple Tally Charts and Bar Graphs", [
+                    "i. Read tally marks (grouping in 5s with diagonal slashes).",
+                    "ii. Extract factual values from horizontal and vertical bar charts.",
+                    "iii. Answer comparative questions ('How many more children chose blue than red?').",
+                    "iv. Calculate total populations from bar graph distributions."
+                ]),
+                ("Geometric Symmetry and Reflection Patterns", [
+                    "i. Identify lines of symmetry in familiar 2D shapes (square, rectangle, triangle, circle).",
+                    "ii. Complete the missing half of a symmetrical figure across a vertical mirror line.",
+                    "iii. Identify figures that possess zero lines of symmetry.",
+                    "iv. Solve reflection puzzles in quantitative test papers."
+                ]),
+                ("Quantitative Reasoning Speed Test for Primary 2", [
+                    "i. Complete 30 mixed quantitative questions under 25-minute timed conditions.",
+                    "ii. Practice rapid model identification without pencil-and-paper hesitation.",
+                    "iii. Triage easy questions before attempting challenging puzzles.",
+                    "iv. Score and review error patterns."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 2 quantitative reasoning curriculum.",
+                    "ii. Promotional Examination into Primary 3.",
+                    "iii. Results compilation and holiday enrichment assignments."
+                ])
+            ]
+        },
+        "Primary 3": {
+            "First Term": [
+                ("Place Value up to 10,000 and Expanded Form Reasoning", [
+                    "i. Master 4-digit place values: Thousands, Hundreds, Tens, and Units.",
+                    "ii. Decompose numbers into standard and non-standard expanded forms (e.g. 4,325 = 4,000 + 300 + 20 + 5).",
+                    "iii. Determine digit values in quantitative diagrams and abacus models.",
+                    "iv. Reconstruct numbers from scrambled place-value tokens."
+                ]),
+                ("Number Patterns with Mixed Operations (+ and -)", [
+                    "i. Solve alternating sequences (e.g. +5, -2, +5, -2).",
+                    "ii. Detect increasing and decreasing intervals in complex tracks.",
+                    "iii. Complete missing terms in bidirectional number lines.",
+                    "iv. Formulate algebraic descriptions of sequence rules."
+                ]),
+                ("Multiplication Tables Reasoning (6, 7, 8, 9 Tables)", [
+                    "i. Master 6, 7, 8, and 9 times tables in aptitude problem formats.",
+                    "ii. Apply distributive property to simplify multiplication (e.g. 7 x 8 = 7 x 5 + 7 x 3).",
+                    "iii. Complete multiplication grids with missing factor headers.",
+                    "iv. Solve square number multiplication models."
+                ]),
+                ("Division Facts and Remainder Logic in Shapes", [
+                    "i. Divide 2-digit and 3-digit numbers with and without remainders.",
+                    "ii. Express remainders in quantitative models (e.g. Quotient in top box, Remainder in side circle).",
+                    "iii. Calculate original dividends using: (Divisor x Quotient) + Remainder.",
+                    "iv. Solve remainder deduction puzzles."
+                ]),
+                ("Triangular Arrays with Corner-to-Center Operations", [
+                    "i. Analyze triangular models where three vertex numbers interact to produce the center.",
+                    "ii. Test addition, multiplication, and mixed combinations (e.g. (A x B) + C = Center).",
+                    "iii. Solve for missing vertex numbers using inverse operations.",
+                    "iv. Complete 15 triangle puzzle drills under timed conditions."
+                ]),
+                ("Circular Segment Logic (Center Calculated from Rim)", [
+                    "i. Analyze 4-segment and 6-segment circle diagrams.",
+                    "ii. Deduce whether opposite sectors sum/multiply to the center, or adjacent sectors interact.",
+                    "iii. Calculate missing perimeter segments.",
+                    "iv. Differentiate between circular progression and central convergence."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review place value to 10,000, 6-9 tables, division remainders, and triangular arrays.",
+                    "ii. Mid-term quantitative aptitude test.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("3x3 Magic Squares with Targets Other Than 15", [
+                    "i. Solve 3x3 magic squares with magic constants of 18, 21, 24, 27, and 30.",
+                    "ii. Discover the golden rule: Center Number = Magic Constant ÷ 3.",
+                    "iii. Fill in multiple empty cells systematically.",
+                    "iv. Verify row, column, and diagonal sums."
+                ]),
+                ("Factor Pairs and Multiples Recognition", [
+                    "i. List all factor pairs for composite numbers up to 50.",
+                    "ii. Identify common factors of two given numbers.",
+                    "iii. Distinguish between factors (divisors) and multiples (products).",
+                    "iv. Solve Venn diagram factor-sorting activities."
+                ]),
+                ("Even, Odd, and Prime Number Deductions", [
+                    "i. Define prime numbers as numbers with exactly two distinct factors (1 and itself).",
+                    "ii. Identify all prime numbers up to 30 (2, 3, 5, 7, 11, 13, 17, 19, 23, 29).",
+                    "iii. Recognize that 2 is the only even prime number.",
+                    "iv. Solve odd-one-out and categorization puzzles based on primality."
+                ]),
+                ("Number Sequence Rules with Decreasing Patterns", [
+                    "i. Identify subtraction patterns with constant intervals (e.g. -4, -4, -4).",
+                    "ii. Solve decreasing sequences with accelerating reductions (e.g. -1, -2, -3, -4...).",
+                    "iii. Predict the landing number when a sequence extends toward zero.",
+                    "iv. Supply missing numbers in descending sequence matrices."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 3 quantitative curriculum.",
+                    "ii. Practice timed aptitude test papers.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Equivalent Fractions Reasoning in Diagrammatic Grids", [
+                    "i. Understand that fractions can have different numerators/denominators but equal value (1/2 = 2/4 = 3/6 = 4/8).",
+                    "ii. Multiply or divide numerator and denominator by the same number to find equivalents.",
+                    "iii. Complete missing numerators or denominators in equivalence chains.",
+                    "iv. Solve fraction quantitative shape models."
+                ]),
+                ("Proper, Improper, and Mixed Fractions Operations in Shapes", [
+                    "i. Convert improper fractions to mixed numbers (e.g. 7/3 = 2 1/3) and vice versa.",
+                    "ii. Add and subtract fractions with common denominators.",
+                    "iii. Complete fractional brick pyramids.",
+                    "iv. Solve open boxes involving mixed fraction arithmetic."
+                ]),
+                ("Decimals Logic - Tenths and Hundredths Patterns", [
+                    "i. Relate decimal fractions to tenths (0.1 = 1/10) and hundredths (0.01 = 1/100).",
+                    "ii. Add and subtract decimals to one and two decimal places.",
+                    "iii. Complete decimal number line sequences (e.g. 0.2, 0.4, 0.6, __).",
+                    "iv. Compare decimal quantities using <, >, and =."
+                ]),
+                ("Money Logic - Multi-Item Shopping and Profit Calculation", [
+                    "i. Calculate total bills for multiple purchases with varying quantities.",
+                    "ii. Understand Cost Price (CP) and Selling Price (SP).",
+                    "iii. Calculate Profit (SP - CP) when selling price exceeds cost price.",
+                    "iv. Solve commercial arithmetic quantitative tables."
+                ]),
+                ("Time Logic - Elapsed Time and 24-Hour Clock Conversions", [
+                    "i. Calculate elapsed time across hours and minutes (e.g. 9:15 am to 11:45 am).",
+                    "ii. Convert 12-hour am/pm times to 24-hour notation (e.g. 3:00 pm = 15:00).",
+                    "iii. Solve timetable and journey-duration reasoning problems.",
+                    "iv. Compute end times given start times and durations."
+                ]),
+                ("Roman Numerals up to L (50) in Sequence Puzzles", [
+                    "i. Master basic Roman numeral symbols: I=1, V=5, X=10, L=50.",
+                    "ii. Apply additive (VI=6, XI=11, XV=15) and subtractive principles (IV=4, IX=9, XL=40).",
+                    "iii. Convert Arabic numbers up to 50 to Roman numerals and vice versa.",
+                    "iv. Complete Roman numeral sequences and arithmetic equations."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review fractions, decimals, money, time, and Roman numerals up to 50.",
+                    "ii. Mid-term quantitative assessment.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("4-Box Quantitative Modules with Cross-Diagonal Rules", [
+                    "i. Master the standard Lantern 4-box square (Top-Left, Top-Right, Bottom-Left, Bottom-Right).",
+                    "ii. Test cross-multiplication (TL x BR = TR x BL) and cross-addition rules.",
+                    "iii. Solve for missing box values using algebraic manipulation.",
+                    "iv. Complete 15 4-box drills under timed conditions."
+                ]),
+                ("Perimeter and Area Relationships of Rectangles and Squares", [
+                    "i. Calculate perimeters (2 x [Length + Breadth]) of rectangles and squares.",
+                    "ii. Calculate areas (Length x Breadth) using square units.",
+                    "iii. Deduce breadth when area and length are given.",
+                    "iv. Compare perimeters of shapes with identical areas."
+                ]),
+                ("Function Machines (Input -> Rule -> Output Puzzles)", [
+                    "i. Analyze function machines that transform input numbers into output numbers.",
+                    "ii. Deduce single rules (e.g. Output = [Input x 3] + 2).",
+                    "iii. Calculate output values for new inputs.",
+                    "iv. Work backward to compute input numbers from given outputs."
+                ]),
+                ("Unknown Value in Arithmetic Balance Equations", [
+                    "i. Solve balanced equations with unknowns: e.g. 24 ÷ 3 = [ ] - 7.",
+                    "ii. Balance equations with variables on both sides.",
+                    "iii. Replace geometric shapes with appropriate numeric values.",
+                    "iv. Solve multiple-choice algebraic equivalence items."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term Primary 3 quantitative topics.",
+                    "ii. Practice multi-format reasoning questions.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Sequences Involving Fractions and Decimals", [
+                    "i. Identify step intervals in fraction sequences (e.g. 1/4, 1/2, 3/4, 1, 1 1/4...).",
+                    "ii. Solve decimal sequences with variable increments (e.g. 0.5, 1.0, 1.5, 2.0...).",
+                    "iii. Complete missing terms in hybrid fraction-decimal progressions.",
+                    "iv. Formulate sequence rules for fractional number patterns."
+                ]),
+                ("Square Numbers (1, 4, 9, 16, 25, 36, 49, 64, 81, 100)", [
+                    "i. Define square numbers as the product of a number multiplied by itself (n x n = n²).",
+                    "ii. Memorize all perfect squares from 1² = 1 to 10² = 100.",
+                    "iii. Recognize square number sequences and patterns in geometric dot arrays.",
+                    "iv. Solve quantitative shapes where central values represent square roots."
+                ]),
+                ("Quantitative Shapes with Dual Rules (Add Top, Multiply Bottom)", [
+                    "i. Analyze complex shapes where upper and lower sections follow different rules.",
+                    "ii. Test compound formulas: (Top Left + Top Right) x (Bottom Left - Bottom Right).",
+                    "iii. Calculate missing components accurately.",
+                    "iv. Verify calculations against multiple worked exemplars."
+                ]),
+                ("Translating Real-World Scenarios into Mathematical Models", [
+                    "i. Convert complex word descriptions into structured arithmetic statements.",
+                    "ii. Identify hidden constraints and variables in contextual story problems.",
+                    "iii. Draw schematics or bar models to represent unknown quantities.",
+                    "iv. Verify mathematical solutions against real-world reasonableness."
+                ]),
+                ("Mass (kg, g) and Capacity (L, ml) Word Reasoning", [
+                    "i. Convert kilograms to grams (1 kg = 1,000 g) and litres to millilitres (1 L = 1,000 ml).",
+                    "ii. Solve quantitative problems involving packaging and division of bulk quantities.",
+                    "iii. Balance scale puzzles involving mixed metric units.",
+                    "iv. Calculate missing weights to calibrate balance arms."
+                ]),
+                ("Data Interpretation - Bar Charts and Pictograms with Keys", [
+                    "i. Interpret pictograms where symbols represent multiple items (e.g. 1 picture = 5 books).",
+                    "ii. Calculate values represented by half-symbols in pictograms.",
+                    "iii. Extract information from complex dual-bar comparative charts.",
+                    "iv. Answer synthesis and total calculation questions."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review fraction sequences, square numbers, dual-rule shapes, and pictograms.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Number Matrix Puzzles with Row/Column Relations", [
+                    "i. Solve 3x3 number matrices with interdependent horizontal and vertical rules.",
+                    "ii. Test multiplication along rows and addition down columns.",
+                    "iii. Calculate the single missing digit that satisfies all matrix constraints.",
+                    "iv. Complete 15 matrix challenge items."
+                ]),
+                ("Geometry Logic - 2D/3D Shape Properties, Faces, Edges, Vertices", [
+                    "i. Count faces, edges, and vertices of 3D solids (cube, cuboid, cylinder, cone, sphere).",
+                    "ii. Understand properties of 2D polygons (quadrilaterals, pentagons, hexagons).",
+                    "iii. Solve geometric deduction riddles ('I have 6 flat square faces and 12 equal edges; what am I?').",
+                    "iv. Answer quantitative aptitude questions based on geometric nets."
+                ]),
+                ("Balance Scales Logic with Geometric Weight Blocks", [
+                    "i. Solve balance scale puzzles where circles, triangles, and squares represent unknown weights.",
+                    "ii. Use substitution: If 2 Triangles = 1 Square, how many Triangles equal 3 Squares?",
+                    "iii. Simplify multi-scale balance systems systematically.",
+                    "iv. Find the single shape required to balance an unbalanced pan."
+                ]),
+                ("Quantitative Speed Drills for Primary 3", [
+                    "i. Complete 35 mixed quantitative aptitude questions under 25-minute time pressure.",
+                    "ii. Practice rapid model categorization.",
+                    "iii. Triage questions: skip time-consuming items and return later.",
+                    "iv. Score and analyze personal error tendencies."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 3 quantitative reasoning curriculum.",
+                    "ii. Promotional Examination into Primary 4.",
+                    "iii. Results compilation and holiday preparatory assignments."
+                ])
+            ]
+        },
+        "Primary 4": {
+            "First Term": [
+                ("Place Value up to Millions and Ordering Large Numbers", [
+                    "i. Read and write numbers up to 1,000,000 in figures and words.",
+                    "ii. Identify place values: Millions, Hundred Thousands, Ten Thousands, Thousands, Hundreds, Tens, Units.",
+                    "iii. Compare and order large numbers using inequality symbols (<, >).",
+                    "iv. Solve place-value decomposition models in quantitative test papers."
+                ]),
+                ("LCM and HCF Quantitative Models and Factor Trees", [
+                    "i. Calculate Highest Common Factor (HCF) using prime factorization.",
+                    "ii. Calculate Lowest Common Multiple (LCM) using prime factor tables.",
+                    "iii. Complete factor tree diagrams with missing prime leaves.",
+                    "iv. Solve quantitative shapes governed by LCM and HCF rules."
+                ]),
+                ("Roman Numerals up to C (100) and Roman Arithmetic", [
+                    "i. Master Roman numerals up to C (100): C=100, L=50, X=10, V=5, I=1.",
+                    "ii. Apply subtractive principles (XC=90, XL=40, IX=9, IV=4).",
+                    "iii. Perform addition and subtraction directly with Roman numerals (e.g. XL + XXV = LXV).",
+                    "iv. Complete Roman numeral sequences and mathematical equations."
+                ]),
+                ("Prime Numbers and Prime Factorization Arrays", [
+                    "i. Identify all prime numbers between 1 and 100.",
+                    "ii. Express composite numbers as products of their prime factors (e.g. 24 = 2³ x 3).",
+                    "iii. Solve index notation puzzles in quantitative formats.",
+                    "iv. Determine prime factors of numbers up to 200."
+                ]),
+                ("Standard Lantern/Metropolitan Quantitative Archetypes (Types 1 to 4)", [
+                    "i. Master standard Entrance Examination Type 1 (Number Bridges) and Type 2 (Triangular Towers).",
+                    "ii. Master Type 3 (Concentric Wheels) and Type 4 (Square Quadrants).",
+                    "iii. Decode the operational formula for each type within 15 seconds.",
+                    "iv. Complete 20 archetype practice problems with 100% accuracy."
+                ]),
+                ("Square Roots of Perfect Squares up to 144", [
+                    "i. Understand square root (√) as the inverse of squaring a number.",
+                    "ii. Memorize square roots of perfect squares from √1 = 1 to √144 = 12.",
+                    "iii. Solve equations containing radical symbols (e.g. √64 + √36 = 8 + 6 = 14).",
+                    "iv. Solve quantitative models where radical signs determine apex values."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review millions place value, LCM/HCF, Roman numerals up to C, and square roots.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Fractions in Geometric Diagrams (Addition and Multiplication)", [
+                    "i. Add and subtract fractions with unlike denominators using LCM.",
+                    "ii. Multiply proper fractions and mixed numbers (e.g. 2/3 x 3/4 = 1/2).",
+                    "iii. Solve geometric diagrams where sectors contain fractional operations.",
+                    "iv. Compute missing numerators and denominators in fraction networks."
+                ]),
+                ("Decimal Numbers Operations in Quantitative Arrays", [
+                    "i. Multiply and divide decimal numbers by 10, 100, and 1,000.",
+                    "ii. Add and subtract decimals with unequal decimal places (e.g. 4.5 + 0.35).",
+                    "iii. Solve decimal quantitative shape modules.",
+                    "iv. Order decimals by magnitude on number lines."
+                ]),
+                ("Percentages as Fractions and Decimals in Reasoning Models", [
+                    "i. Understand percentage as 'parts per hundred' (%).",
+                    "ii. Convert fluently between fractions, decimals, and percentages (1/2 = 0.5 = 50%; 1/4 = 0.25 = 25%).",
+                    "iii. Calculate simple percentages of quantities (e.g. 10%, 25%, 50% of ₦400).",
+                    "iv. Solve percentage reasoning models in entrance exam formats."
+                ]),
+                ("Alternate Rule Sequences (e.g. +3, x2, +3, x2)", [
+                    "i. Identify complex number series governed by two interleaved operational rules.",
+                    "ii. Trace arithmetic shifts alongside geometric shifts.",
+                    "iii. Complete missing elements in dual-step sequences.",
+                    "iv. Determine the 10th term in a predictable alternating progression."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 4 quantitative curriculum.",
+                    "ii. Timed practice examinations.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Ratio and Proportion Models in Quantitative Shapes", [
+                    "i. Express relationships between quantities as simplified ratios (e.g. 6:8 = 3:4).",
+                    "ii. Solve equivalent ratio tables and proportion wheels.",
+                    "iii. Divide quantities into given ratio shares (e.g. share ₦50 in ratio 2:3).",
+                    "iv. Solve direct proportion word problems."
+                ]),
+                ("Speed, Distance, and Time Interrelationships", [
+                    "i. Master the standard speed formula triangle: Distance = Speed x Time.",
+                    "ii. Calculate speed given distance and time (km/h and m/s).",
+                    "iii. Calculate time taken given distance and speed.",
+                    "iv. Solve quantitative travel models and distance charts."
+                ]),
+                ("Commercial Arithmetic - Cost Price, Selling Price, Profit and Loss %", [
+                    "i. Calculate Profit (SP - CP) and Loss (CP - SP).",
+                    "ii. Calculate Percentage Profit: (Profit ÷ CP) x 100%.",
+                    "iii. Calculate Percentage Loss: (Loss ÷ CP) x 100%.",
+                    "iv. Solve commercial arithmetic tables in entrance exam papers."
+                ]),
+                ("Angle Logic - Angles on Straight Lines and in Triangles (180° Rule)", [
+                    "i. Know that angles on a straight line add up to 180°.",
+                    "ii. Know that the three interior angles of any triangle sum to 180°.",
+                    "iii. Calculate missing angles in straight line diagrams and triangles.",
+                    "iv. Solve right-angled triangle angle deductions (90° + x + y = 180°)."
+                ]),
+                ("Area and Perimeter of Composite L-Shaped Figures", [
+                    "i. Partition composite L-shaped figures into two distinct rectangles.",
+                    "ii. Calculate missing side lengths using opposite side sums.",
+                    "iii. Calculate total area by summing sub-rectangle areas.",
+                    "iv. Calculate total perimeter by summing all outer boundary edges."
+                ]),
+                ("3-Tier and 4-Tier Number Pyramids", [
+                    "i. Solve multi-tier addition and multiplication pyramids.",
+                    "ii. Work bidirectionally: combine bases upwards or decompose apexes downwards.",
+                    "iii. Solve pyramids with algebraic expressions at the base.",
+                    "iv. Complete complex number pyramids under timed conditions."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review ratio, speed-distance-time, profit/loss %, angles, and composite area.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Custom Abstract Operations (e.g. a * b = a + b + ab)", [
+                    "i. Understand custom operators (*, Δ, #) defined by arbitrary algebraic formulas.",
+                    "ii. Substitute numeric values into defined operator equations (e.g. calculate 3 * 4).",
+                    "iii. Solve inverse operator equations to find an unknown operand.",
+                    "iv. Evaluate compound operations: (2 * 3) * 4."
+                ]),
+                ("Balance Scale Systems with Unknown Shape Weights", [
+                    "i. Solve systems of two balance scales with geometric symbols.",
+                    "ii. Eliminate variables by substitution or subtraction.",
+                    "iii. Calculate the exact numeric weight of each distinct shape.",
+                    "iv. Determine how many shapes are needed to balance a third test scale."
+                ]),
+                ("Volume of Cubes and Cuboids in Reasoning Problems", [
+                    "i. Calculate volume of cubes (Length³) and cuboids (Length x Breadth x Height) in cm³.",
+                    "ii. Deduce side length of a cube given its total volume.",
+                    "iii. Calculate height of a cuboid given volume, length, and breadth.",
+                    "iv. Solve 3D block-counting and volume reasoning puzzles."
+                ]),
+                ("Roman Numerals up to D (500)", [
+                    "i. Master Roman numeral symbols up to D (500): D=500, CD=400, C=100.",
+                    "ii. Convert 3-digit Arabic numbers up to 500 into Roman numerals (e.g. 478 = CDLXXVIII).",
+                    "iii. Convert complex Roman numerals back into Arabic notation.",
+                    "iv. Solve Roman numeral mathematical puzzles."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term Primary 4 quantitative curriculum.",
+                    "ii. Mock examination simulating competitive entrance papers.",
+                    "iii. Second Term written assessment."
+                ])
+            ],
+            "Third Term": [
+                ("Mean / Average in Quantitative Data Sets", [
+                    "i. Define average (mean) as: Sum of all items ÷ Total number of items.",
+                    "ii. Calculate mean for sets of 3 to 6 numbers.",
+                    "iii. Work backward: calculate missing items when the average is given.",
+                    "iv. Solve quantitative average wheels and balance arrays."
+                ]),
+                ("Simple Probability Reasoning (Dice, Coins, Colored Marbles)", [
+                    "i. Define probability as: Favorable outcomes ÷ Total possible outcomes.",
+                    "ii. Calculate probability of rolling specific numbers on a 6-sided die.",
+                    "iii. Calculate probability of picking a specific colored marble from a bag.",
+                    "iv. Express probability as fractions between 0 (impossible) and 1 (certain)."
+                ]),
+                ("Grid Coordinates and Directional Compass Movement", [
+                    "i. Read and plot coordinates on a grid using (x, y) notation (along the corridor, up the stairs).",
+                    "ii. Follow 8-point compass directions (N, NE, E, SE, S, SW, W, NW).",
+                    "iii. Calculate final positions after a sequence of grid movements.",
+                    "iv. Solve coordinate geometry reasoning problems."
+                ]),
+                ("Circle Relationships - Radius, Diameter, and Circumference Logic", [
+                    "i. Understand the relationship between radius and diameter (Diameter = 2 x Radius).",
+                    "ii. Calculate circumference using formula: C = 2πr or C = πd (using π = 22/7 or 3.14).",
+                    "iii. Solve concentric circle quantitative models.",
+                    "iv. Complete circle parameter calculation tables."
+                ]),
+                ("Multi-Variable Logic Grids", [
+                    "i. Deduce numerical values from cross-referenced clue matrices.",
+                    "ii. Organize constraints systematically into elimination grids.",
+                    "iii. Identify unique 1-to-1 pairings among candidates and attributes.",
+                    "iv. Complete complex multi-variable logic puzzles."
+                ]),
+                ("Common Entrance Style Quantitative Diagrams Walkthrough", [
+                    "i. Analyze classic Lantern Books Entrance Exam modules (Types 5 through 8).",
+                    "ii. Deconstruct tricky diagrammatic questions from recent examination papers.",
+                    "iii. Master speed-solving formulas for standard question typologies.",
+                    "iv. Avoid common computational traps."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review mean, probability, coordinates, circle geometry, and logic grids.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Detecting Irrelevant Information in Word Logic Problems", [
+                    "i. Analyze multi-sentence quantitative word problems with extraneous details.",
+                    "ii. Filter out irrelevant numerical values to isolate necessary operational data.",
+                    "iii. State the minimal data required to reach a valid solution.",
+                    "iv. Solve complex, realistic story-based aptitude problems."
+                ]),
+                ("Rate, Work, and Unitary Method Reasoning", [
+                    "i. Apply the unitary method: find the cost/output of one unit first, then multiply.",
+                    "ii. Solve rate problems (e.g. 5 workers paint a wall in 4 days; how long for 10 workers?).",
+                    "iii. Understand direct vs inverse rate relationships.",
+                    "iv. Complete worker-productivity quantitative tables."
+                ]),
+                ("Data Handling - Pie Chart Angle Proportions", [
+                    "i. Understand that the angles in a pie chart sum to 360°.",
+                    "ii. Calculate sector angles corresponding to given fractions or percentages.",
+                    "iii. Extract real-world quantities from pie chart angle sectors.",
+                    "iv. Solve pie chart quantitative reasoning drills."
+                ]),
+                ("Common Entrance Quantitative Speed Test (Primary 4 Level)", [
+                    "i. Complete 40 mixed quantitative aptitude questions in 30 minutes.",
+                    "ii. Master quick pattern recognition without pencil-and-paper scratchwork.",
+                    "iii. Score and analyze personal error distributions.",
+                    "iv. Develop personal speed-optimization habits."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 4 quantitative reasoning curriculum.",
+                    "ii. Promotional Examination into Primary 5.",
+                    "iii. End of session results and preparation for Common Entrance master year."
+                ])
+            ]
+        },
+        "Primary 5": {
+            "First Term": [
+                ("Master Study of NCEE Quantitative Reasoning Archetypes (Types 1 to 6)", [
+                    "i. Dissect the first six fundamental question types in National Common Entrance Aptitude papers.",
+                    "ii. Type 1: Multi-Circle Bridges; Type 2: Star Networks; Type 3: Box Triangles.",
+                    "iii. Type 4: Coordinate Crosses; Type 5: Nested Hexagons; Type 6: Radial Dials.",
+                    "iv. Achieve 90%+ speed and accuracy across all six foundational archetypes."
+                ]),
+                ("Advanced LCM, HCF, and Prime Factorization in Modular Arrays", [
+                    "i. Calculate LCM and HCF of three numbers simultaneously using continuous division.",
+                    "ii. Express answers in prime factor index form (e.g. 2³ x 3² x 5).",
+                    "iii. Solve quantitative diagram modules governed by LCM/HCF formulas.",
+                    "iv. Deduce unknown components in factor-product arrays."
+                ]),
+                ("Squares and Square Roots up to 400; Cubes and Cube Roots of Integers", [
+                    "i. Memorize perfect squares up to 20² = 400 and their square roots (√169=13, √196=14, √225=15, √256=16).",
+                    "ii. Calculate cubes (n³) and cube roots (∛) of basic integers (∛1=1, ∛8=2, ∛27=3, ∛64=4, ∛125=5).",
+                    "iii. Solve quantitative models containing combined square and cube roots.",
+                    "iv. Complete exponential equations in reasoning papers."
+                ]),
+                ("Fraction, Decimal, and Percentage Equivalence Matrices", [
+                    "i. Master instant conversions among recurring fractions, decimals, and percentages (1/8=0.125=12.5%, 3/8=0.375=37.5%).",
+                    "ii. Solve equivalence matrix grids with mixed notations.",
+                    "iii. Rank mixed numerical expressions in ascending order.",
+                    "iv. Complete fractional percentage problems rapidly."
+                ]),
+                ("Multi-Step Geometric Models (Lantern Types 7 to 10)", [
+                    "i. Deconstruct Lantern Type 7 (Corner Products), Type 8 (Diagonal Sums), Type 9 (Trapezoid Modules), Type 10 (Hourglass Models).",
+                    "ii. Identify the exact arithmetic sequence connecting outer and inner values.",
+                    "iii. Solve reverse-engineered unknown problems.",
+                    "iv. Achieve zero error rate on archetype drills."
+                ]),
+                ("Roman Numerals up to M (1000) and Multi-Operation Roman Calculations", [
+                    "i. Master Roman numerals up to M (1000): M=1000, CM=900, D=500, CD=400, C=100, XC=90, L=50, XL=40, X=10, V=5, I=1.",
+                    "ii. Convert 4-digit years into Roman numerals (e.g. 1999 = MCMXCIX, 2024 = MMXXIV).",
+                    "iii. Perform multi-operation arithmetic in Roman notation: (C - L) x II + V.",
+                    "iv. Solve Roman numeral quantitative equations."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review NCEE types 1-6, advanced HCF/LCM, squares/cubes, and Roman numerals up to M.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Ratio, Direct Proportion, and Inverse Proportion Models", [
+                    "i. Solve complex ratio word problems involving three quantities (A : B : C).",
+                    "ii. Distinguish between direct proportion (more = more) and inverse proportion (more = less).",
+                    "iii. Apply unitary methods to inverse proportion (e.g. men vs days to complete a task).",
+                    "iv. Solve proportion quantitative shape models."
+                ]),
+                ("Simple Interest, Principal, Rate, and Time Logic", [
+                    "i. Master the standard Simple Interest formula: I = (P x R x T) ÷ 100.",
+                    "ii. Calculate Principal (P), Rate (R), or Time (T) when Interest is given.",
+                    "iii. Calculate total Amount: A = P + I.",
+                    "iv. Solve banking and loan quantitative models."
+                ]),
+                ("Speed, Distance, Time, and Average Speed in Travel Problems", [
+                    "i. Calculate speed, distance, and time across complex multi-stage journeys.",
+                    "ii. Calculate Average Speed: Total Distance ÷ Total Time.",
+                    "iii. Convert speed units between km/h and m/s (multiply or divide by 18/5).",
+                    "iv. Solve train, bus, and flight timetable reasoning problems."
+                ]),
+                ("Surface Area and Volume of Prisms and Cylinders", [
+                    "i. Calculate total surface area of cubes and rectangular prisms.",
+                    "ii. Calculate volume of cylinders: V = πr²h.",
+                    "iii. Deduce missing dimensions when volume and base area are known.",
+                    "iv. Solve 3D shape capacity problems in quantitative papers."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 5 quantitative curriculum.",
+                    "ii. Full-length mock entrance examination paper.",
+                    "iii. End of First Term Examination."
+                ])
+            ],
+            "Second Term": [
+                ("Custom Binary Operations with Exponents (e.g. a Δ b = a² - b)", [
+                    "i. Evaluate custom binary operators involving squaring, cubing, and square roots.",
+                    "ii. Example: If a * b = a² + 2b, find the value of 4 * 3 (16 + 6 = 22).",
+                    "iii. Solve for unknown operands when the result is given (e.g. 5 * x = 35).",
+                    "iv. Evaluate nested operations: (2 * 1) * (3 * 2)."
+                ]),
+                ("Algebraic Equations with Shapes and Unknown Variables (x, y, z)", [
+                    "i. Solve linear equations in one unknown: 3x + 7 = 28.",
+                    "ii. Solve linear equations with fractions: (2x - 1) ÷ 3 = 5.",
+                    "iii. Substitute numeric values into multi-variable algebraic expressions.",
+                    "iv. Solve shape-based algebraic equations."
+                ]),
+                ("Angles in Polygons and Parallel Lines (Alternate & Corresponding)", [
+                    "i. Identify alternate ('Z'), corresponding ('F'), and vertically opposite ('X') angles on parallel lines cut by transversals.",
+                    "ii. Calculate sum of interior angles of polygons: (n - 2) x 180°.",
+                    "iii. Calculate each interior angle of regular polygons (pentagon, hexagon, octagon).",
+                    "iv. Solve complex geometric angle quantitative diagrams."
+                ]),
+                ("Statistical Reasoning - Mean, Median, Mode, and Range", [
+                    "i. Calculate Mean (average), Median (middle value), Mode (most frequent), and Range (difference between max and min).",
+                    "ii. Identify median in ordered lists with even numbers of items.",
+                    "iii. Solve quantitative diagrams where central values represent specific statistical measures.",
+                    "iv. Calculate missing values in a data set given the mean."
+                ]),
+                ("Venn Diagrams - 2-Set Union, Intersection, and Complement Logic", [
+                    "i. Understand universal set (ξ), union (A ∪ B), and intersection (A ∩ B).",
+                    "ii. Calculate elements in the intersection using: n(A ∪ B) = n(A) + n(B) - n(A ∩ B).",
+                    "iii. Solve 2-set Venn diagram story problems (e.g. students studying French and German).",
+                    "iv. Answer quantitative aptitude questions based on Venn diagrams."
+                ]),
+                ("Currency Conversions and Foreign Exchange Logic", [
+                    "i. Convert Nigerian Naira (₦) to US Dollars ($), British Pounds (£), and Euros (€) using exchange rates.",
+                    "ii. Convert foreign currency amounts back to Naira.",
+                    "iii. Calculate commission and transaction fees on currency conversions.",
+                    "iv. Solve international trade quantitative story problems."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review custom binary operations, algebra, polygon angles, statistics, and Venn diagrams.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Work-Rate and Time Calculations (Tanks, Pipes, and Shared Labor)", [
+                    "i. Solve shared labor problems: If worker A takes 4 hours and worker B takes 6 hours, how long together?",
+                    "ii. Calculate combined work rates per hour (1/4 + 1/6 = 5/12).",
+                    "iii. Solve water tank filling and emptying pipe problems.",
+                    "iv. Complete worker-productivity quantitative models."
+                ]),
+                ("Circle Geometry - Sector Angles and Perimeter of Sectors", [
+                    "i. Calculate arc length of circle sectors: (θ ÷ 360°) x 2πr.",
+                    "ii. Calculate area of sectors: (θ ÷ 360°) x πr².",
+                    "iii. Calculate total perimeter of a sector: Arc Length + 2r.",
+                    "iv. Solve circle sector quantitative diagrams."
+                ]),
+                ("Number Sequences Involving Square Numbers, Triangular Numbers, Fibonacci", [
+                    "i. Recognize triangular numbers (1, 3, 6, 10, 15, 21, 28...).",
+                    "ii. Master the Fibonacci sequence (1, 1, 2, 3, 5, 8, 13, 21...) where each term is the sum of the two preceding.",
+                    "iii. Solve sequences combining squares and cubes.",
+                    "iv. Predict the nth term in advanced mathematical series."
+                ]),
+                ("Complex 3x3 Matrices with Nested Mathematical Rules", [
+                    "i. Solve high-difficulty 3x3 matrices where row operations interact with column operations.",
+                    "ii. Test compound formulas: (Col 1 x Col 2) - Col 3 = Constant.",
+                    "iii. Calculate missing central cells under time limits.",
+                    "iv. Solve 20 matrix challenge problems."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision across all Second Term Primary 5 quantitative curriculum.",
+                    "ii. Full-length practice entrance examination.",
+                    "iii. End of Second Term Examination."
+                ])
+            ],
+            "Third Term": [
+                ("NCEE Past Examination Quantitative Analysis (Paper 2 Models)", [
+                    "i. Dissect authentic past papers from National Common Entrance Examinations (Paper 2 Quantitative Aptitude).",
+                    "ii. Analyze the 10 most common recurring question models from the past decade.",
+                    "iii. Review scoring rubrics and time allocations.",
+                    "iv. Implement systematic elimination strategies for complex 5-option items."
+                ]),
+                ("Hidden Formula Decoding in Geometric Figures", [
+                    "i. Rapidly identify hidden formulas in multi-sided polygons (pentagons, hexagons, octagons).",
+                    "ii. Test arithmetic, geometric, and modular formulas systematically.",
+                    "iii. Complete missing values in novel, never-before-seen geometric arrays.",
+                    "iv. Avoid distractor answers resulting from incomplete operational rules."
+                ]),
+                ("Coordinate Geometry - Midpoint and Distance on Cartesian Plane", [
+                    "i. Read and plot points in all four quadrants of the Cartesian coordinate plane.",
+                    "ii. Calculate midpoint between two coordinates: ((x₁ + x₂) ÷ 2, (y₁ + y₂) ÷ 2).",
+                    "iii. Calculate distance between horizontal and vertical points on a grid.",
+                    "iv. Solve coordinate geometry quantitative puzzles."
+                ]),
+                ("Scale Drawings and Map Ratio Calculations", [
+                    "i. Interpret representative fraction scales on maps (e.g. 1:50,000).",
+                    "ii. Calculate real-world ground distances from map measurements in centimetres.",
+                    "iii. Convert calculated ground distances to kilometres and metres.",
+                    "iv. Solve scale drawing architecture and floor plan aptitude items."
+                ]),
+                ("Probability of Combined and Complementary Events", [
+                    "i. Calculate probability of complementary events: P(not A) = 1 - P(A).",
+                    "ii. Calculate combined probability of two independent events: P(A and B) = P(A) x P(B).",
+                    "iii. Solve tree diagram probability puzzles.",
+                    "iv. Answer entrance examination probability word problems."
+                ]),
+                ("Multi-Variable Algebraic Elimination in Diagrams", [
+                    "i. Solve simultaneous systems formatted inside geometric diagram modules.",
+                    "ii. Use elimination and substitution to determine values of two unknown shapes.",
+                    "iii. Verify answers by substituting into all diagram equations.",
+                    "iv. Complete 15 simultaneous diagram challenge items."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review NCEE past papers, hidden formulas, coordinate geometry, scale drawing, and probability.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Full-Length Timed Quantitative Aptitude Test (50 Questions in 40 Min)", [
+                    "i. Complete full-length 50-question mock entrance examination under strict 40-minute conditions.",
+                    "ii. Master bubbling accuracy on OMR answer sheets.",
+                    "iii. Develop pacing: allocate 45 seconds per question with 2 minutes for final review.",
+                    "iv. Analyze incorrect answers and maintain an error correction journal."
+                ]),
+                ("Common Fallacies, Traps, and Distractors in Entrance Tests", [
+                    "i. Learn to spot trick questions with deceptive visual symmetries.",
+                    "ii. Identify options resulting from common order-of-operation errors (forgetting BODMAS).",
+                    "iii. Double-check unit conversions (e.g. mixing metres and centimetres).",
+                    "iv. Develop a personal pre-submission verification checklist."
+                ]),
+                ("Test-Taking Speed Drills and Mental Math Shortcuts", [
+                    "i. Master rapid mental arithmetic: multiplying by 25, 50, and 125.",
+                    "ii. Use estimation and last-digit analysis to eliminate impossible answer choices instantly.",
+                    "iii. Practice high-speed calculation drills (20 mental math items in 5 minutes).",
+                    "iv. Build confidence in rapid numerical problem-solving."
+                ]),
+                ("Pre-Mock National Common Entrance Examination", [
+                    "i. Sit for a simulated National Common Entrance Examination Paper 2 under authentic conditions.",
+                    "ii. External invigilation and strict exam hall protocols.",
+                    "iii. Machine scoring and diagnostic feedback on individual topic strengths and weaknesses.",
+                    "iv. Review detailed answer walkthroughs."
+                ]),
+                ("Third Term Revision and Promotional Examination", [
+                    "i. Comprehensive revision across all Primary 5 quantitative reasoning curriculum.",
+                    "ii. Promotional Examination into Primary 6 (Common Entrance Master Class).",
+                    "iii. Final grade computation and holiday preparatory assignment."
+                ])
+            ]
+        },
+        "Primary 6": {
+            "First Term": [
+                ("Comprehensive NCEE Quantitative Reasoning Question Typologies (1 to 20)", [
+                    "i. Exhaustive review of all 20 standard Lantern Books and NCEE quantitative aptitude typologies.",
+                    "ii. Rapidly classify any given test item into its correct structural model within 5 seconds.",
+                    "iii. Apply specialized algebraic shortcuts for rapid solving of each format.",
+                    "iv. Achieve 95%+ baseline accuracy across all 20 archetypes."
+                ]),
+                ("Abstract Custom Binary Operators with Compound Rules", [
+                    "i. Evaluate high-difficulty custom operators (e.g. x # y = (x² + y²) ÷ (xy)).",
+                    "ii. Solve equations where the custom operator is applied to unknown variables.",
+                    "iii. Evaluate nested operations: (3 # 2) # (4 # 1).",
+                    "iv. Solve inverse operator equations under timed constraints."
+                ]),
+                ("Advanced Mental Math Techniques for Rapid Aptitude Solving", [
+                    "i. Multiply any two 2-digit numbers mentally using cross-multiplication.",
+                    "ii. Square any 2-digit number ending in 5 mentally (e.g. 65² = [6 x 7] & 25 = 4225).",
+                    "iii. Apply divisibility rules for 2, 3, 4, 5, 6, 8, 9, 10, and 11 to eliminate distractors instantly.",
+                    "iv. Execute 30 rapid mental arithmetic calculations in 10 minutes."
+                ]),
+                ("Partnership, Capital Investment, and Profit Sharing Ratios", [
+                    "i. Calculate profit distribution based on capital investment ratios.",
+                    "ii. Handle variable time investment periods: Profit share ∝ (Capital x Time).",
+                    "iii. Solve business partnership word problems in quantitative formats.",
+                    "iv. Complete commercial arithmetic ratio tables."
+                ]),
+                ("Commercial Aptitude - Discount, Commission, VAT, and Depreciation", [
+                    "i. Calculate percentage discount and sale price: SP = Marked Price - Discount.",
+                    "ii. Calculate sales commission for real estate and insurance agents.",
+                    "iii. Compute Value Added Tax (VAT at 7.5%) on purchased goods and services.",
+                    "iv. Calculate annual depreciation on equipment and motor vehicles."
+                ]),
+                ("Number Bases - Binary (Base 2) to Denary (Base 10) Conversions", [
+                    "i. Understand place values in the binary system (Base 2): 1, 2, 4, 8, 16, 32, 64.",
+                    "ii. Convert binary numbers to denary (Base 10) numbers (e.g. 1101₂ = 8 + 4 + 0 + 1 = 13₁₀).",
+                    "iii. Convert denary numbers to binary using successive division by 2.",
+                    "iv. Perform simple addition in Base 2 (1 + 1 = 10₂)."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review all 20 NCEE types, compound operators, mental math, and binary conversions.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Pythagoras Theorem in Geometric Reasoning Models", [
+                    "i. Master Pythagoras Theorem for right-angled triangles: a² + b² = c² (Hypotenuse²).",
+                    "ii. Memorize common Pythagorean triples: (3, 4, 5), (5, 12, 13), (6, 8, 10), (8, 15, 17).",
+                    "iii. Calculate missing side lengths of composite geometric figures.",
+                    "iv. Solve quantitative diagram models governed by Pythagorean relationships."
+                ]),
+                ("Three-Set Venn Diagram Reasoning and Word Deductions", [
+                    "i. Navigate 3-set Venn diagrams with universal set, 3 single regions, 3 dual-intersection regions, and 1 central triple-intersection.",
+                    "ii. Apply formula: n(A ∪ B ∪ C) = n(A) + n(B) + n(C) - n(A ∩ B) - n(B ∩ C) - n(A ∩ C) + n(A ∩ B ∩ C).",
+                    "iii. Solve complex 3-subject school survey problems (Maths, English, Science).",
+                    "iv. Answer quantitative aptitude questions based on 3-set Venn diagrams."
+                ]),
+                ("Negative Numbers and Directed Numbers in Diagrammatic Sequences", [
+                    "i. Add, subtract, multiply, and divide directed positive and negative numbers.",
+                    "ii. Navigate number lines across negative and positive domains (e.g. -7 + 12 = 5).",
+                    "iii. Solve quantitative shapes containing negative coordinates or temperatures.",
+                    "iv. Complete alternating positive-negative sequences."
+                ]),
+                ("Simultaneous Equations Formulated from Shape Problems", [
+                    "i. Formulate pairs of simultaneous linear equations from illustrated balance models.",
+                    "ii. Solve using elimination or substitution methods.",
+                    "iii. Determine individual numeric values for multiple unknown shapes.",
+                    "iv. Complete simultaneous equation quantitative puzzles under timed conditions."
+                ]),
+                ("First Term Revision and Examination", [
+                    "i. Comprehensive revision across all First Term Primary 6 quantitative curriculum.",
+                    "ii. Mock Common Entrance Examination 1 (Paper 2).",
+                    "iii. Detailed performance review and score diagnostic."
+                ])
+            ],
+            "Second Term": [
+                ("Full-Length Timed Mock 1 - National Common Entrance Examination (NCEE)", [
+                    "i. Sit for a full-length 50-question Quantitative Aptitude mock simulating the National Common Entrance Examination.",
+                    "ii. Adhere strictly to the 40-minute official time limit using authentic OMR bubbling sheets.",
+                    "iii. Experience real examination pressure and hall conditions.",
+                    "iv. Submit papers for standardized machine scoring."
+                ]),
+                ("NCEE Mock 1 Item-by-Item Review and Strategy Optimization", [
+                    "i. Conduct an in-depth, question-by-question post-mortem of Mock 1.",
+                    "ii. Identify high-frequency error patterns across the cohort.",
+                    "iii. Master alternative shortcut methods for questions that consumed excessive time.",
+                    "iv. Update individual revision logs with targeted remediation topics."
+                ]),
+                ("Full-Length Timed Mock 2 - State Common Entrance & Command/Navy Schools", [
+                    "i. Sit for a second full-length mock focusing on military and state entrance standards (Command, Navy, Air Force, State Model Colleges).",
+                    "ii. Tackle higher-difficulty algebraic and geometric reasoning items.",
+                    "iii. Benchmark scores against competitive admission percentiles.",
+                    "iv. Refine personal pacing and time management."
+                ]),
+                ("High-Complexity Geometric Models (Pentagons, Hexagons, Overlapping Circles)", [
+                    "i. Solve high-order quantitative diagrams based on regular pentagons and hexagons.",
+                    "ii. Test perimeter, diagonal, and central operations in multi-sided polygons.",
+                    "iii. Calculate overlapping area and perimeter regions in intersecting circles.",
+                    "iv. Solve 20 advanced geometric model challenge problems."
+                ]),
+                ("Advanced Algebraic Substitution in Multi-Tier Models", [
+                    "i. Substitute algebraic expressions into nested 3-tier and 4-tier models.",
+                    "ii. Solve equations containing parentheses, brackets, and exponents.",
+                    "iii. Calculate unknown variables in complex multi-step formulas.",
+                    "iv. Achieve zero error rate on advanced algebraic models."
+                ]),
+                ("Retrospective Review of Hardest Quantitative Patterns of the Past Decade", [
+                    "i. Analyze the 30 hardest quantitative reasoning questions from the past 10 years of entrance examinations.",
+                    "ii. Deconstruct the hidden mathematical principles underlying each difficult question.",
+                    "iii. Practice solving similar variant problems.",
+                    "iv. Eliminate fear and hesitation when confronting unfamiliar diagrams."
+                ]),
+                ("Mid-Term Assessment & Break", [
+                    "i. Review Mocks 1 & 2, complex polygons, multi-tier algebra, and historical hard patterns.",
+                    "ii. Mid-term quantitative examination.",
+                    "iii. Mid-term holiday."
+                ]),
+                ("Probability, Statistical Charts, and Pie Chart Sector Angles", [
+                    "i. Calculate combined probabilities in complex multi-stage sampling without replacement.",
+                    "ii. Extract and synthesize data from frequency tables, histograms, and pie charts.",
+                    "iii. Calculate sector angles and percentage distributions.",
+                    "iv. Solve entrance examination statistical aptitude problems."
+                ]),
+                ("Complex Unit Conversions (Metric to Imperial, Speed Units)", [
+                    "i. Convert between metric and imperial units (inches to cm, miles to km, pounds to kg).",
+                    "ii. Convert compound units (km/h to m/s, litres/min to m³/h).",
+                    "iii. Solve rate and unit conversion word problems in quantitative test papers.",
+                    "iv. Verify calculated answers using dimensional analysis."
+                ]),
+                ("Examination Time Management and Elimination Tactics", [
+                    "i. Master the 3-pass exam strategy: Pass 1 (instant solves), Pass 2 (calculable solves), Pass 3 (deep puzzles).",
+                    "ii. Allocate strict time budgets: maximum 60 seconds per question on initial pass.",
+                    "iii. Apply process of elimination to narrow choices down to two before calculating.",
+                    "iv. Never leave an answer blank on non-penalized examinations."
+                ]),
+                ("Pre-Entrance Final Preparation and Speed Marathon", [
+                    "i. Complete 50 mixed quantitative questions in 35 minutes (speed marathon).",
+                    "ii. Test cognitive stamina and precision under simulated high-pressure conditions.",
+                    "iii. Maintain concentration and bubbling accuracy throughout.",
+                    "iv. Celebrate speed milestones and score improvements."
+                ]),
+                ("Second Term Revision and Examination", [
+                    "i. Comprehensive revision of Second Term Primary 6 quantitative aptitude topics.",
+                    "ii. Second Term examination.",
+                    "iii. Final countdown preparation for the National Common Entrance Examination."
+                ])
+            ],
+            "Third Term": [
+                ("Common Entrance Sprint Drills - 30 Questions in 20 Minutes", [
+                    "i. Daily 20-minute speed sprints covering 30 mixed quantitative questions.",
+                    "ii. Develop instinctive pattern recognition for all 20 archetype models.",
+                    "iii. Reduce calculation time using mental math shortcuts.",
+                    "iv. Track individual accuracy rates (targeting 95%+)."
+                ]),
+                ("Analysis of Borderline and Ambiguous Quantitative Models", [
+                    "i. Analyze questions where multiple mathematical interpretations seem possible.",
+                    "ii. Determine the most mathematically sound and standard interpretation intended by examiners.",
+                    "iii. Avoid over-complicating simple arithmetic relationships.",
+                    "iv. Resolve tricky borderline question sets with confidence."
+                ]),
+                ("Post-Primary School Mathematical Readiness Curriculum", [
+                    "i. Preview fundamental Junior Secondary School (JSS 1) algebra and geometry concepts.",
+                    "ii. Bridge primary quantitative reasoning to secondary school mathematics.",
+                    "iii. Develop positive attitudes toward advanced secondary school STEM learning.",
+                    "iv. Foster self-directed problem-solving curiosity."
+                ]),
+                ("10-Year National Common Entrance Quantitative Past Papers Walkthrough", [
+                    "i. Complete full quantitative papers from the last 10 years of National Common Entrance Examinations.",
+                    "ii. Identify historical trends, recurring question variants, and stable scoring benchmarks.",
+                    "iii. Solidify complete mastery across all tested topics.",
+                    "iv. Achieve peak readiness for examination day."
+                ]),
+                ("Final Comprehensive Review of All 20 Aptitude Models", [
+                    "i. Rapid-fire review of all 20 quantitative reasoning problem typologies.",
+                    "ii. Execute 5 model questions for each of the 20 typologies in a single session.",
+                    "iii. Verify speed: solve 100 mixed questions in 75 minutes.",
+                    "iv. Address any remaining individual doubts or uncertainties."
+                ]),
+                ("Daily Accuracy and Speed Maintenance Drills", [
+                    "i. Light daily problem-solving to maintain cognitive agility without inducing burnout.",
+                    "ii. Reinforce mental math formulas (squares, cubes, Pythagorean triples, conversion constants).",
+                    "iii. Practice deep breathing and focus techniques for test day.",
+                    "iv. Build steady, calm self-confidence."
+                ]),
+                ("Mid-Term / Final Readiness Evaluation", [
+                    "i. Final diagnostic assessment simulating official examination conditions.",
+                    "ii. Final score verification and readiness certification.",
+                    "iii. Brief respite before the official examination date."
+                ]),
+                ("Post-Mock Fine-Tuning and Individual Weakness Remediation", [
+                    "i. Review the final assessment and eliminate any lingering computational errors.",
+                    "ii. Provide targeted one-on-one coaching for individual weakness areas.",
+                    "iii. Reinforce test-taking strategies: careful reading of diagrams, verifying inverse operations.",
+                    "iv. Confirm that all students achieve target scores."
+                ]),
+                ("Examination Logistics, OMR Grid Precision, and Verification Checks", [
+                    "i. Master OMR sheet shading with 2B pencils (shading cleanly within bubbles, avoiding stray marks, erasing completely).",
+                    "ii. Practice aligning question numbers on the exam booklet with numbers on the answer sheet.",
+                    "iii. Learn pre-exam verification checklist (candidate number, center number, subject code).",
+                    "iv. Conduct mock bubbling drills with strict supervision."
+                ]),
+                ("Final Warm-Up Problem Sets", [
+                    "i. Relaxed, confidence-building review of core quantitative models.",
+                    "ii. Light problem-solving to keep minds sharp without inducing fatigue.",
+                    "iii. Receive final motivational briefing and logistical guidance.",
+                    "iv. Prepare examination stationery kit."
+                ]),
+                ("Farewell Review and Cognitive Readiness Celebration", [
+                    "i. Final pep talk and celebration of months of dedicated effort and intellectual growth.",
+                    "ii. Reiterate core test-taking rules: Stay calm, budget time, trust your preparation.",
+                    "iii. Foster a victorious, enthusiastic mindset for the National Common Entrance Examination.",
+                    "iv. Group cheer and mutual encouragement."
+                ]),
+                ("Third Term Final Academic Evaluation", [
+                    "i. Post-examination debrief and celebration of candidate achievements.",
+                    "ii. Transition to Junior Secondary School curriculum overview.",
+                    "iii. Award certificates of excellence in Primary School Quantitative Reasoning Mastery.",
+                    "iv. Valedictory session and formal conclusion of Primary Education."
+                ])
+            ]
+        }
+    }
+
+    # Generate all records
+    for class_level in classes:
+        for term in terms:
+            # Verbal Reasoning
+            v_weeks = verbal_data[class_level][term]
+            for idx, (topic, subtopics) in enumerate(v_weeks, start=1):
+                is_break = (idx == 7 or idx == 12)
+                records.append({
+                    "board": "NERDC",
+                    "country": "NG",
+                    "class_level": class_level,
+                    "subject": "Verbal Reasoning",
+                    "term": term,
+                    "week": idx,
+                    "topic": topic,
+                    "subtopics": subtopics,
+                    "subtopics_count": len(subtopics),
+                    "is_exam_or_break": is_break
+                })
+
+            # Quantitative Reasoning
+            q_weeks = quantitative_data[class_level][term]
+            for idx, (topic, subtopics) in enumerate(q_weeks, start=1):
+                is_break = (idx == 7 or idx == 12)
+                records.append({
+                    "board": "NERDC",
+                    "country": "NG",
+                    "class_level": class_level,
+                    "subject": "Quantitative Reasoning",
+                    "term": term,
+                    "week": idx,
+                    "topic": topic,
+                    "subtopics": subtopics,
+                    "subtopics_count": len(subtopics),
+                    "is_exam_or_break": is_break
+                })
+
+    return records
+
+
+def main():
+    records = generate_curriculum()
+    output_path = Path(__file__).resolve().parents[2] / "data" / "primary_reasoning_curriculum.json"
+    
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(records, f, indent=2, ensure_ascii=False)
+        
+    print(f"Generated {len(records)} curriculum scheme records at {output_path}")
+
+    # Summary verification
+    counts = {}
+    for r in records:
+        key = (r["class_level"], r["subject"], r["term"])
+        counts[key] = counts.get(key, 0) + 1
+        
+    print(f"Total categories: {len(counts)}")
+    for (cls, subj, term), cnt in sorted(counts.items()):
+        print(f"  {cls:12s} | {subj:25s} | {term:12s} -> {cnt} weeks")
+
+
+if __name__ == "__main__":
+    main()
