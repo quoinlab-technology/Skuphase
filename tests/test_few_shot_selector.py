@@ -31,6 +31,7 @@ def _qb_item(
         owner_type="platform",
         is_active=True,
         week_index=week,
+        diagram_svg=None,
     )
 
 

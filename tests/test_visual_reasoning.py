@@ -114,3 +114,120 @@ def test_pdf_export_with_diagram(tmp_path, monkeypatch):
     pdf_path = ExportService.export_path(MockExam.id, pdf_filename)
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 1000  # Non-empty PDF
+
+
+# ── Phase 4: Column Math H T U Tests ────────────────────────────────────────
+
+from app.services.column_math import (
+    detect_column_math,
+    column_math_to_svg,
+    render_column_math_svg,
+    ColumnMathBlock,
+)
+
+
+_HTU_TEXT = """Calculate:
+   H  T  U
+   3  4  8
++  4  3  1
+──────────
+"""
+
+_HTU_TEXT_SUBTRACTION = """\
+   H   T   U
+   7   5   6
+-  2   3   4
+__________
+"""
+
+
+def test_column_math_parser_detects_htu():
+    """detect_column_math() correctly parses H T U addition blocks."""
+    block = detect_column_math(_HTU_TEXT)
+    assert block is not None, "Should detect an H T U block"
+    assert isinstance(block, ColumnMathBlock)
+    assert block.headers == ["H", "T", "U"]
+    assert len(block.rows) == 2   # two digit rows
+    # First row: no operator, digits 3 4 8
+    op0, cells0 = block.rows[0]
+    assert op0 is None
+    assert "3" in cells0 and "4" in cells0 and "8" in cells0
+    # Second row: operator +
+    op1, cells1 = block.rows[1]
+    assert op1 == "+"
+    assert block.has_answer_line is True
+
+
+def test_column_math_svg_structure():
+    """column_math_to_svg() produces a valid SVG with viewBox, rect, and text elements."""
+    block = detect_column_math(_HTU_TEXT)
+    assert block is not None
+    svg = column_math_to_svg(block)
+    assert svg.startswith("<svg"), "SVG should start with <svg"
+    assert "</svg>" in svg
+    assert "viewBox" in svg
+    assert "<rect" in svg
+    assert "<text" in svg
+    # The answer row uses a dashed stroke
+    assert "stroke-dasharray" in svg
+    # Operator symbol appears
+    assert "+" in svg
+
+
+def test_column_math_web_component_renders_viewport():
+    """QuestionBlock renders a column-math-viewport div for H T U question text."""
+    q_data = {
+        "question_number": 3,
+        "type": "multiple_choice",
+        "question_text": _HTU_TEXT,
+        "marks": 2,
+        "options": ["A. 779", "B. 879", "C. 789", "D. 987"],
+        "correct_answer": "A",
+        "diagram_svg": None,
+    }
+    card = QuestionBlock(q_data, number=3, show_answers=False)
+    html = str(card)
+    assert "column-math-viewport" in html, "Should render column-math-viewport div"
+    assert "<svg" in html, "Should contain an inline SVG"
+    assert "viewBox" in html
+
+
+def test_pdf_export_column_math(tmp_path, monkeypatch):
+    """Exporting a question with H T U text produces a valid PDF (column math path)."""
+    monkeypatch.setattr(ExportService, "EXPORT_DIR", tmp_path)
+
+    class MockExam:
+        id = uuid.uuid4()
+        school_id = uuid.uuid4()
+        subject = "Mathematics"
+        grade_level = "Primary 3"
+        term = "First Term"
+        total_marks = 5
+        duration_minutes = 20
+        instructions = "Work out the following"
+
+    class MockQuestion:
+        exam_id = MockExam.id
+        question_number = 1
+        section_number = 1
+        section_name = "SECTION A"
+        type = "multiple_choice"
+        question_text = _HTU_TEXT
+        marks = 1
+        options = ["A. 779", "B. 879", "C. 789", "D. 987"]
+        correct_answer = "A"
+        explanation = "348 + 431 = 779"
+        diagram_svg = None
+        sub_parts = None
+        marking_scheme = None
+        passage_id = None
+
+    pdf_filename = ExportService.export_exam_pdf(
+        exam=MockExam(),
+        questions=[MockQuestion()],
+        school_name="Test School",
+    )
+    assert pdf_filename.endswith(".pdf")
+    pdf_path = ExportService.export_path(MockExam.id, pdf_filename)
+    assert pdf_path.exists()
+    assert pdf_path.stat().st_size > 500

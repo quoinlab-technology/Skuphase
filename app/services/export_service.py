@@ -449,6 +449,16 @@ class ExportService:
                 Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
             )
 
+            # ── Column arithmetic (H T U place-value) ─────────────────────────
+            from app.services.column_math import render_column_math_svg as _col_svg
+            _col_math_svg = _col_svg(q.question_text or "")
+            if _col_math_svg:
+                col_drawing = _svg_to_flowable(_col_math_svg, max_width_pt=280, max_height_pt=160)
+                if col_drawing is not None:
+                    story.append(Spacer(1, 1.5 * mm))
+                    story.append(col_drawing)
+                    story.append(Spacer(1, 1.5 * mm))
+
             # ── Diagram SVG (if question has a visual diagram) ─────────────────
             diag_svg = getattr(q, "diagram_svg", None)
             if diag_svg:

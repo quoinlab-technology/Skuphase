@@ -23,11 +23,29 @@ from faststrap import Badge, Button, Card, Row, Col, Icon
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES
 from app.utils.exam_utils import format_mcq_option
 
+from app.services.column_math import render_column_math_svg
+
+
 def render_rich_text(text: str) -> Span:
     """Render text with math equation delimiters so KaTeX auto-renders it."""
     if not text:
         return Span("")
     return Span(text, cls="math-content")
+
+
+def render_column_arithmetic(text: str):
+    """Detect an H T U column-arithmetic block in *text* and render it as SVG.
+
+    Returns a ``Div`` containing the SVG if a block is found, otherwise ``None``.
+    """
+    svg = render_column_math_svg(text)
+    if not svg:
+        return None
+    return Div(
+        NotStr(svg),
+        cls="d-flex justify-content-center align-items-center p-2 my-2 column-math-viewport",
+        style="max-width: 100%; overflow-x: auto;",
+    )
 
 _STATUS_BADGE = {
     "generation_requested": ("Generating", "info"),
@@ -287,6 +305,13 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
     # Body details: Collapsed/expanded when toggled
     body_parts = []
 
+    # ── Column arithmetic (H T U place-value) ─────────────────────────────
+    q_text_raw = q.get("question_text", "") or ""
+    col_math_div = render_column_arithmetic(q_text_raw)
+    if col_math_div is not None:
+        body_parts.append(col_math_div)
+
+    # ── Diagram SVG (explicitly attached to the question) ─────────────────
     diagram_svg = (q.get("diagram_svg") or "").strip()
     if diagram_svg:
         body_parts.append(
