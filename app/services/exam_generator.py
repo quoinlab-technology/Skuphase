@@ -225,6 +225,8 @@ class ExamGenerator:
                     elif ex.get("question_type") == "essay":
                         marks_bit = f" ({ex['marks']} marks)" if ex.get("marks") else ""
                         ex_lines.append(f"  [Essay question{marks_bit}]")
+                    if ex.get("diagram_svg"):
+                        ex_lines.append(f"  [Diagram SVG]: {ex['diagram_svg']}")
                 context_blocks.append("\n".join(ex_lines))
                 logger.info("Injected %s few-shot past-question examples", len(examples))
         except Exception as e:
@@ -431,22 +433,41 @@ TEACHER'S CUSTOM INSTRUCTIONS
         )
 
     def _build_primary_layout_instructions(self, request: ExamGenerationRequest) -> str:
-        """Guidance for primary-school pattern and visual questions."""
+        """Guidance for primary-school pattern, quantitative reasoning, and visual questions."""
+        subj_text = (request.subject or "").lower()
         grade_text = (request.grade_level or "").lower()
         primary_markers = ("primary", "pri", "basic")
         looks_primary = any(marker in grade_text for marker in primary_markers)
+        is_reasoning = any(m in subj_text for m in ("reasoning", "quantitative", "verbal", "aptitude"))
 
-        if not looks_primary and not request.include_diagrams:
+        if not looks_primary and not request.include_diagrams and not is_reasoning:
             return ""
 
-        return """
-PRIMARY EXAM RENDERING RULES
-1. Write question text in clean markdown for direct frontend rendering.
-2. For pattern/shape/quantitative puzzles, use markdown tables and short bullet structures.
-3. For diagram logic, Mermaid is allowed inside fenced blocks.
-4. Keep each visual block compact and classroom-friendly.
-5. Do not invent image links; use provided asset_ref when visuals are required.
-"""
+        instructions = [
+            "PRIMARY & VISUAL REASONING RENDERING RULES:",
+            "1. For Quantitative Reasoning questions, follow the Nigerian classroom standard:",
+            "   • Always include a 'Sample' pattern rule in the question text or prompt so the student understands the logic.",
+            "   • Example: 'Sample: In the sample diagram, (176) branches into [62] and [114] because 62 + 114 = 176. Study the sample and find the missing value (?) in the diagram below.'",
+            "2. Whenever a question involves a visual puzzle, generate a clean, self-contained SVG diagram in the 'diagram_svg' field.",
+            "   Standard Nigerian Visual Reasoning Archetypes:",
+            "   • A1. Horizontal Y-Fork: Circle on left branching right to 2 boxes: (Parent) < [Child 1] & [Child 2].",
+            "   • A2. Fraction Branch: Two top fraction boxes with horizontal fraction bars branching down into a bottom result fraction box.",
+            "   • B. M-Shape Network: 5 nodes connected along an 'M' path (Top-Left, Bottom-Left, Center, Top-Right, Bottom-Right).",
+            "   • C. Power-Circle + Box + Fork: Circle with power (e.g. 6²) connected to a middle box [12], branching into two numbers (6 and 6).",
+            "   • D. 4-Way Compass Cross: Center circle hub with Top, Bottom, Left, and Right arms with math operators (+, -, ×, ÷).",
+            "   • E. Horseshoe (U-Shape) & Arc (C-Shape): Curved paths connecting peripheral nodes to a result node.",
+            "   • F. 2×2 Grid with Result Ear: 4 cells with an attached side circle 'ear' containing the computed difference or sum.",
+            "   • G. T-Bar Multiplier: Two top boxes on a horizontal bar with a vertical hanging stem to the product box.",
+            "   • H. Triangle Puzzle: Triangle with numbers on 3 vertices and a center value.",
+            "3. SVG Specification for 'diagram_svg':",
+            "   • Always use viewBox (e.g., viewBox='0 0 220 120' or '0 0 220 150').",
+            "   • Use clean crisp strokes: stroke='#222' stroke-width='2.5', fill='#ffffff'.",
+            "   • Mark the missing slot with a light yellow fill (fill='#fff9db') containing '?' or an empty box [ ].",
+            "   • Center all text with text-anchor='middle', font-size='13' or '14', font-weight='bold', font-family='Arial, sans-serif'.",
+            "4. For arithmetic place-value columns (H T U / T U addition and subtraction), format cleanly using markdown preformatted blocks or tables.",
+            "5. If a question is purely textual, set 'diagram_svg': null.",
+        ]
+        return "\n" + "\n".join(instructions) + "\n"
 
     def _build_language_instructions(self, language):
         """Return prompt guidance for non-English language-of-instruction papers."""
@@ -455,17 +476,16 @@ PRIMARY EXAM RENDERING RULES
         lang = language.strip()
         return (
             "LANGUAGE OF INSTRUCTION: " + lang + "\n"
-            "\u2022 ALL questions, options, correct answers, explanations and "
+            "• ALL questions, options, correct answers, explanations and "
             "marking schemes MUST be written in " + lang + ".\n"
-            "\u2022 Keep British-English exam conventions, but the working language "
+            "• Keep British-English exam conventions, but the working language "
             "is " + lang + ".\n"
-            "\u2022 Do NOT translate questions back to English unless explicitly "
+            "• Do NOT translate questions back to English unless explicitly "
             "required by the subject.\n"
         )
 
     def _build_json_example(self, sections: List[SectionConfig]) -> str:
         """Build JSON example based on sections."""
-        # This is a simplified example - real implementation would be more detailed
         return """{
   "sections": [
     {
@@ -476,15 +496,16 @@ PRIMARY EXAM RENDERING RULES
         {
           "id": 1,
           "type": "multiple_choice",
-          "question": "Which organelle is responsible for photosynthesis?",
-          "options": ["A. Mitochondria", "B. Chloroplast", "C. Nucleus", "D. Ribosome"],
+          "question": "Study the sample and find the missing value (?) in the diagram below:\\nSample: (176) branches into [62] and [114] because 62 + 114 = 176.",
+          "options": ["A. 85", "B. 92", "C. 78", "D. 95"],
           "correct_answer": "B",
-          "explanation": "Chloroplasts contain chlorophyll...",
+          "explanation": "Parent circle equals sum of the two boxes: 130 = ? + 38, so ? = 130 - 38 = 92.",
           "asset_ref": null,
+          "diagram_svg": "<svg width='220' height='120' viewBox='0 0 220 120' xmlns='http://www.w3.org/2000/svg'><line x1='72' y1='60' x2='135' y2='35' stroke='#222' stroke-width='2.5'/><line x1='72' y1='60' x2='135' y2='85' stroke='#222' stroke-width='2.5'/><circle cx='48' cy='60' r='26' stroke='#222' stroke-width='2.5' fill='#ffffff'/><text x='48' y='65' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>130</text><rect x='135' y='18' width='56' height='34' rx='4' stroke='#222' stroke-width='2.5' fill='#fff9db'/><text x='163' y='40' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>?</text><rect x='135' y='68' width='56' height='34' rx='4' stroke='#222' stroke-width='2.5' fill='#ffffff'/><text x='163' y='90' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>38</text></svg>",
           "marks": 2,
-          "difficulty": "easy",
-          "bloom_level": "remember",
-          "topic": "Cell Biology"
+          "difficulty": "medium",
+          "bloom_level": "apply",
+          "topic": "Quantitative Reasoning Patterns"
         }
       ]
     }

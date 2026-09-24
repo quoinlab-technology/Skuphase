@@ -287,6 +287,16 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
     # Body details: Collapsed/expanded when toggled
     body_parts = []
 
+    diagram_svg = (q.get("diagram_svg") or "").strip()
+    if diagram_svg:
+        body_parts.append(
+            Div(
+                NotStr(diagram_svg),
+                cls="d-flex justify-content-center align-items-center p-3 my-2 bg-body-tertiary rounded border diagram-viewport",
+                style="max-width: 100%; overflow-x: auto;",
+            )
+        )
+
     options = q.get("options") or []
     if options:
         mcq_cols = []

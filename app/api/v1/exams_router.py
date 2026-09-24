@@ -7,12 +7,14 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update
 
 from app.core.dependencies import get_current_user
+from app.core.security import verify_token
+from app.services.auth_service import AuthService
 from app.core.permissions import require_llm_permission, is_workspace_admin
 from app.core.workflow import (
     MUTABLE_STATUSES,
@@ -2602,18 +2604,46 @@ async def export_exam(
 async def download_export(
     exam_id: uuid.UUID,
     file_name: str,
-    current_user: User = Depends(get_current_user),
+    req: Request,
+    token: Optional[str] = Query(None, description="Optional JWT token for direct browser downloads"),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Serve an exported PDF with tenant + filename validation."""
     if not _EXPORT_FILE_PATTERN.match(file_name or ""):
         raise HTTPException(status_code=400, detail="Invalid export file name")
 
+    user = None
+    auth_header = req.headers.get("Authorization", "")
+    raw_token = None
+    if auth_header.startswith("Bearer "):
+        raw_token = auth_header[7:].strip()
+    elif token:
+        raw_token = token.strip()
+    elif hasattr(req, "session") and req.session.get("access_token"):
+        raw_token = req.session.get("access_token")
+    elif req.cookies.get("access_token"):
+        raw_token = req.cookies.get("access_token")
+
+    if raw_token:
+        try:
+            payload = verify_token(raw_token)
+            if payload and payload.get("user_id"):
+                user = await AuthService.get_user_by_id(uuid.UUID(payload["user_id"]), db)
+        except Exception:
+            user = None
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required to download export",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     result = await db.execute(
         select(Exam.id).where(
             and_(
                 Exam.id == exam_id,
-                Exam.school_id == current_user.school_id,
+                Exam.school_id == user.school_id,
             )
         )
     )

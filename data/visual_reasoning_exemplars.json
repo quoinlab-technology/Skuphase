@@ -1,0 +1,254 @@
+[
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 2,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Number Branching and Sums",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample: In the sample diagram, (176) branches into [62] and [114] because 62 + 114 = 176.\n\nFind the missing number (?) in the diagram below.",
+    "marks": 2,
+    "options": [
+      "A. 180",
+      "B. 200",
+      "C. 120",
+      "D. 280"
+    ],
+    "correct_answer": "A",
+    "explanation": "The circle equals the sum of the two boxes: 1000 = 820 + ?, therefore ? = 1000 - 820 = 180.",
+    "diagram_svg": "<svg width=\"220\" height=\"120\" viewBox=\"0 0 220 120\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"20\" font-size=\"12\" font-weight=\"bold\" fill=\"#666\">Sample: (176) &lt; [62] + [114]</text>\n  <!-- Connector lines -->\n  <line x1=\"72\" y1=\"60\" x2=\"135\" y2=\"35\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"72\" y1=\"60\" x2=\"135\" y2=\"85\" stroke=\"#222\" stroke-width=\"2.5\" />\n\n  <!-- Parent Node (Circle) -->\n  <circle cx=\"48\" cy=\"60\" r=\"26\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"#ffffff\" />\n  <text x=\"48\" y=\"65\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">1000</text>\n\n  <!-- Top Child (Box) -->\n  <rect x=\"135\" y=\"18\" width=\"56\" height=\"34\" rx=\"4\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"#ffffff\" />\n  <text x=\"163\" y=\"40\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">820</text>\n\n  <!-- Bottom Child (Box) -->\n  <rect x=\"135\" y=\"68\" width=\"56\" height=\"34\" rx=\"4\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"#fff9db\" />\n  <text x=\"163\" y=\"90\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">?</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 4,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Fraction Pattern Trees",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample: [1/5] and [2/5] branch into [3/5] because 1/5 + 2/5 = 3/5.\n\nFind the missing numerator (?) in the bottom fraction box.",
+    "marks": 2,
+    "options": [
+      "A. 9",
+      "B. 6",
+      "C. 3",
+      "D. 12"
+    ],
+    "correct_answer": "A",
+    "explanation": "1/6 + 1/3 = 3/18 + 6/18 = 9/18. The missing numerator is 9.",
+    "diagram_svg": "<svg width=\"220\" height=\"150\" viewBox=\"0 0 220 150\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: [1/5] + [2/5] -&gt; [3/5]</text>\n  <!-- Connector lines -->\n  <line x1=\"58\" y1=\"65\" x2=\"110\" y2=\"86\" stroke=\"#222\" stroke-width=\"2\" />\n  <line x1=\"162\" y1=\"65\" x2=\"110\" y2=\"86\" stroke=\"#222\" stroke-width=\"2\" />\n\n  <!-- Left Fraction Box -->\n  <rect x=\"36\" y=\"18\" width=\"44\" height=\"46\" rx=\"4\" stroke=\"#222\" stroke-width=\"2\" fill=\"white\" />\n  <line x1=\"38\" y1=\"41\" x2=\"78\" y2=\"41\" stroke=\"#222\" stroke-width=\"1.8\" />\n  <text x=\"58\" y=\"35\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">1</text>\n  <text x=\"58\" y=\"58\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">6</text>\n\n  <!-- Right Fraction Box -->\n  <rect x=\"140\" y=\"18\" width=\"44\" height=\"46\" rx=\"4\" stroke=\"#222\" stroke-width=\"2\" fill=\"white\" />\n  <line x1=\"142\" y1=\"41\" x2=\"182\" y2=\"41\" stroke=\"#222\" stroke-width=\"1.8\" />\n  <text x=\"162\" y=\"35\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">1</text>\n  <text x=\"162\" y=\"58\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">3</text>\n\n  <!-- Bottom Fraction Box -->\n  <rect x=\"88\" y=\"86\" width=\"44\" height=\"46\" rx=\"4\" stroke=\"#222\" stroke-width=\"2\" fill=\"white\" />\n  <line x1=\"90\" y1=\"109\" x2=\"130\" y2=\"109\" stroke=\"#222\" stroke-width=\"1.8\" />\n  <text x=\"110\" y=\"103\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n  <text x=\"110\" y=\"126\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">18</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 5,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "M-Shape Arithmetic Network",
+    "difficulty": "hard",
+    "question_type": "multiple_choice",
+    "question_text": "Study the M-shape logic from the classroom exercise:\n\nFind the missing value (?) in the center box of the M-network below.",
+    "marks": 2,
+    "options": [
+      "A. 72",
+      "B. 48",
+      "C. 64",
+      "D. 80"
+    ],
+    "correct_answer": "A",
+    "explanation": "6 \u00d7 12 = 72, which connects the top vertices to the central junction.",
+    "diagram_svg": "<svg width=\"220\" height=\"150\" viewBox=\"0 0 220 150\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"18\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: M-path</text>\n  <!-- M-Path connecting lines -->\n  <line x1=\"45\" y1=\"100\" x2=\"45\" y2=\"40\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"45\" y1=\"40\" x2=\"110\" y2=\"78\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"110\" y1=\"78\" x2=\"175\" y2=\"40\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"175\" y1=\"40\" x2=\"175\" y2=\"100\" stroke=\"#222\" stroke-width=\"2.5\" />\n\n  <!-- Nodes -->\n  <text x=\"45\" y=\"35\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">6</text>\n  <text x=\"45\" y=\"120\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">8</text>\n  <rect x=\"92\" y=\"64\" width=\"36\" height=\"28\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#fff9db\" /><text x=\"110\" y=\"83\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n  <text x=\"175\" y=\"35\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">12</text>\n  <text x=\"175\" y=\"120\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\" fill=\"#111\">16</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 6,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Powers and Factor Forks",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample: (6\u00b2) connects to [12] which forks into 6 and 6 (since 6 + 6 = 12 = 6 \u00d7 2).\n\nFind the missing number (?) in the upper fork below.",
+    "marks": 2,
+    "options": [
+      "A. 12",
+      "B. 24",
+      "C. 6",
+      "D. 18"
+    ],
+    "correct_answer": "A",
+    "explanation": "For (12\u00b2), the middle box is 24 = 12 + 12. The missing fork value is 12.",
+    "diagram_svg": "<svg width=\"250\" height=\"110\" viewBox=\"0 0 250 110\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: (6\u00b2) -&gt; [12] &lt; 6, 6</text>\n  <!-- Connector lines -->\n  <line x1=\"68\" y1=\"55\" x2=\"100\" y2=\"55\" stroke=\"#222\" stroke-width=\"2\" />\n  <line x1=\"148\" y1=\"55\" x2=\"195\" y2=\"30\" stroke=\"#222\" stroke-width=\"2\" />\n  <line x1=\"148\" y1=\"55\" x2=\"195\" y2=\"80\" stroke=\"#222\" stroke-width=\"2\" />\n\n  <!-- Power Circle -->\n  <circle cx=\"44\" cy=\"55\" r=\"24\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#ffffff\" />\n  <text x=\"44\" y=\"60\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">12<tspan dy=\"-6\" font-size=\"10\">2</tspan></text>\n\n  <!-- Mid Box -->\n  <rect x=\"100\" y=\"38\" width=\"48\" height=\"34\" rx=\"4\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#ffffff\" />\n  <text x=\"124\" y=\"60\" text-anchor=\"middle\" font-size=\"14\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">24</text>\n\n  <!-- Fork 1 (Top) -->\n  <rect x=\"195\" y=\"15\" width=\"40\" height=\"28\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#fff9db\" />\n  <text x=\"215\" y=\"34\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n\n  <!-- Fork 2 (Bottom) -->\n  <rect x=\"195\" y=\"68\" width=\"40\" height=\"28\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"215\" y=\"87\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">12</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 8,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Four-Way Operation Cross",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the cross rule: Center (20) relates to Top (15) and Left (5) by 20 - 5 = 15; and Bottom (10) relates to Right (2) by 10 \u00d7 2 = 20.\n\nFind the missing number (?) in the top box.",
+    "marks": 2,
+    "options": [
+      "A. 15",
+      "B. 25",
+      "C. 10",
+      "D. 30"
+    ],
+    "correct_answer": "A",
+    "explanation": "Center (20) minus Left (5) equals 15.",
+    "diagram_svg": "<svg width=\"200\" height=\"170\" viewBox=\"0 0 200 170\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: Center 20</text>\n  <!-- Cross arm lines -->\n  <line x1=\"100\" y1=\"36\" x2=\"100\" y2=\"134\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"36\" y1=\"85\" x2=\"164\" y2=\"85\" stroke=\"#222\" stroke-width=\"2.5\" />\n\n  <!-- Center Circle -->\n  <circle cx=\"100\" cy=\"85\" r=\"22\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"#ffffff\" />\n  <text x=\"100\" y=\"90\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">20</text>\n\n  <!-- Top Box -->\n  <rect x=\"78\" y=\"10\" width=\"44\" height=\"26\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#fff9db\" />\n  <text x=\"100\" y=\"28\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n  <text x=\"100\" y=\"52\" text-anchor=\"middle\" font-size=\"12\" font-weight=\"bold\" fill=\"#444\">+</text>\n\n  <!-- Bottom Box -->\n  <rect x=\"78\" y=\"134\" width=\"44\" height=\"26\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"100\" y=\"152\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">10</text>\n  <text x=\"100\" y=\"125\" text-anchor=\"middle\" font-size=\"12\" font-weight=\"bold\" fill=\"#444\">\u00d7</text>\n\n  <!-- Left Box -->\n  <rect x=\"10\" y=\"72\" width=\"40\" height=\"26\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"30\" y=\"90\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">5</text>\n\n  <!-- Right Box -->\n  <rect x=\"150\" y=\"72\" width=\"40\" height=\"26\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"170\" y=\"90\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">2</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 9,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Horseshoe Difference Puzzle",
+    "difficulty": "easy",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample: Top-left (400) minus Top-right (330) gives Bottom (70).\n\nFind the missing number (?) in the bottom trough of the horseshoe below.",
+    "marks": 2,
+    "options": [
+      "A. 399",
+      "B. 401",
+      "C. 483",
+      "D. 389"
+    ],
+    "correct_answer": "A",
+    "explanation": "441 - 42 = 399.",
+    "diagram_svg": "<svg width=\"200\" height=\"130\" viewBox=\"0 0 200 130\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: 400 - 330 = 70</text>\n  <!-- U-path -->\n  <path d=\"M 45 40 C 45 110, 155 110, 155 40\" stroke=\"#222\" stroke-width=\"3\" fill=\"none\" />\n\n  <!-- Left circle -->\n  <circle cx=\"45\" cy=\"40\" r=\"22\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#ffffff\" />\n  <text x=\"45\" y=\"45\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">441</text>\n\n  <!-- Right circle -->\n  <circle cx=\"155\" cy=\"40\" r=\"22\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#ffffff\" />\n  <text x=\"155\" y=\"45\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">42</text>\n\n  <!-- Bottom trough circle -->\n  <circle cx=\"100\" cy=\"98\" r=\"20\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#fff9db\" />\n  <text x=\"100\" y=\"103\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 10,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Grid with Side Ear",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample grid: 101 - 67 = 34 in the side ear.\n\nFind the missing value (?) in the circular ear on the right.",
+    "marks": 2,
+    "options": [
+      "A. 100",
+      "B. 90",
+      "C. 110",
+      "D. 120"
+    ],
+    "correct_answer": "A",
+    "explanation": "145 - 45 = 100 (and 185 - 85 = 100). The value in the ear is 100.",
+    "diagram_svg": "<svg width=\"220\" height=\"130\" viewBox=\"0 0 220 130\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: Grid</text>\n  <!-- 2x2 outer box -->\n  <rect x=\"30\" y=\"25\" width=\"90\" height=\"90\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"#ffffff\" />\n  <!-- Grid dividers -->\n  <line x1=\"75\" y1=\"25\" x2=\"75\" y2=\"115\" stroke=\"#222\" stroke-width=\"2\" />\n  <line x1=\"30\" y1=\"70\" x2=\"120\" y2=\"70\" stroke=\"#222\" stroke-width=\"2\" />\n\n  <!-- Cells -->\n  <text x=\"52\" y=\"52\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">145</text>\n  <text x=\"97\" y=\"52\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">45</text>\n  <text x=\"52\" y=\"97\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">185</text>\n  <text x=\"97\" y=\"97\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">85</text>\n\n  <!-- Ear connector -->\n  <line x1=\"120\" y1=\"70\" x2=\"145\" y2=\"70\" stroke=\"#222\" stroke-width=\"2\" />\n\n  <!-- Side Ear Bubble -->\n  <circle cx=\"168\" cy=\"70\" r=\"22\" stroke=\"#222\" stroke-width=\"2.2\" fill=\"#fff9db\" />\n  <text x=\"168\" y=\"75\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 4",
+    "week_index": 11,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "T-Bar Multiplier",
+    "difficulty": "easy",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample: [6] and [5] hang down to [30] because 6 \u00d7 5 = 30.\n\nFind the missing product (?) in the bottom box.",
+    "marks": 2,
+    "options": [
+      "A. 35",
+      "B. 25",
+      "C. 40",
+      "D. 12"
+    ],
+    "correct_answer": "A",
+    "explanation": "5 \u00d7 7 = 35.",
+    "diagram_svg": "<svg width=\"200\" height=\"140\" viewBox=\"0 0 200 140\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: [6] \u00d7 [5] -&gt; [30]</text>\n  <!-- T-Bar lines -->\n  <line x1=\"58\" y1=\"50\" x2=\"142\" y2=\"50\" stroke=\"#222\" stroke-width=\"2.5\" />\n  <line x1=\"100\" y1=\"50\" x2=\"100\" y2=\"92\" stroke=\"#222\" stroke-width=\"2.5\" />\n\n  <!-- Left Top Box -->\n  <rect x=\"36\" y=\"20\" width=\"44\" height=\"30\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"58\" y=\"40\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">5</text>\n\n  <!-- Right Top Box -->\n  <rect x=\"120\" y=\"20\" width=\"44\" height=\"30\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"142\" y=\"40\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">7</text>\n\n  <!-- Bottom Box -->\n  <rect x=\"78\" y=\"92\" width=\"44\" height=\"30\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#fff9db\" />\n  <text x=\"100\" y=\"112\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n</svg>"
+  },
+  {
+    "subject": "Quantitative Reasoning",
+    "grade_level": "Primary 3",
+    "week_index": 7,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Triangle Logic Puzzle",
+    "difficulty": "medium",
+    "question_type": "multiple_choice",
+    "question_text": "Study the sample triangle: (Top - Left) + Right = Center: (9 - 4) + 2 = 7.\n\nFind the missing center value (?) in the triangle below.",
+    "marks": 2,
+    "options": [
+      "A. 7",
+      "B. 5",
+      "C. 8",
+      "D. 6"
+    ],
+    "correct_answer": "A",
+    "explanation": "(9 - 4) + 2 = 5 + 2 = 7.",
+    "diagram_svg": "<svg width=\"200\" height=\"150\" viewBox=\"0 0 200 150\" xmlns=\"http://www.w3.org/2000/svg\">\n  <text x=\"10\" y=\"16\" font-size=\"11\" font-weight=\"bold\" fill=\"#666\">Sample: Triangle</text>\n  <!-- Triangle path -->\n  <polygon points=\"100,24 35,124 165,124\" stroke=\"#222\" stroke-width=\"2.5\" fill=\"none\" />\n\n  <!-- Top Vertex Circle -->\n  <circle cx=\"100\" cy=\"24\" r=\"18\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"100\" y=\"29\" text-anchor=\"middle\" font-size=\"12\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">9</text>\n\n  <!-- Left Vertex Circle -->\n  <circle cx=\"35\" cy=\"124\" r=\"18\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"35\" y=\"129\" text-anchor=\"middle\" font-size=\"12\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">4</text>\n\n  <!-- Right Vertex Circle -->\n  <circle cx=\"165\" cy=\"124\" r=\"18\" stroke=\"#222\" stroke-width=\"2\" fill=\"#ffffff\" />\n  <text x=\"165\" y=\"129\" text-anchor=\"middle\" font-size=\"12\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">2</text>\n\n  <!-- Center Box/Value -->\n  <rect x=\"80\" y=\"75\" width=\"40\" height=\"26\" rx=\"3\" stroke=\"#222\" stroke-width=\"2\" fill=\"#fff9db\" />\n  <text x=\"100\" y=\"93\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"bold\" font-family=\"Arial, sans-serif\">?</text>\n</svg>"
+  },
+  {
+    "subject": "Mathematics",
+    "grade_level": "Primary 3",
+    "week_index": 2,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Addition using Expanded Method",
+    "difficulty": "easy",
+    "question_type": "multiple_choice",
+    "question_text": "Add the following using expanded column notation:\n\n```\n   H  T  U\n   3  4  8\n+  4  3  1\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n```\nWhat is the total sum?",
+    "marks": 2,
+    "options": [
+      "A. 779",
+      "B. 769",
+      "C. 879",
+      "D. 789"
+    ],
+    "correct_answer": "A",
+    "explanation": "300 + 400 = 700; 40 + 30 = 70; 8 + 1 = 9. Total = 779.",
+    "diagram_svg": null
+  },
+  {
+    "subject": "Mathematics",
+    "grade_level": "Primary 3",
+    "week_index": 3,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Subtraction of Two-Digit Numbers",
+    "difficulty": "easy",
+    "question_type": "multiple_choice",
+    "question_text": "Subtract the following:\n\n```\n   T  U\n   7  5\n-  2  2\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n```\nWhat is the result?",
+    "marks": 2,
+    "options": [
+      "A. 53",
+      "B. 57",
+      "C. 43",
+      "D. 52"
+    ],
+    "correct_answer": "A",
+    "explanation": "5 - 2 = 3; 7 - 2 = 5. Result = 53.",
+    "diagram_svg": null
+  },
+  {
+    "subject": "Mathematics",
+    "grade_level": "Primary 3",
+    "week_index": 5,
+    "exam_type": "internal",
+    "source_year": 2026,
+    "topic": "Word Problems on Subtraction",
+    "difficulty": "easy",
+    "question_type": "multiple_choice",
+    "question_text": "Kafayat bought 52 fresh oranges from the market. On getting home, she found that 28 of them were bad. How many good oranges does Kafayat have left?",
+    "marks": 2,
+    "options": [
+      "A. 24",
+      "B. 26",
+      "C. 34",
+      "D. 22"
+    ],
+    "correct_answer": "A",
+    "explanation": "52 - 28 = 24 good oranges.",
+    "diagram_svg": null
+  }
+]

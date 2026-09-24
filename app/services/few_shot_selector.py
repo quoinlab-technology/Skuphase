@@ -65,6 +65,7 @@ def _to_dict(item: QuestionBankItem) -> Dict:
         "source_year": item.source_year,
         "source_tag": " ".join(source_bits) or "Question Bank",
         "week_index": item.week_index,
+        "diagram_svg": item.diagram_svg,
     }
 
 

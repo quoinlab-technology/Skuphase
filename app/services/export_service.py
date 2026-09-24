@@ -21,6 +21,47 @@ def _font_registered(name: str) -> bool:
         return False
 
 
+def _svg_to_flowable(svg_code: str, max_width_pt: float = 380.0, max_height_pt: float = 140.0):
+    """Convert raw SVG string to a ReportLab Drawing flowable, scaled to fit margins."""
+    if not svg_code or not isinstance(svg_code, str):
+        return None
+    cleaned_svg = svg_code.strip()
+    if not cleaned_svg.startswith("<svg") and "<svg" in cleaned_svg:
+        start = cleaned_svg.find("<svg")
+        end = cleaned_svg.rfind("</svg>")
+        if start != -1 and end != -1:
+            cleaned_svg = cleaned_svg[start : end + 6]
+    if not cleaned_svg.startswith("<svg"):
+        return None
+
+    try:
+        import io
+        from svglib.svglib import svg2rlg
+        drawing = svg2rlg(io.StringIO(cleaned_svg))
+        if drawing is None:
+            return None
+        orig_w = float(getattr(drawing, "width", 0) or 0)
+        orig_h = float(getattr(drawing, "height", 0) or 0)
+        if orig_w <= 0 or orig_h <= 0:
+            return drawing
+
+        scale = 1.0
+        if orig_w > max_width_pt:
+            scale = min(scale, max_width_pt / orig_w)
+        if orig_h > max_height_pt:
+            scale = min(scale, max_height_pt / orig_h)
+
+        if scale < 0.999:
+            drawing.scale(scale, scale)
+            drawing.width = orig_w * scale
+            drawing.height = orig_h * scale
+
+        drawing.hAlign = "CENTER"
+        return drawing
+    except Exception:
+        return None
+
+
 class ExportService:
     """Generate export files for exams (PDF MVP).
 
@@ -407,6 +448,15 @@ class ExportService:
             story.append(
                 Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
             )
+
+            # ── Diagram SVG (if question has a visual diagram) ─────────────────
+            diag_svg = getattr(q, "diagram_svg", None)
+            if diag_svg:
+                diag_drawing = _svg_to_flowable(diag_svg, max_width_pt=A4[0] - 28 * mm, max_height_pt=140)
+                if diag_drawing is not None:
+                    story.append(Spacer(1, 1.5 * mm))
+                    story.append(diag_drawing)
+                    story.append(Spacer(1, 1.5 * mm))
 
             # ── MCQ Options ────────────────────────────────────────────────────
             if q.options:

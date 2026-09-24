@@ -39,6 +39,7 @@ from fasthtml.common import (
     Textarea,
     Title,
     Ul,
+    NotStr,
     to_xml,
 )
 from sqlalchemy import and_, select
@@ -665,6 +666,14 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         q_parts = [
             Div(Strong(f"Q{idx}. "), Span(q.get("question_text", "")), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 3px; font-size: 0.88rem;"),
         ]
+
+        if q.get("diagram_svg"):
+            q_parts.append(
+                Div(
+                    NotStr(q["diagram_svg"]),
+                    style="text-align: center; margin: 6px auto; max-width: 320px;",
+                )
+            )
 
         if q.get("options"):
             opts = []
@@ -4724,9 +4733,8 @@ def register_action_routes(app):
                 msg = f"{msg}<br><small class='text-muted'>{issue_lines}</small>"
                 msg += '<br><a href="/app/exams/' + exam_id + '?tab=preflight" class="small">Open Preflight tab →</a>'
             return show_toast(msg, "danger", title="Export blocked")
-        download_url = data.get("download_url", "")
         file_name = data.get("file_name", "exam.pdf")
-        download_link = download_url or f"/app/exams/{exam_id}/exports/{file_name}"
+        download_link = f"/app/exams/{exam_id}/exports/{file_name}"
         wa_text = quote(f"SkuPhase Exam Export ({file_name}): {req.base_url}app/exams/{exam_id}/exports/{file_name}")
         wa_url = f"https://wa.me/?text={wa_text}"
         return Div(
