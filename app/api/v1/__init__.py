@@ -9,6 +9,7 @@ from . import (
     schools_router,
     users_router,
     partner_router,
+    assessment_router,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "exams_router",
     "ops_router",
     "partner_router",
+    "assessment_router",
 ]
