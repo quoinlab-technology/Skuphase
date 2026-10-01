@@ -42,6 +42,7 @@ from fasthtml.common import (
     NotStr,
     to_xml,
 )
+from starlette.responses import JSONResponse
 from sqlalchemy import and_, select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
@@ -69,6 +70,7 @@ from faststrap import (
     THead,
     TRow,
     Table,
+    Svg,
 )
 
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES  # noqa: F401  (re-exported for app.core.workflow)
@@ -83,6 +85,7 @@ from app.frontend.components.exam import (
 from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.services.svg_safety import sanitize_svg
 
 QUESTION_TYPES = [
     ("multiple_choice", "Multiple choice"),
@@ -516,7 +519,31 @@ def _build_sections_from_form(form) -> list:
             continue
         qtype = form.get(f"section_{idx}_qtype", "multiple_choice")
         num_q = max(1, _safe_int(form.get(f"section_{idx}_num"), 1))
-        marks = max(1, _safe_int(form.get(f"section_{idx}_marks"), 1))
+
+        raw_mpq = form.get(f"section_{idx}_marks_per_q") or form.get(f"section_{idx}_marks_per_question")
+        raw_tot = form.get(f"section_{idx}_marks") or form.get(f"section_{idx}_total_marks")
+
+        mpq_val = _safe_int(raw_mpq, 0)
+        tot_val = _safe_int(raw_tot, 0)
+
+        if mpq_val > 0 and tot_val > 0:
+            marks_per_q = mpq_val
+            total_marks = tot_val
+            if total_marks == mpq_val and num_q > 1:
+                total_marks = num_q * mpq_val
+        elif mpq_val > 0:
+            marks_per_q = mpq_val
+            total_marks = num_q * mpq_val
+        elif tot_val > 0:
+            # Legacy forms used ``section_N_marks`` for marks per question.
+            # The newer wizard also supplies an explicit marks-per-question
+            # field, in which case ``section_N_marks`` is the section total.
+            marks_per_q = tot_val
+            total_marks = num_q * marks_per_q
+        else:
+            marks_per_q = 1
+            total_marks = num_q
+
         instr = form.get(f"section_{idx}_instr", "answer_all")
         substyle = form.get(f"section_{idx}_substyle", "none")
         sections.append(
@@ -525,8 +552,8 @@ def _build_sections_from_form(form) -> list:
                 "section_title": str(title).strip(),
                 "question_type": qtype,
                 "num_questions": num_q,
-                "marks": marks,
-                "marks_per_question": marks,
+                "marks": total_marks,
+                "marks_per_question": marks_per_q,
                 "instruction_type": instr,
                 "sub_part_style": substyle,
             }
@@ -670,7 +697,7 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         if q.get("diagram_svg"):
             q_parts.append(
                 Div(
-                    NotStr(q["diagram_svg"]),
+                    Svg(q["diagram_svg"], sanitize=True),
                     style="text-align: center; margin: 6px auto; max-width: 320px;",
                 )
             )
@@ -1123,6 +1150,20 @@ def register_page_routes(app):
             return RedirectResponse("/app/exams/new/manual", status_code=303)
         user = current_user(req) or {}
         flash = pop_flash(req)
+        wiz = _wizard_state(req)
+        if step == "2" and not wiz.get("curriculum_weeks"):
+            try:
+                weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"))
+                if weeks:
+                    wiz["curriculum_weeks"] = [
+                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                        for w in weeks
+                    ]
+                    if not wiz.get("selected_weeks"):
+                        wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
+                    _wizard_save(req, wiz)
+            except Exception:
+                pass
         body = _render_wizard_full(step=step, request=req)
         return AppShell(
             Title("Generate with AI - SkuPhase"),
@@ -1159,18 +1200,39 @@ def register_page_routes(app):
                 wiz["bloom_levels"] = ["Remember", "Understand", "Apply", "Analyse"]
             wiz["exam_title"] = (form.get("exam_title") or wiz.get("exam_title") or f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination").strip()
             wiz["total_marks"] = (form.get("total_marks") or wiz.get("total_marks") or "100").strip()
+
+            # Preload curriculum weeks for Step 2
+            try:
+                weeks = await _get_curriculum_weeks(req, wiz["grade_level"], wiz["subject"], wiz["term"])
+                if weeks:
+                    wiz["curriculum_weeks"] = [
+                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                        for w in weeks
+                    ]
+                    if not wiz.get("selected_weeks"):
+                        wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
+            except Exception:
+                pass
+
             _wizard_save(req, wiz)
             target_step = "2"
         elif next_step == "3" or "selected_weeks" in form or "selected_documents" in form or "focus_topics" in form:
-            selected_weeks = form.getlist("selected_weeks")
-            if selected_weeks:
+            raw_selected_weeks = form.getlist("selected_weeks")
+            selected_weeks = [str(w).strip() for w in raw_selected_weeks if str(w).strip()]
+            if not selected_weeks:
+                # Must select at least one week
+                wiz["selected_weeks"] = []
+                _wizard_save(req, wiz)
+                set_flash(req, "Please select at least one curriculum week to assess.", "warning")
+                target_step = "2"
+            else:
                 wiz["selected_weeks"] = selected_weeks
-            selected_docs = form.getlist("selected_documents")
-            if selected_docs:
-                wiz["selected_documents"] = selected_docs
-            wiz["focus_topics"] = (form.get("focus_topics") or wiz.get("focus_topics") or "").strip()
-            _wizard_save(req, wiz)
-            target_step = "3"
+                selected_docs = form.getlist("selected_documents")
+                if selected_docs:
+                    wiz["selected_documents"] = selected_docs
+                wiz["focus_topics"] = (form.get("focus_topics") or wiz.get("focus_topics") or "").strip()
+                _wizard_save(req, wiz)
+                target_step = "3"
         elif next_step == "4" or any(k.startswith("section_") for k in form.keys()):
             sections = _build_sections_from_form(form)
             if sections:
@@ -3015,9 +3077,16 @@ def register_wizard_routes(app):
             return _render_wizard_full("4", req)
 
         # Otherwise standard Step 2: Sources submission
-        selected_weeks = form.getlist("selected_weeks")
-        if selected_weeks:
-            wiz["selected_weeks"] = selected_weeks
+        selected_weeks = [str(w).strip() for w in form.getlist("selected_weeks") if str(w).strip()]
+        if not selected_weeks:
+            wiz["selected_weeks"] = []
+            _wizard_save(req, wiz)
+            set_flash(req, "Please select at least one curriculum week to assess.", "warning")
+            if req.headers.get("hx-target") == "wizard-panel":
+                return _wizard_panel("2", req)
+            return _render_wizard_full("2", req)
+
+        wiz["selected_weeks"] = selected_weeks
         selected_docs = form.getlist("selected_documents")
         curriculum_doc = f"{wiz.get('grade_level', 'Primary 4')} {wiz.get('subject', 'Mathematics')} Curriculum.pdf"
         wiz["selected_documents"] = selected_docs or [curriculum_doc]
@@ -3036,12 +3105,30 @@ def register_wizard_routes(app):
         form = await req.form()
         sections = _build_sections_from_form(form)
         if not sections:
+            num_q1 = max(1, _safe_int(form.get("section_1_num"), 30))
+            raw_mpq1 = form.get("section_1_marks_per_q") or form.get("section_1_marks_per_question")
+            raw_tot1 = form.get("section_1_marks") or form.get("section_1_total_marks")
+            mpq_val1 = _safe_int(raw_mpq1, 0)
+            tot_val1 = _safe_int(raw_tot1, 0)
+            if mpq_val1 > 0 and tot_val1 > 0:
+                mpq1 = mpq_val1
+                tot1 = tot_val1 if tot_val1 != mpq_val1 or num_q1 == 1 else num_q1 * mpq_val1
+            elif mpq_val1 > 0:
+                mpq1 = mpq_val1
+                tot1 = num_q1 * mpq_val1
+            elif tot_val1 > 0:
+                tot1 = tot_val1
+                mpq1 = max(1, round(tot_val1 / num_q1))
+            else:
+                mpq1 = 1
+                tot1 = num_q1
             sections = [{
                 "section_number": 1,
                 "section_title": form.get("section_1_title") or "Section A: Objectives",
                 "question_type": form.get("section_1_qtype") or "multiple_choice",
-                "num_questions": _safe_int(form.get("section_1_num"), 30),
-                "marks_per_question": _safe_int(form.get("section_1_marks"), 1),
+                "num_questions": num_q1,
+                "marks": tot1,
+                "marks_per_question": mpq1,
                 "instruction_type": "answer_all",
                 "sub_part_style": "none",
             }]
@@ -3316,6 +3403,73 @@ def _btn_nav_style(primary: bool = False) -> str:
 # Curriculum Scheme Fallback Data & Preloader Helper
 # ---------------------------------------------------------------------------
 
+_CURRICULUM_CACHE: dict[tuple[str, str, str], list[dict]] = {}
+
+
+def _clean_topic_title(raw: str) -> str:
+    """Format curriculum topic titles cleanly (e.g. WholeNumbers(Part1) -> Whole Numbers (Part 1))."""
+    if not raw:
+        return ""
+    import re
+    t = str(raw).strip()
+    t = re.sub(r"([a-zA-Z0-9])\(", r"\1 (", t)
+    t = re.sub(r"([a-z])([A-Z])", r"\1 \2", t)
+    t = re.sub(r"\bPart(\d+)\b", r"Part \1", t)
+    t = re.sub(r"^Week\s+\d+\s*[:\-–—]\s*", "", t, flags=re.IGNORECASE)
+    return t.strip()
+
+
+def _load_curriculum_cache() -> dict[tuple[str, str, str], list[dict]]:
+    """Index canonical NERDC and reasoning curriculum datasets in memory for instant synchronous lookup."""
+    global _CURRICULUM_CACHE
+    if _CURRICULUM_CACHE:
+        return _CURRICULUM_CACHE
+
+    import json
+    from pathlib import Path
+
+    cache: dict[tuple[str, str, str], list[dict]] = {}
+    data_dir = Path(__file__).resolve().parents[3] / "data"
+
+    files = [
+        data_dir / "nerdc_scheme_database.final.json",
+        data_dir / "primary_reasoning_curriculum.json",
+    ]
+    for fpath in files:
+        if not fpath.exists():
+            continue
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                items = json.load(f)
+            for item in items:
+                cls_lvl = (item.get("class_level") or "").strip().lower()
+                subj = (item.get("subject") or "").strip().lower()
+                term = (item.get("term") or "").strip().lower()
+                if not cls_lvl or not subj or not term:
+                    continue
+                key = (cls_lvl, subj, term)
+                if key not in cache:
+                    cache[key] = []
+                wnum = item.get("week_number") or item.get("week")
+                if wnum is None:
+                    wnum = len(cache[key]) + 1
+                sub_list = item.get("subtopics") or []
+                sub_str = ", ".join(sub_list[:3]) if sub_list else (item.get("topic") or "")
+                cache[key].append({
+                    "week_number": int(wnum),
+                    "topic": _clean_topic_title(item.get("topic") or f"Week {wnum}"),
+                    "subtopics_summary": f"{len(sub_list)} subtopics · {sub_str[:65]}" if sub_list else "",
+                })
+        except Exception:
+            pass
+
+    for key in cache:
+        cache[key].sort(key=lambda x: x["week_number"])
+
+    _CURRICULUM_CACHE = cache
+    return _CURRICULUM_CACHE
+
+
 async def _get_curriculum_weeks(request: Request, class_level: str, subject: str, term: str) -> list[dict]:
     """Fetch weekly breakdown from curriculum API, or fall back to standard module scheme."""
     try:
@@ -3330,8 +3484,8 @@ async def _get_curriculum_weeks(request: Request, class_level: str, subject: str
                     sub_str = ", ".join(sub_list[:3]) if sub_list else (w.get("topic") or "")
                     results.append({
                         "week_number": w.get("week_number", 1),
-                        "topic": w.get("topic", f"Week {w.get('week_number', 1)} Topic"),
-                        "subtopics_summary": f"{len(sub_list)} subtopics · {sub_str[:55]}" if sub_list else f"Term {term}",
+                        "topic": _clean_topic_title(w.get("topic", f"Week {w.get('week_number', 1)} Topic")),
+                        "subtopics_summary": f"{len(sub_list)} subtopics · {sub_str[:65]}" if sub_list else f"Term {term}",
                     })
                 return results
     except Exception:
@@ -3341,15 +3495,33 @@ async def _get_curriculum_weeks(request: Request, class_level: str, subject: str
 
 
 def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
-    """Synchronous fallback to resolve weeks from wizard dict or clean module series."""
+    """Synchronous resolver for curriculum weeks.
+    
+    Returns cached/stored weeks from wizard dict if present, or resolves from
+    the canonical indexed NERDC dataset.
+    """
     if wiz.get("curriculum_weeks"):
         return wiz["curriculum_weeks"]
+
     subject = wiz.get("subject", "Mathematics")
+    grade = wiz.get("grade_level", "Primary 4")
+    term = wiz.get("term", "First Term")
+
+    cache = _load_curriculum_cache()
+    key = (grade.strip().lower(), subject.strip().lower(), term.strip().lower())
+    if key in cache and cache[key]:
+        return cache[key]
+
+    for (c, s, t), w_list in cache.items():
+        if c == grade.strip().lower() and t == term.strip().lower():
+            if s in subject.strip().lower() or subject.strip().lower() in s:
+                return w_list
+
     return [
         {
             "week_number": i,
-            "topic": f"{subject} — Week {i} Core Topics & Skills",
-            "subtopics_summary": f"Week {i} · Learning objectives and practice problems",
+            "topic": f"Week {i} Core Topics & Skills",
+            "subtopics_summary": f"Learning objectives and practice problems for Week {i}",
         }
         for i in range(1, 13)
     ]
@@ -3395,9 +3567,9 @@ def _wizard_scope(request: Request) -> Div:
                   onchange="document.querySelectorAll('.preset-card').forEach(b => {b.classList.remove('active'); b.style.borderColor='#e2e8f0'; b.style.borderWidth='1px';}); this.closest('.preset-card').classList.add('active'); this.closest('.preset-card').style.borderColor='#00412E'; this.closest('.preset-card').style.borderWidth='1.5px';"),
             Strong(title, style="display:block; font-size:0.95rem; color:#0f172a; font-weight:600; line-height:1.2;"),
             Span(desc, style="display:block; font-size:0.78rem; color:#64748b; margin-top:0.35rem; line-height:1.35;"),
-            cls=f"preset-card d-block h-100 {'active' if is_sel else ''}",
+            cls=f"preset-card d-block {'active' if is_sel else ''}",
             style=(
-                f"cursor:pointer; flex:1; padding:1.1rem 1.25rem; border-radius:12px; background:#fff; transition:all 0.15s ease; "
+                f"cursor:pointer; flex:0 0 auto; min-width:8.5rem; padding:1.1rem 1.25rem; border-radius:12px; background:#fff; transition:all 0.15s ease; "
                 f"border:{'1.5px solid #00412E' if is_sel else '1px solid #e2e8f0'};"
             ),
         )
@@ -3406,7 +3578,7 @@ def _wizard_scope(request: Request) -> Div:
         _preset_card("balanced", "Balanced", "Mix of easy, medium, hard"),
         _preset_card("exam_prep", "Exam Prep", "More medium and hard questions"),
         _preset_card("ca_test", "CA Test", "Predominantly easy and medium"),
-        style="display:flex; gap:0.75rem; margin-bottom:1.35rem;",
+        style="display:flex; gap:0.75rem; margin-bottom:1.35rem; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:0.25rem;",
     )
 
     bloom_options = [
@@ -3612,11 +3784,15 @@ def _wizard_sources(request: Request) -> Div:
     term = wiz.get("term", "First Term")
 
     weeks = _get_curriculum_weeks_sync(wiz)
-    selected_weeks = [str(w) for w in (wiz.get("selected_weeks") or [str(w["week_number"]) for w in weeks])]
+    if "selected_weeks" in wiz and isinstance(wiz["selected_weeks"], list):
+        selected_weeks = [str(w) for w in wiz["selected_weeks"]]
+    else:
+        selected_weeks = [str(w["week_number"]) for w in weeks]
 
     def _week_card(w: dict):
         wnum = str(w["week_number"])
-        topic = w.get("topic", f"Week {wnum}")
+        raw_topic = w.get("topic", f"Week {wnum}")
+        clean_topic = _clean_topic_title(raw_topic)
         subtopics = w.get("subtopics_summary", "")
         is_sel = wnum in selected_weeks
         border_style = "border:1.5px solid #00412E; box-shadow:0 0 0 1px #00412E;" if is_sel else "border:1px solid #e2e8f0;"
@@ -3634,11 +3810,11 @@ def _wizard_sources(request: Request) -> Div:
                         style="width:2.4rem; height:2.4rem; background:#EDF2EC; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;",
                     ),
                     Div(
-                        Strong(f"Week {wnum}: {topic}", style="display:block; font-size:0.88rem; color:#1e293b; font-weight:600; line-height:1.25; margin-bottom:0.15rem;"),
-                        Span(subtopics, style="display:block; font-size:0.76rem; color:#64748b;"),
-                        style="margin-left:0.85rem; flex-grow:1;",
+                        Strong(clean_topic, style="display:block; font-size:0.92rem; color:#0f172a; font-weight:600; line-height:1.25; margin-bottom:0.2rem;"),
+                        Span(subtopics, style="display:block; font-size:0.77rem; color:#64748b; line-height:1.35;") if subtopics else "",
+                        style="margin-left:0.85rem; flex-grow:1; min-width:0;",
                     ),
-                    Icon(icon_name, cls=f"bi week-check-icon {icon_name}", style=f"color:{icon_color}; font-size:1.25rem;"),
+                    Icon(icon_name, cls=f"bi week-check-icon {icon_name}", style=f"color:{icon_color}; font-size:1.25rem; flex-shrink:0; margin-left:0.5rem;"),
                     style="display:flex; align-items:center; width:100%;",
                 ),
                 cls="week-card-box",
@@ -3651,6 +3827,15 @@ def _wizard_sources(request: Request) -> Div:
     week_items = [_week_card(w) for w in weeks]
 
     js_toggle = Script("""
+    function checkSelectedWeeksCount() {
+      const count = document.querySelectorAll('.week-checkbox-input:checked').length;
+      const msg = document.getElementById('week-validation-msg');
+      if (count === 0) {
+        if (msg) msg.style.display = 'flex';
+      } else {
+        if (msg) msg.style.display = 'none';
+      }
+    }
     function toggleWeekCard(input) {
       const box = input.nextElementSibling;
       if (!box) return;
@@ -3670,12 +3855,45 @@ def _wizard_sources(request: Request) -> Div:
           icon.style.color = '#cbd5e1';
         }
       }
+      checkSelectedWeeksCount();
     }
     function toggleAllWeeks(select) {
       document.querySelectorAll('.week-checkbox-input').forEach(input => {
         input.checked = select;
-        toggleWeekCard(input);
+        const box = input.nextElementSibling;
+        if (!box) return;
+        const icon = box.querySelector('.week-check-icon');
+        if (select) {
+          box.style.border = '1.5px solid #00412E';
+          box.style.boxShadow = '0 0 0 1px #00412E';
+          if (icon) {
+            icon.className = 'bi week-check-icon check-circle-fill bi-check-circle-fill';
+            icon.style.color = '#00412E';
+          }
+        } else {
+          box.style.border = '1px solid #e2e8f0';
+          box.style.boxShadow = 'none';
+          if (icon) {
+            icon.className = 'bi week-check-icon circle bi-circle';
+            icon.style.color = '#cbd5e1';
+          }
+        }
       });
+      checkSelectedWeeksCount();
+    }
+    function validateStep2Submit(e) {
+      const count = document.querySelectorAll('.week-checkbox-input:checked').length;
+      if (count === 0) {
+        const msg = document.getElementById('week-validation-msg');
+        if (msg) {
+          msg.style.display = 'flex';
+          msg.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        return false;
+      }
+      return true;
     }
     """)
 
@@ -3696,15 +3914,22 @@ def _wizard_sources(request: Request) -> Div:
         Div(
             Div(
                 "Select the curriculum weeks to assess. AI questions will be grounded in these topics.",
-                style="font-size:0.82rem; color:#64748b;",
+                style="font-size:0.82rem; color:#64748b; flex:1 1 auto;",
             ),
             Div(
                 Button("Select All", type="button", cls="btn btn-sm btn-link text-decoration-none p-0 text-success fw-medium me-2", onclick="toggleAllWeeks(true)", style="font-size:0.8rem;"),
                 Span("·", cls="text-muted me-2"),
                 Button("Clear", type="button", cls="btn btn-sm btn-link text-decoration-none p-0 text-muted fw-medium", onclick="toggleAllWeeks(false)", style="font-size:0.8rem;"),
-                cls="d-flex align-items-center",
+                cls="d-flex align-items-center flex-shrink-0",
             ),
-            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;",
+            style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; gap:0.5rem; margin-bottom:1.25rem;",
+        ),
+        # Inline validation message (shown if 0 selected)
+        Div(
+            Icon("exclamation-triangle-fill", cls="bi me-2", style="font-size:0.9rem;"),
+            "Please select at least one curriculum week before continuing.",
+            id="week-validation-msg",
+            style=f"display:{'flex' if not selected_weeks else 'none'}; background:#FEF3C7; color:#92400e; font-size:0.82rem; font-weight:500; border-radius:8px; padding:0.6rem 1rem; margin-bottom:1rem; align-items:center;",
         ),
         Form(
             _csrf_input(request),
@@ -3732,6 +3957,8 @@ def _wizard_sources(request: Request) -> Div:
                     "Next",
                     Icon("chevron-right", cls="bi ms-1", style="font-size:0.75rem;"),
                     type="submit",
+                    id="wizard-step2-next-btn",
+                    onclick="if(!validateStep2Submit(event)){ return false; }",
                     style="background:#00412E; color:#fff; border:none; border-radius:999px; padding:0.6rem 1.85rem; font-size:0.9rem; font-weight:600; display:inline-flex; align-items:center; cursor:pointer;",
                 ),
                 style="display:flex; justify-content:space-between; align-items:center; margin-top:2rem;",
@@ -3742,6 +3969,8 @@ def _wizard_sources(request: Request) -> Div:
             hx_target="#wizard-container",
             hx_swap="outerHTML",
             hx_push_url="/app/exams/new?step=3",
+            onsubmit="return validateStep2Submit(event);",
+            hx_on__before_request="if(!validateStep2Submit(event)){ event.preventDefault(); }",
         ),
         id="wizard-step-2",
         cls="bg-white border rounded-4 shadow-sm p-4 p-md-5",
@@ -3777,8 +4006,11 @@ def _wizard_structure(request: Request) -> Div:
     def _render_section_card(sec: dict, idx: int):
         title = sec.get("section_title") or f"Section {chr(64 + idx)}: Topics"
         qtype = sec.get("question_type") or "multiple_choice"
-        num_q = str(sec.get("num_questions") or "10")
-        marks = str(sec.get("marks_per_question") or "1")
+        num_q = max(1, _safe_int(sec.get("num_questions"), 10))
+        marks_per_q = max(1, _safe_int(sec.get("marks_per_question"), 1))
+        total_sec_marks = _safe_int(sec.get("marks"), 0)
+        if total_sec_marks <= 0 or (total_sec_marks == marks_per_q and num_q > 1):
+            total_sec_marks = num_q * marks_per_q
 
         return Div(
             Div(
@@ -3817,21 +4049,29 @@ def _wizard_structure(request: Request) -> Div:
             Div(
                 Div(
                     Label("Number of Questions", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;"),
-                    Input(name=f"section_{idx}_num", type="number", value=num_q, min="1", max="200",
+                    Input(name=f"section_{idx}_num", type="number", value=str(num_q), min="1", max="200",
                           cls="form-control sec-num-input",
-                          oninput="updateTotals()",
+                          oninput="onNumOrMarkChange(this, 'num')",
                           style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;"),
-                    style="flex:1;",
+                    cls="col-12 col-md-4 mb-2 mb-md-0",
                 ),
                 Div(
-                    Label("Marks", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;"),
-                    Input(name=f"section_{idx}_marks", type="number", value=marks, min="1", max="500",
-                          cls="form-control sec-marks-input",
-                          oninput="updateTotals()",
+                    Label("Marks per Question", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;"),
+                    Input(name=f"section_{idx}_marks_per_q", type="number", value=str(marks_per_q), min="1", max="100",
+                          cls="form-control sec-marksq-input",
+                          oninput="onNumOrMarkChange(this, 'marksq')",
                           style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;"),
-                    style="flex:1;",
+                    cls="col-6 col-md-4",
                 ),
-                style="display:flex; gap:1rem;",
+                Div(
+                    Label("Total Marks", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;"),
+                    Input(name=f"section_{idx}_marks", type="number", value=str(total_sec_marks), min="1", max="500",
+                          cls="form-control sec-marks-input",
+                          oninput="onNumOrMarkChange(this, 'total')",
+                          style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b; font-weight:600;"),
+                    cls="col-6 col-md-4",
+                ),
+                cls="row g-2",
             ),
             Input(name=f"section_{idx}_instr", type="hidden", value="answer_all"),
             Input(name=f"section_{idx}_substyle", type="hidden", value="none"),
@@ -3846,6 +4086,29 @@ def _wizard_structure(request: Request) -> Div:
 
     js_sections = Script(f"""
     const TARGET_MARKS = {target_total_marks};
+
+    function onNumOrMarkChange(input, changedField) {{{{
+      const card = input.closest('.section-card');
+      if (!card) return;
+      const numInp = card.querySelector('.sec-num-input');
+      const marksqInp = card.querySelector('.sec-marksq-input');
+      const totalInp = card.querySelector('.sec-marks-input');
+
+      const q = Math.max(1, parseInt(numInp ? numInp.value : 1) || 1);
+
+      if (changedField === 'num' || changedField === 'marksq') {{{{
+        const mpq = Math.max(1, parseInt(marksqInp ? marksqInp.value : 1) || 1);
+        if (totalInp) {{{{
+          totalInp.value = q * mpq;
+        }}}}
+      }}}} else if (changedField === 'total') {{{{
+        const tot = Math.max(1, parseInt(totalInp ? totalInp.value : 1) || 1);
+        if (marksqInp) {{{{
+          marksqInp.value = Math.max(1, Math.round(tot / q));
+        }}}}
+      }}}}
+      updateTotals();
+    }}}}
 
     function updateTotals() {{{{
       let totalQ = 0;
@@ -3878,6 +4141,7 @@ def _wizard_structure(request: Request) -> Div:
           mDisplay.style.fontWeight = '600';
         }}}}
       }}}}
+    }}}}
     function showMarksMismatchModal(title, msg) {{{{
       const el = document.getElementById('marksMismatchModal');
       if (el && window.bootstrap) {{{{
@@ -3923,6 +4187,9 @@ def _wizard_structure(request: Request) -> Div:
         const numInp = card.querySelector('.sec-num-input');
         if (numInp) numInp.name = 'section_' + num + '_num';
 
+        const marksqInp = card.querySelector('.sec-marksq-input');
+        if (marksqInp) marksqInp.name = 'section_' + num + '_marks_per_q';
+
         const marksInp = card.querySelector('.sec-marks-input');
         if (marksInp) marksInp.name = 'section_' + num + '_marks';
       }}}});
@@ -3960,14 +4227,18 @@ def _wizard_structure(request: Request) -> Div:
             </select>
           </div>
         </div>
-        <div style="display:flex; gap:1rem;">
-          <div style="flex:1;">
+        <div class="row g-2">
+          <div class="col-12 col-md-4 mb-2 mb-md-0">
             <label style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;">Number of Questions</label>
-            <input name="section_` + nextIdx + `_num" type="number" value="5" min="1" max="200" class="form-control sec-num-input" oninput="updateTotals()" style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;">
+            <input name="section_` + nextIdx + `_num" type="number" value="5" min="1" max="200" class="form-control sec-num-input" oninput="onNumOrMarkChange(this, 'num')" style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;">
           </div>
-          <div style="flex:1;">
-            <label style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;">Marks</label>
-            <input name="section_` + nextIdx + `_marks" type="number" value="20" min="1" max="500" class="form-control sec-marks-input" oninput="updateTotals()" style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;">
+          <div class="col-6 col-md-4">
+            <label style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;">Marks per Question</label>
+            <input name="section_` + nextIdx + `_marks_per_q" type="number" value="4" min="1" max="100" class="form-control sec-marksq-input" oninput="onNumOrMarkChange(this, 'marksq')" style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;">
+          </div>
+          <div class="col-6 col-md-4">
+            <label style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;">Total Marks</label>
+            <input name="section_` + nextIdx + `_marks" type="number" value="20" min="1" max="500" class="form-control sec-marks-input" oninput="onNumOrMarkChange(this, 'total')" style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b; font-weight:600;">
           </div>
         </div>
         <input name="section_` + nextIdx + `_instr" type="hidden" value="answer_all">
@@ -4075,11 +4346,19 @@ def _wizard_confirm(request: Request) -> Div:
         {"section_number": 2, "section_title": "Section B: Theory", "question_type": "short_answer", "num_questions": 5, "marks": 30, "marks_per_question": 6},
         {"section_number": 3, "section_title": "Section C: Essay", "question_type": "essay", "num_questions": 2, "marks": 40, "marks_per_question": 20},
     ]
+    def _sec_marks_display(s: dict) -> int:
+        num = _safe_int(s.get("num_questions"), 10)
+        mpq = _safe_int(s.get("marks_per_question"), 1)
+        tot = _safe_int(s.get("marks"), 0)
+        if tot > 0 and (tot != mpq or num == 1):
+            return tot
+        return num * mpq
+
     sec_summary = ", ".join([
-        f"{s.get('section_title', 'Section')} ({s.get('num_questions', 30)} Qs · {int(s.get('num_questions', 30)) * int(s.get('marks_per_question', 1))} marks)"
+        f"{s.get('section_title', 'Section')} ({s.get('num_questions', 10)} Qs · {_sec_marks_display(s)} marks)"
         for s in sections
     ])
-    total_q = sum(int(s.get("num_questions", 30)) for s in sections)
+    total_q = sum(int(s.get("num_questions", 10)) for s in sections)
     bloom_list = wiz.get("bloom_levels") or ["Remember", "Understand", "Apply", "Analyse"]
     bloom_summary = ", ".join(bloom_list)
 
@@ -4734,7 +5013,7 @@ def register_action_routes(app):
                 msg += '<br><a href="/app/exams/' + exam_id + '?tab=preflight" class="small">Open Preflight tab →</a>'
             return show_toast(msg, "danger", title="Export blocked")
         file_name = data.get("file_name", "exam.pdf")
-        download_link = f"/app/exams/{exam_id}/exports/{file_name}"
+        download_link = data.get("download_url") or f"/app/exams/{exam_id}/exports/{file_name}"
         wa_text = quote(f"SkuPhase Exam Export ({file_name}): {req.base_url}app/exams/{exam_id}/exports/{file_name}")
         wa_url = f"https://wa.me/?text={wa_text}"
         return Div(
@@ -4794,181 +5073,867 @@ def _wizard_error(message: str) -> Div:
 # Manual entry Ã¢â‚¬â€ paste-style form (F04/F24/F57)
 # ---------------------------------------------------------------------------
 
+def _build_formula_ribbon() -> Div:
+    """Word-style Formula Ribbon component."""
+    return Div(
+        Div(
+            Div(
+                Span(
+                    NotStr('<i class="bi bi-calculator me-2 text-success"></i>'),
+                    Strong("Equation & Formula Ribbon", cls="text-dark small"),
+                    Span("— Click any formula to insert at cursor", cls="text-muted small ms-1 d-none d-sm-inline"),
+                    cls="d-flex align-items-center",
+                ),
+                Div(
+                    Input(
+                        type="text",
+                        id="formula-ribbon-search",
+                        placeholder="Search equations...",
+                        cls="form-control form-control-sm rounded-pill border-0 py-1 px-3",
+                        style="background:#F4F6F4; font-size:0.78rem; max-width: 170px;",
+                    ),
+                    cls="ms-auto",
+                ),
+                cls="d-flex align-items-center justify-content-between mb-2",
+            ),
+            Div(
+                HtmlButton("All (28)", type="button", cls="btn btn-sm btn-dark rounded-pill py-0 px-2 formula-filter-btn active", data_sub="all", style="font-size:0.75rem;"),
+                HtmlButton("Mathematics", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 formula-filter-btn", data_sub="Mathematics", style="font-size:0.75rem;"),
+                HtmlButton("Physics", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 formula-filter-btn", data_sub="Physics", style="font-size:0.75rem;"),
+                HtmlButton("Chemistry", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 formula-filter-btn", data_sub="Chemistry", style="font-size:0.75rem;"),
+                HtmlButton("Further Maths", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 formula-filter-btn", data_sub="Further Mathematics", style="font-size:0.75rem;"),
+                cls="d-flex flex-wrap gap-1 mb-2",
+            ),
+            Div(
+                id="formula-chips-container",
+                cls="d-flex flex-wrap gap-1 p-1",
+                style="max-height: 105px; overflow-y: auto;",
+            ),
+            cls="bg-white rounded-4 border p-3 shadow-sm mb-3",
+        ),
+    )
+
+def _build_diagram_modal() -> Div:
+    """Visual Specimen & Diagram Studio Library Modal."""
+    return Div(
+        NotStr("""<style>
+            .diag-thumb-box svg {
+                width: 100% !important;
+                height: 100% !important;
+                max-width: 100%;
+                max-height: 100%;
+                display: block;
+            }
+            /* Generated diagrams must fit their containing preview at every
+               viewport. SVGs have intrinsic dimensions (often 640px wide),
+               so max-width alone is not enough when inline styles are present. */
+            #manual-preview-content svg,
+            .manual-diagram-preview svg,
+            #diag-live-svg svg {
+                display: block;
+                width: 100% !important;
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: none !important;
+                margin-inline: auto;
+            }
+            #manual-preview-content,
+            .manual-diagram-preview,
+            #diag-live-svg {
+                min-width: 0;
+                max-width: 100%;
+                overflow-x: hidden !important;
+            }
+            .diag-item-card:hover {
+                border-color: #00412E !important;
+                background-color: #F8FAF9;
+            }
+        </style>"""),
+        Div(
+            Div(
+                Div(
+                    Div(
+                        H5(
+                            NotStr('<i class="bi bi-images me-2 text-success"></i>'),
+                            "Visual Diagram & Specimen Studio Library",
+                            cls="modal-title fw-bold text-dark mb-0",
+                        ),
+                        P("Choose from 32 curriculum-aligned SVG diagrams for Mathematics, Physics, Chemistry, Biology & Agriculture", cls="text-muted small mb-0"),
+                    ),
+                    HtmlButton(type="button", cls="btn-close", data_bs_dismiss="modal", aria_label="Close"),
+                    cls="modal-header border-bottom py-3 px-4",
+                ),
+                Div(
+                    Row(
+                        Col(
+                            Div(
+                                HtmlButton("All (32)", type="button", cls="btn btn-sm btn-dark rounded-pill py-1 px-2 diag-filter-btn active", data_sub="all", style="font-size:0.78rem;"),
+                                HtmlButton("Math", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-1 px-2 diag-filter-btn", data_sub="Mathematics", style="font-size:0.78rem;"),
+                                HtmlButton("Physics", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-1 px-2 diag-filter-btn", data_sub="Physics", style="font-size:0.78rem;"),
+                                HtmlButton("Chemistry", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-1 px-2 diag-filter-btn", data_sub="Chemistry", style="font-size:0.78rem;"),
+                                HtmlButton("Biology", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-1 px-2 diag-filter-btn", data_sub="Biology", style="font-size:0.78rem;"),
+                                HtmlButton("Agric", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill py-1 px-2 diag-filter-btn", data_sub="Agricultural Science", style="font-size:0.78rem;"),
+                                cls="d-flex flex-wrap gap-1 mb-2",
+                            ),
+                            Input(
+                                type="text",
+                                id="diag-search-input",
+                                placeholder="Search diagrams by topic or apparatus...",
+                                cls="form-control rounded-3 border-0 py-2 px-3 mb-2",
+                                style="background:#F4F6F4; font-size:0.86rem;",
+                            ),
+                            Div(
+                                id="diag-items-list",
+                                cls="d-flex flex-column gap-2",
+                                style="max-height: 480px; overflow-y: auto; padding-right: 4px;",
+                            ),
+                            span=12,
+                            lg=5,
+                            cls="border-end pe-lg-3",
+                        ),
+                        Col(
+                            Div(
+                                Div(
+                                    Div(
+                                        H6(id="diag-detail-title", cls="fw-bold text-dark mb-0 fs-5"),
+                                        Span(id="diag-detail-badge", cls="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2"),
+                                        cls="d-flex align-items-center gap-2 mb-1",
+                                    ),
+                                    P(id="diag-detail-desc", cls="text-muted small mb-2"),
+                                ),
+                                Div(
+                                    Label("Mode", cls="form-label text-muted small fw-medium mb-1"),
+                                    Div(
+                                        Div(
+                                            Input(type="radio", cls="btn-check", name="diag-mode-radio", id="diag-mode-exam", value="exam", checked=True),
+                                            Label("Exam Mode (Hide Labels with Callouts)", cls="btn btn-sm btn-outline-success rounded-pill px-3 py-1", for_="diag-mode-exam", style="font-size:0.8rem;"),
+                                            cls="me-2 d-inline-block",
+                                        ),
+                                        Div(
+                                            Input(type="radio", cls="btn-check", name="diag-mode-radio", id="diag-mode-study", value="study"),
+                                            Label("Study Mode (Show Full Labels)", cls="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1", for_="diag-mode-study", style="font-size:0.8rem;"),
+                                            cls="d-inline-block",
+                                        ),
+                                        cls="mb-3",
+                                    ),
+                                ),
+                                Div(
+                                    Row(
+                                        Col(
+                                            Label("Callout Badge Style", cls="form-label text-muted small fw-medium mb-1"),
+                                            HtmlSelect(
+                                                Option("Roman Numerals (I, II, III...)", value="roman", selected=True),
+                                                Option("Letters (A, B, C...)", value="alpha"),
+                                                Option("Numbers (1, 2, 3...)", value="numeric"),
+                                                Option("Question Mark (?)", value="question_mark"),
+                                                id="diag-callout-style",
+                                                cls="form-select form-select-sm rounded-3 border-0",
+                                                style="background:#F4F6F4; font-size:0.82rem;",
+                                            ),
+                                            span=12,
+                                            md=6,
+                                        ),
+                                        Col(
+                                            Label("Hideable Parts (Checked = Hidden)", cls="form-label text-muted small fw-medium mb-1"),
+                                            Div(id="diag-hideable-checklist", cls="d-flex flex-wrap gap-2"),
+                                            span=12,
+                                            cls="mt-2",
+                                        ),
+                                    ),
+                                    Div(
+                                        Div(
+                                            NotStr('<i class="bi bi-card-checklist me-1 text-primary"></i>'),
+                                            Strong("Auto-Generated Marking Scheme Points:", cls="small text-dark"),
+                                            cls="d-flex align-items-center mb-1",
+                                        ),
+                                        Div(id="diag-marking-preview", cls="small text-muted", style="font-family:monospace; font-size:0.8rem; white-space:pre-line;"),
+                                        cls="p-2 rounded-3 mt-2 mb-2",
+                                        style="background:#F0F7FF; border:1px solid #D0E3FF;",
+                                    ),
+                                    id="diag-exam-options",
+                                ),
+                                Div(
+                                    Label("Diagram Parameters", cls="form-label text-muted small fw-medium mb-1"),
+                                    Div(id="diag-custom-fields", cls="row g-2 mb-2"),
+                                    id="diag-params-container",
+                                ),
+                                Label("Live Diagram Preview", cls="form-label text-muted small fw-medium mb-1"),
+                                Div(
+                                    Div(id="diag-live-svg", cls="text-center", style="max-height:240px; overflow:auto;"),
+                                    cls="bg-white rounded-3 border p-2 mb-3 text-center position-relative",
+                                    style="min-height:160px; background:#fff;",
+                                ),
+                                Div(
+                                    HtmlButton("Cancel", type="button", cls="btn btn-sm btn-outline-secondary rounded-pill px-3 me-2", data_bs_dismiss="modal"),
+                                    HtmlButton("Insert Diagram Only", type="button", id="btn-insert-diag-only", cls="btn btn-sm btn-outline-primary rounded-pill px-3 me-2"),
+                                    HtmlButton(
+                                        NotStr('<i class="bi bi-lightning-charge-fill me-1"></i>Insert Diagram + Append Marking Points'),
+                                        type="button",
+                                        id="btn-insert-diag-and-marking",
+                                        cls="btn btn-sm btn-success rounded-pill px-4 text-white",
+                                        style="background:#00412E; border:none;",
+                                    ),
+                                    cls="d-flex flex-wrap justify-content-end gap-2 pt-2 border-top",
+                                ),
+                                id="diag-editor-pane",
+                            ),
+                            span=12,
+                            lg=7,
+                            cls="ps-lg-3",
+                        ),
+                    ),
+                    cls="modal-body p-4",
+                ),
+                cls="modal-content rounded-4 border-0 shadow-lg",
+            ),
+            cls="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable",
+        ),
+        id="diagram-library-modal",
+        cls="modal fade",
+        tabindex="-1",
+        aria_hidden="true",
+    )
+
 def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
-    """Interactive, local-first manual composer matching P05_manual_exam_choice_desktop.png with live KaTeX preview."""
-    composer_script = Script("""
-(() => {
+    from app.services.diagram_catalog import get_all_diagrams
+    from app.services.formula_catalog import get_all_formulas
+    from app.services.library_service import LibraryService
+    from app.schemas.library import DiagramRenderSpec
+
+    catalog_diagrams = []
+    for d in get_all_diagrams():
+        d_dict = d.model_dump()
+        try:
+            rendered = LibraryService.render_diagram(d.id, DiagramRenderSpec(mode="study"))
+            d_dict["svg_thumb"] = rendered.svg
+        except Exception:
+            d_dict["svg_thumb"] = ""
+        catalog_diagrams.append(d_dict)
+
+    catalog_formulas = [f.model_dump() for f in get_all_formulas()]
+    diag_json = json.dumps(catalog_diagrams, ensure_ascii=True)
+    form_json = json.dumps(catalog_formulas, ensure_ascii=True)
+
+    composer_script = Script(f"""
+(() => {{
   const editor = document.getElementById('manual-question-editor');
   const preview = document.getElementById('manual-preview-content');
   const form = document.getElementById('manual-exam-form');
-  if (!editor || !preview || !form || window.skuPhaseManual) return;
+  if (!editor || !preview || !form || (window.skuPhaseManual && window.skuPhaseManual.editor === editor)) return;
 
-  const esc = v => String(v || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
+  const CATALOG_DIAGRAMS = {diag_json};
+  const CATALOG_FORMULAS = {form_json};
 
-  const card = (n, qData = null) => {
+  const esc = v => String(v || '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}}[c]));
+
+  // Track active input for formula insertion
+  let lastFocusedInput = null;
+  document.addEventListener('focusin', e => {{
+    if (e.target.matches('textarea, input[type="text"]')) {{
+      lastFocusedInput = e.target;
+    }}
+  }});
+
+  const insertFormula = (latex) => {{
+    let target = lastFocusedInput;
+    if (!target || !document.contains(target) || !target.closest('#manual-question-editor')) {{
+      target = editor.querySelector('.manual-question-text');
+    }}
+    if (!target) return;
+    target.focus();
+    const formulaText = '$' + latex + '$';
+    const start = target.selectionStart || 0;
+    const end = target.selectionEnd || 0;
+    const val = target.value;
+    target.value = val.substring(0, start) + formulaText + val.substring(end);
+    target.selectionStart = target.selectionEnd = start + formulaText.length;
+    target.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  }};
+
+  // -------------------------------------------------------------------------
+  // FORMULA RIBBON CONTROLLER
+  // -------------------------------------------------------------------------
+  const formulaContainer = document.getElementById('formula-chips-container');
+  let activeFormulaSubject = 'all';
+  let formulaSearchTerm = '';
+
+  const renderFormulaChips = () => {{
+    if (!formulaContainer) return;
+    const filtered = CATALOG_FORMULAS.filter(f => {{
+      const matchSub = activeFormulaSubject === 'all' || f.subject.toLowerCase() === activeFormulaSubject.toLowerCase();
+      const matchSearch = !formulaSearchTerm ||
+        f.name.toLowerCase().includes(formulaSearchTerm) ||
+        f.topic.toLowerCase().includes(formulaSearchTerm) ||
+        f.latex.toLowerCase().includes(formulaSearchTerm);
+      return matchSub && matchSearch;
+    }});
+
+    if (filtered.length === 0) {{
+      formulaContainer.innerHTML = '<span class="text-muted small p-2">No matching equations found.</span>';
+      return;
+    }}
+
+    formulaContainer.innerHTML = filtered.map(f => `
+      <button type="button" class="btn btn-sm btn-outline-dark rounded-pill py-1 px-2 formula-chip text-nowrap"
+        data-latex="${{esc(f.latex)}}" title="${{esc(f.name + ' — ' + f.topic + (f.description ? ': ' + f.description : ''))}}">
+        <span class="fw-semibold me-1">${{esc(f.name)}}:</span><span class="formula-math" style="font-size:0.82rem;">$${{esc(f.latex)}}$</span>
+      </button>
+    `).join('');
+
+    if (typeof renderMathInElement === 'function') {{
+      renderMathInElement(formulaContainer, {{
+        delimiters: [{{left: '$', right: '$', display: false}}],
+        throwOnError: false
+      }});
+    }}
+  }};
+
+  if (formulaContainer) {{
+    formulaContainer.addEventListener('click', e => {{
+      const btn = e.target.closest('.formula-chip');
+      if (btn && btn.dataset.latex) {{
+        insertFormula(btn.dataset.latex);
+      }}
+    }});
+  }}
+
+  document.querySelectorAll('.formula-filter-btn').forEach(btn => {{
+    btn.addEventListener('click', () => {{
+      document.querySelectorAll('.formula-filter-btn').forEach(b => {{
+        b.classList.remove('btn-dark', 'active');
+        b.classList.add('btn-outline-secondary');
+      }});
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-dark', 'active');
+      activeFormulaSubject = btn.dataset.sub;
+      renderFormulaChips();
+    }});
+  }});
+
+  const formulaSearchInput = document.getElementById('formula-ribbon-search');
+  if (formulaSearchInput) {{
+    formulaSearchInput.addEventListener('input', e => {{
+      formulaSearchTerm = e.target.value.toLowerCase().trim();
+      renderFormulaChips();
+    }});
+  }}
+
+  // -------------------------------------------------------------------------
+  // DIAGRAM LIBRARY MODAL CONTROLLER
+  // -------------------------------------------------------------------------
+  let activeQuestionCard = null;
+  let currentSelectedDiagram = CATALOG_DIAGRAMS[0] || null;
+  let currentRenderedSvg = '';
+  let currentMarkingPoints = [];
+  let modalPreviewTimer = null;
+  let activeDiagSubject = 'all';
+  let diagSearchTerm = '';
+
+  const renderDiagramList = () => {{
+    const listEl = document.getElementById('diag-items-list');
+    if (!listEl) return;
+    const filtered = CATALOG_DIAGRAMS.filter(d => {{
+      const matchSub = activeDiagSubject === 'all' || d.subject.toLowerCase() === activeDiagSubject.toLowerCase();
+      const matchSearch = !diagSearchTerm ||
+        d.title.toLowerCase().includes(diagSearchTerm) ||
+        d.category.toLowerCase().includes(diagSearchTerm) ||
+        d.topics.some(t => t.toLowerCase().includes(diagSearchTerm));
+      return matchSub && matchSearch;
+    }});
+
+    listEl.innerHTML = filtered.map(d => `
+      <div class="diag-item-card p-2 rounded-3 border ${{currentSelectedDiagram && currentSelectedDiagram.id === d.id ? 'border-success bg-success-subtle' : 'bg-white'}}"
+           data-id="${{d.id}}" style="cursor:pointer; transition: all 0.15s ease;">
+        <div class="d-flex align-items-center gap-2">
+          ${{d.svg_thumb ? `
+          <div class="diag-thumb-box flex-shrink-0 rounded border bg-light d-flex align-items-center justify-content-center overflow-hidden"
+               style="width:58px; height:42px; padding:2px; pointer-events:none;">
+            ${{d.svg_thumb}}
+          </div>` : ''}}
+          <div class="flex-grow-1 overflow-hidden">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong class="small text-dark text-truncate">${{esc(d.title)}}</strong>
+              <span class="badge bg-light text-muted border ms-1" style="font-size:0.68rem;">${{esc(d.subject)}}</span>
+            </div>
+            <div class="text-muted text-truncate" style="font-size:0.72rem;">${{esc(d.category)}} &bull; ${{esc(d.topics[0] || '')}}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }};
+
+  const selectDiagram = (diagId) => {{
+    const found = CATALOG_DIAGRAMS.find(d => d.id === diagId);
+    if (!found) return;
+    currentSelectedDiagram = found;
+    renderDiagramList();
+
+    const titleEl = document.getElementById('diag-detail-title');
+    const badgeEl = document.getElementById('diag-detail-badge');
+    const descEl = document.getElementById('diag-detail-desc');
+    if (titleEl) titleEl.textContent = found.title;
+    if (badgeEl) badgeEl.textContent = found.subject;
+    if (descEl) descEl.textContent = found.accessibility_desc || (found.category + ' — ' + found.topics.join(', '));
+
+    const checklistEl = document.getElementById('diag-hideable-checklist');
+    if (checklistEl) {{
+      if (found.hideable_parts && found.hideable_parts.length > 0) {{
+        checklistEl.innerHTML = found.hideable_parts.map((p, idx) => `
+          <div class="form-check form-check-inline mb-1">
+            <input class="form-check-input diag-hideable-check" type="checkbox" id="hp-${{p.key}}" value="${{p.key}}" checked>
+            <label class="form-check-label small" for="hp-${{p.key}}">${{esc(p.label)}}</label>
+          </div>
+        `).join('');
+      }} else {{
+        checklistEl.innerHTML = '<span class="text-muted small">No hideable parts on this template.</span>';
+      }}
+    }}
+
+    const fieldsEl = document.getElementById('diag-custom-fields');
+    if (fieldsEl) {{
+      if (found.fields && found.fields.length > 0) {{
+        fieldsEl.innerHTML = found.fields.map(f => `
+          <div class="col-6 col-md-4">
+            <label class="form-label text-muted mb-0" style="font-size:0.72rem">${{esc(f.label)}}</label>
+            <input class="form-control form-control-sm rounded-3 border-0 diag-modal-field" data-field="${{f.name}}" value="${{esc(f.default || '')}}" style="background:#F4F6F4; font-size:0.82rem;">
+          </div>
+        `).join('');
+      }} else {{
+        fieldsEl.innerHTML = '<div class="col-12"><span class="text-muted small">No custom parameters required.</span></div>';
+      }}
+    }}
+
+    fetchModalPreview();
+  }};
+
+  const fetchModalPreview = async () => {{
+    if (!currentSelectedDiagram) return;
+    const previewBox = document.getElementById('diag-live-svg');
+    const markingBox = document.getElementById('diag-marking-preview');
+    if (!previewBox) return;
+
+    previewBox.innerHTML = '<span class="spinner-border spinner-border-sm text-success me-2" style="width:1rem;height:1rem;"></span>Rendering…';
+
+    const mode = document.querySelector('input[name="diag-mode-radio"]:checked')?.value || 'exam';
+    const calloutStyle = document.getElementById('diag-callout-style')?.value || 'roman';
+    const hiddenParts = [...document.querySelectorAll('.diag-hideable-check:checked')].map(c => c.value);
+
+    const params = {{}};
+    document.querySelectorAll('.diag-modal-field').forEach(input => {{
+      params[input.dataset.field] = input.value;
+    }});
+
+    try {{
+      const csrf = form.querySelector('[name="csrf_token"]')?.value || '';
+      const res = await fetch('/ui/exams/manual-diagram-preview', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json', 'X-CSRF-Token': csrf}},
+        body: JSON.stringify({{
+          archetype: currentSelectedDiagram.id,
+          mode: mode,
+          callout_style: calloutStyle,
+          hidden_parts: hiddenParts,
+          params: params
+        }})
+      }});
+      const data = await res.json();
+      if (data.svg) {{
+        currentRenderedSvg = data.svg;
+        currentMarkingPoints = data.marking_points || [];
+        previewBox.innerHTML = data.svg;
+        if (markingBox) {{
+          if (currentMarkingPoints.length > 0) {{
+            markingBox.textContent = currentMarkingPoints.join(String.fromCharCode(10));
+          }} else {{
+            markingBox.textContent = '(No marking points generated for study mode or without hidden parts)';
+          }}
+        }}
+      }} else {{
+        previewBox.innerHTML = '<span class="text-danger small">' + esc(data.error || 'Failed to render preview') + '</span>';
+      }}
+    }} catch (e) {{
+      previewBox.innerHTML = '<span class="text-danger small">Network error rendering diagram</span>';
+    }}
+  }};
+
+  const scheduleModalPreview = () => {{
+    clearTimeout(modalPreviewTimer);
+    modalPreviewTimer = setTimeout(fetchModalPreview, 250);
+  }};
+
+  // Diagram modal list click
+  document.getElementById('diag-items-list')?.addEventListener('click', e => {{
+    const item = e.target.closest('.diag-item-card');
+    if (item && item.dataset.id) {{
+      selectDiagram(item.dataset.id);
+    }}
+  }});
+
+  // Diagram modal subject tabs
+  document.querySelectorAll('.diag-filter-btn').forEach(btn => {{
+    btn.addEventListener('click', () => {{
+      document.querySelectorAll('.diag-filter-btn').forEach(b => {{
+        b.classList.remove('btn-dark', 'active');
+        b.classList.add('btn-outline-secondary');
+      }});
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-dark', 'active');
+      activeDiagSubject = btn.dataset.sub;
+      renderDiagramList();
+    }});
+  }});
+
+  // Diagram modal search
+  document.getElementById('diag-search-input')?.addEventListener('input', e => {{
+    diagSearchTerm = e.target.value.toLowerCase().trim();
+    renderDiagramList();
+  }});
+
+  // Diagram modal options change
+  document.querySelectorAll('input[name="diag-mode-radio"]').forEach(r => {{
+    r.addEventListener('change', () => {{
+      const isExam = r.value === 'exam';
+      const examOpts = document.getElementById('diag-exam-options');
+      if (examOpts) examOpts.style.display = isExam ? '' : 'none';
+      fetchModalPreview();
+    }});
+  }});
+
+  document.getElementById('diag-callout-style')?.addEventListener('change', fetchModalPreview);
+  document.getElementById('diag-hideable-checklist')?.addEventListener('change', fetchModalPreview);
+  document.getElementById('diag-custom-fields')?.addEventListener('input', scheduleModalPreview);
+
+  const insertDiagramToActiveCard = (appendMarking) => {{
+    if (!activeQuestionCard || !currentRenderedSvg) return;
+    const svgInput = activeQuestionCard.querySelector('.manual-diagram-svg');
+    const prevEl = activeQuestionCard.querySelector('.manual-diagram-preview');
+    const container = activeQuestionCard.querySelector('.manual-diagram-container');
+    if (svgInput) svgInput.value = currentRenderedSvg;
+    if (prevEl) prevEl.innerHTML = currentRenderedSvg;
+    if (container) container.style.display = 'block';
+
+    if (appendMarking && currentMarkingPoints && currentMarkingPoints.length > 0) {{
+      const msTextarea = activeQuestionCard.querySelector('.manual-marking-scheme');
+      if (msTextarea) {{
+        const existing = msTextarea.value.trim();
+        const added = currentMarkingPoints.join(String.fromCharCode(10));
+        msTextarea.value = existing ? existing + String.fromCharCode(10) + added : added;
+        msTextarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      }}
+    }}
+
+    const modalEl = document.getElementById('diagram-library-modal');
+    if (modalEl && window.bootstrap && window.bootstrap.Modal) {{
+      const inst = bootstrap.Modal.getInstance(modalEl);
+      if (inst) inst.hide();
+    }}
+
+    update();
+  }};
+
+  document.getElementById('btn-insert-diag-only')?.addEventListener('click', () => {{
+    insertDiagramToActiveCard(false);
+  }});
+
+  document.getElementById('btn-insert-diag-and-marking')?.addEventListener('click', () => {{
+    insertDiagramToActiveCard(true);
+  }});
+
+  // -------------------------------------------------------------------------
+  // QUESTION CARDS CONTROLLER
+  // -------------------------------------------------------------------------
+  const card = (n, qData = null) => {{
     const text = qData ? esc(qData.question_text || '') : '';
     const marks = qData ? (qData.marks || 2) : 2;
     const type = qData ? (qData.type || 'multiple_choice') : 'multiple_choice';
+    const hasDiag = !!(qData?.diagram_svg);
     return `
-    <article class="manual-question-card bg-white rounded-4 border p-4 mb-3 shadow-sm" data-question-card>
+    <article class="manual-question-card bg-white rounded-4 border p-4 mb-3 shadow-sm" data-question-card data-correct-answer="${{esc(qData?.correct_answer||'')}}">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-grip-vertical text-muted"></i>
-          <strong class="text-dark">Question ${n}</strong>
+          <strong class="text-dark">Question ${{n}}</strong>
         </div>
-        <button type="button" class="btn btn-link text-danger p-0 manual-remove-question" aria-label="Remove question">
-          <i class="bi bi-trash3"></i>
-        </button>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-link text-muted p-0 manual-move-question" data-direction="up" aria-label="Move question up"><i class="bi bi-arrow-up"></i></button>
+          <button type="button" class="btn btn-link text-muted p-0 manual-move-question" data-direction="down" aria-label="Move question down"><i class="bi bi-arrow-down"></i></button>
+          <button type="button" class="btn btn-link text-muted p-0 manual-duplicate-question" aria-label="Duplicate question"><i class="bi bi-copy"></i></button>
+          <button type="button" class="btn btn-link text-danger p-0 manual-remove-question" aria-label="Remove question"><i class="bi bi-trash3"></i></button>
+        </div>
       </div>
       <div class="mb-3">
-        <label class="form-label text-muted small fw-medium mb-1">Question</label>
-        <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text... (supports LaTeX formulas like $x^2 + 5 = 0$)" style="background-color: #F4F6F4; font-size: 0.92rem;" required>${text}</textarea>
+        <label class="form-label text-muted small fw-medium mb-1">Question <span class="text-danger">*</span></label>
+        <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text… (supports LaTeX: $x^2+5=0$)" style="background:#F4F6F4;font-size:0.92rem;" required>${{text}}</textarea>
       </div>
       <div class="row g-3 mb-3">
-        <div class="col-12 col-md-7">
+        <div class="col-12 col-md-5">
           <label class="form-label text-muted small fw-medium mb-1">Type</label>
-          <select class="form-select manual-question-type rounded-3 border-0 py-2" style="background-color: #F4F6F4; font-size: 0.92rem;">
-            <option value="multiple_choice" ${type === 'multiple_choice' ? 'selected' : ''}>MCQ</option>
-            <option value="short_answer" ${type === 'short_answer' ? 'selected' : ''}>Short Answer</option>
-            <option value="essay" ${type === 'essay' ? 'selected' : ''}>Essay</option>
-            <option value="fill_in_blank" ${type === 'fill_in_blank' ? 'selected' : ''}>Fill in the Blank</option>
-            <option value="true_false" ${type === 'true_false' ? 'selected' : ''}>True / False</option>
+          <select class="form-select manual-question-type rounded-3 border-0 py-2" style="background:#F4F6F4;font-size:0.92rem;">
+            <option value="multiple_choice" ${{type==='multiple_choice'?'selected':''}}>Multiple Choice (MCQ)</option>
+            <option value="short_answer" ${{type==='short_answer'?'selected':''}}>Short Answer</option>
+            <option value="essay" ${{type==='essay'?'selected':''}}>Essay / Theory</option>
+            <option value="fill_in_blank" ${{type==='fill_in_blank'?'selected':''}}>Fill in the Blank</option>
+            <option value="true_false" ${{type==='true_false'?'selected':''}}>True / False</option>
           </select>
         </div>
-        <div class="col-12 col-md-5">
-          <label class="form-label text-muted small fw-medium mb-1">Marks</label>
-          <input class="form-control manual-question-marks rounded-3 border-0 py-2" type="number" min="1" max="100" value="${marks}" style="background-color: #F4F6F4; font-size: 0.92rem;" required>
+        <div class="col-6 col-md-3">
+          <label class="form-label text-muted small fw-medium mb-1">Marks <span class="text-danger">*</span></label>
+          <input class="form-control manual-question-marks rounded-3 border-0 py-2" type="number" min="1" max="100" value="${{marks}}" style="background:#F4F6F4;font-size:0.92rem;" required>
+        </div>
+        <div class="col-6 col-md-4">
+          <label class="form-label text-muted small fw-medium mb-1">Difficulty</label>
+          <select class="form-select manual-question-difficulty rounded-3 border-0 py-2" style="background:#F4F6F4;font-size:0.92rem;">
+            <option value="">— Not set —</option>
+            <option value="easy" ${{qData?.difficulty==='easy'?'selected':''}}>Easy</option>
+            <option value="medium" ${{qData?.difficulty==='medium'?'selected':''}}>Medium</option>
+            <option value="hard" ${{qData?.difficulty==='hard'?'selected':''}}>Hard</option>
+          </select>
         </div>
       </div>
-      <div class="manual-options"></div>
+      <div class="mb-3">
+        <label class="form-label text-muted small fw-medium mb-1">Topic / Curriculum Tag (optional)</label>
+        <input class="form-control manual-question-topic rounded-3 border-0 py-2" type="text" placeholder="e.g. Fractions, Newton's Laws, Photosynthesis" value="${{esc(qData?.topic||'')}}" style="background:#F4F6F4;font-size:0.92rem;">
+      </div>
+      <div class="mb-3">
+        <label class="form-label text-muted small fw-medium mb-1">Section title</label>
+        <input class="form-control manual-section-name rounded-3 border-0 py-2" type="text" placeholder="Section A: Objectives" value="${{esc(qData?.section_name||'Section A: General')}}" style="background:#F4F6F4;font-size:0.92rem;">
+      </div>
+      <div class="manual-options mb-3"></div>
+      <div class="mb-3">
+        <label class="form-label text-muted small fw-medium mb-1">Given data / constants <span class="text-muted fw-normal">(optional)</span></label>
+        <textarea class="form-control manual-given-data rounded-3 p-3 border-0" rows="2" placeholder="Use g = 10 m/s²; mass = 2 kg" style="background:#F4F6F4;font-size:0.88rem;">${{esc(qData?.given_data||'')}}</textarea>
+      </div>
+      <div class="p-3 rounded-3 mb-3" style="background:#F0FAF4;border:1px solid #C3E6CB;">
+        <label class="form-label fw-semibold small mb-1" style="color:#00412E"><i class="bi bi-check2-circle me-1"></i>Correct Answer / Model Answer</label>
+        <input class="form-control manual-correct-answer rounded-3 border-0 py-2" type="text" placeholder="MCQ → A, B, C or D    Theory → Brief model answer" value="${{esc(qData?.correct_answer||'')}}" style="background:#fff;font-size:0.92rem;">
+        <div class="text-muted mt-1" style="font-size:0.75rem">For MCQ/True-False enter the option letter or word. For theory enter a sample model answer or key point.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label text-muted small fw-medium mb-1"><i class="bi bi-card-checklist me-1 text-primary"></i>Marking Scheme <span class="text-muted fw-normal">(one point per line)</span></label>
+        <textarea class="form-control manual-marking-scheme rounded-3 p-3 border-0" rows="2" placeholder="1 mark — Correct formula stated&#10;1 mark — Correct substitution shown&#10;1 mark — Correct final answer with unit" style="background:#F4F6F4;font-size:0.88rem;">${{esc((qData?.marking_scheme||[]).join(String.fromCharCode(10)))}}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label text-muted small fw-medium mb-1"><i class="bi bi-lightbulb me-1 text-warning"></i>Explanation / Rationale <span class="text-muted fw-normal">(optional)</span></label>
+        <textarea class="form-control manual-explanation rounded-3 p-3 border-0" rows="2" placeholder="Why is this the correct answer?" style="background:#F4F6F4;font-size:0.88rem;">${{esc(qData?.explanation||'')}}</textarea>
+      </div>
+      <div class="mt-2">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="text-muted small fw-medium"><i class="bi bi-diagram-3 me-1"></i>Visual Diagram & Specimen</span>
+          <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 manual-open-diagram-modal" style="font-size:0.8rem;">
+            <i class="bi bi-images me-1"></i>${{hasDiag ? '✏ Change Diagram' : '+ Choose from Library (32 Ready)'}}
+          </button>
+        </div>
+        <div class="manual-diagram-container rounded-3 border p-3" style="background:#FAFAFA;display:${{hasDiag?'block':'none'}};">
+          <div class="manual-diagram-preview mb-2 text-center p-2 bg-white rounded-3 border" style="min-height:100px;font-size:0.82rem;color:#aaa;overflow:auto;">${{qData?.diagram_svg||''}}</div>
+          <div class="d-flex gap-2 flex-wrap mb-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 manual-open-diagram-modal" style="font-size:0.8rem;"><i class="bi bi-pencil me-1"></i>Edit Diagram</button>
+            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 manual-remove-diagram" style="font-size:0.8rem;"><i class="bi bi-trash3 me-1"></i>Remove Diagram</button>
+          </div>
+          <textarea class="form-control manual-diagram-svg rounded-3 border-0 d-none" rows="2">${{esc(qData?.diagram_svg||'')}}</textarea>
+        </div>
+      </div>
     </article>`;
-  };
+  }};
 
   const cards = () => [...editor.querySelectorAll('[data-question-card]')];
 
-  const options = (item, initialOpts = null) => {
+  const options = (item, initialOpts = null) => {{
     const type = item.querySelector('.manual-question-type').value;
+    const initialCorrect = (item.dataset.correctAnswer || '').toUpperCase();
     const area = item.querySelector('.manual-options');
-    if (type === 'multiple_choice') {
+    const qIdx = cards().indexOf(item) + 1 || 1;
+    if (type === 'multiple_choice') {{
       const placeholders = ['Option A', 'Option B', 'Option C', 'Option D'];
       area.innerHTML = `
         <label class="form-label text-muted small fw-medium mb-2">Options</label>
-        ${placeholders.map((ph, idx) => {
+        ${{placeholders.map((ph, idx) => {{
           const val = (initialOpts && initialOpts[idx]) ? esc(initialOpts[idx]) : '';
-          return `<div class="mb-2">
-            <input class="form-control manual-option rounded-3 border-0 py-2 px-3" placeholder="${ph}" value="${val}" style="background-color: #F4F6F4; font-size: 0.88rem;">
+          const selected = initialCorrect === String.fromCharCode(65 + idx) ? 'checked' : '';
+          return `<div class="input-group mb-2">
+            <span class="input-group-text bg-white border-0"><input class="form-check-input mt-0 manual-correct-radio" type="radio" value="${{String.fromCharCode(65 + idx)}}" name="manual-correct-${{qIdx}}" ${{selected}} aria-label="Mark option ${{String.fromCharCode(65 + idx)}} as correct"></span>
+            <input class="form-control manual-option rounded-end-3 border-0 py-2 px-3" placeholder="${{ph}}" value="${{val}}" style="background-color: #F4F6F4; font-size: 0.88rem;">
           </div>`;
-        }).join('')}
+        }}).join('')}}
       `;
-    } else if (type === 'true_false') {
+    }} else if (type === 'true_false') {{
       area.innerHTML = `
         <label class="form-label text-muted small fw-medium mb-2">Options</label>
         <div class="mb-2"><input class="form-control manual-option rounded-3 border-0 py-2 px-3" value="True" style="background-color: #F4F6F4; font-size: 0.88rem;"></div>
         <div class="mb-2"><input class="form-control manual-option rounded-3 border-0 py-2 px-3" value="False" style="background-color: #F4F6F4; font-size: 0.88rem;"></div>
       `;
-    } else {
+    }} else {{
       area.innerHTML = '<p class="manual-answer-note mb-0 text-muted small p-3 rounded-3" style="background-color: #F8FAF8;">Students will write their answer in the response space.</p>';
-    }
-  };
+    }}
+  }};
 
-  const renumber = () => cards().forEach((item, i) => {
-    item.querySelector('strong').textContent = `Question ${i + 1}`;
+  const renumber = () => cards().forEach((item, i) => {{
+    item.querySelector('strong').textContent = `Question ${{i + 1}}`;
     item.querySelector('.manual-remove-question').disabled = cards().length === 1;
-  });
+    item.querySelectorAll('.manual-correct-radio').forEach(r => {{ r.name = `manual-correct-${{i + 1}}`; }});
+  }});
+
+  const _serializeCard = (item, i) => ({{
+    question_number: i + 1,
+    section_name: item.querySelector('.manual-section-name')?.value.trim() || 'Section A: General',
+    type: item.querySelector('.manual-question-type').value,
+    question_text: item.querySelector('.manual-question-text').value.trim(),
+    marks: Number(item.querySelector('.manual-question-marks').value) || 0,
+    difficulty: item.querySelector('.manual-question-difficulty')?.value || null,
+    topic: item.querySelector('.manual-question-topic')?.value.trim() || null,
+    options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean),
+    correct_answer: item.querySelector('.manual-correct-answer')?.value.trim() || null,
+    marking_scheme: (item.querySelector('.manual-marking-scheme')?.value || '').split(String.fromCharCode(10)).map(s => s.trim()).filter(Boolean),
+    explanation: item.querySelector('.manual-explanation')?.value.trim() || null,
+    given_data: item.querySelector('.manual-given-data')?.value.trim() || null,
+    diagram_svg: item.querySelector('.manual-diagram-svg')?.value.trim() || null,
+  }});
 
   let saveTimer = null;
-  const saveDraft = () => {
+  const saveDraft = () => {{
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        const questions = cards().map((item, i) => ({
-          question_number: i + 1,
-          type: item.querySelector('.manual-question-type').value,
-          question_text: item.querySelector('.manual-question-text').value.trim(),
-          marks: Number(item.querySelector('.manual-question-marks').value) || 0,
-          options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean)
-        }));
+    saveTimer = setTimeout(() => {{
+      try {{
+        const questions = cards().map(_serializeCard);
         const subject = document.getElementById('manual-subject')?.value || '';
         const grade = document.getElementById('manual-grade')?.value || '';
-        if (questions.some(q => q.question_text) || subject) {
-          localStorage.setItem('skuphase_manual_draft', JSON.stringify({
+        if (questions.some(q => q.question_text) || subject) {{
+          localStorage.setItem('skuphase_manual_draft', JSON.stringify({{
             subject, grade, questions, savedAt: new Date().toLocaleTimeString()
-          }));
-        }
-      } catch (e) { /* silent storage fail */ }
-    }, 400);
-  };
+          }}));
+        }}
+      }} catch (e) {{}}
+    }}, 400);
+  }};
 
-  const update = () => {
+  const update = () => {{
     const subject = document.getElementById('manual-subject').value || 'Subject';
     const grade = document.getElementById('manual-grade').value || 'Grade';
-    const data = cards().map((item, i) => ({
+    const data = cards().map((item, i) => ({{
       n: i + 1,
       text: item.querySelector('.manual-question-text').value.trim(),
       marks: Number(item.querySelector('.manual-question-marks').value) || 0,
-      options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean)
-    }));
+      section: item.querySelector('.manual-section-name')?.value.trim() || 'Section A: General',
+      given: item.querySelector('.manual-given-data')?.value.trim() || '',
+      options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean),
+      diag: item.querySelector('.manual-diagram-svg')?.value.trim() || '',
+    }}));
     const total = data.reduce((sum, q) => sum + q.marks, 0);
 
     preview.innerHTML = `
       <div class="text-center border-bottom pb-3 mb-3">
-        <strong class="fs-6 text-dark">${esc(subject)} — ${esc(grade)}</strong>
-        <span class="d-block text-muted small mt-1">Total: ${total} marks</span>
+        <strong class="fs-6 text-dark">${{esc(subject)}} — ${{esc(grade)}}</strong>
+        <span class="d-block text-muted small mt-1">Total: ${{total}} marks</span>
       </div>
     ` + data.map(q => `
-      <div class="manual-preview-question mb-3 pb-2 border-bottom border-light">
-        <div><strong>${q.n}.</strong> <span>${esc(q.text || '(empty question)')}</span> <span class="text-muted small">(${q.marks} marks)</span></div>
-        ${q.options.length ? `<ol type="A" class="mb-0 mt-2 ps-3 small text-muted">${q.options.map(x => `<li class="mb-1">${esc(x)}</li>`).join('')}</ol>` : ''}
+       <div class="manual-preview-question mb-3 pb-2 border-bottom border-light">
+         <div class="text-muted small fw-semibold mb-1">${{esc(q.section)}}</div>
+         ${{q.given ? `<div class="small text-primary mb-1"><strong>Given:</strong> ${{esc(q.given)}}</div>` : ''}}
+         <div><strong>${{q.n}}.</strong> <span>${{esc(q.text || '(empty question)')}}</span> <span class="text-muted small">(${{q.marks}} marks)</span></div>
+         ${{q.diag ? `<div class="my-2 text-center" style="max-width:280px;margin:0 auto;">${{q.diag}}</div>` : ''}}
+        ${{q.options.length ? `<ol type="A" class="mb-0 mt-2 ps-3 small text-muted">${{q.options.map(x => `<li class="mb-1">${{esc(x)}}</li>`).join('')}}</ol>` : ''}}
       </div>
     `).join('');
 
-    // Trigger KaTeX rendering in the preview pane
-    if (typeof renderMathInElement === 'function') {
-      renderMathInElement(preview, {
+    if (typeof renderMathInElement === 'function') {{
+      renderMathInElement(preview, {{
         delimiters: [
-          {left: '$$', right: '$$', display: true},
-          {left: '$', right: '$', display: false},
-          {left: '\\\\(', right: '\\\\)', display: false},
-          {left: '\\\\[', right: '\\\\]', display: true}
+          {{left: '$$', right: '$$', display: true}},
+          {{left: '$', right: '$', display: false}},
+          {{left: '\\\\(', right: '\\\\)', display: false}},
+          {{left: '\\\\[', right: '\\\\]', display: true}}
         ],
         throwOnError: false
-      });
-    }
+      }});
+    }}
     saveDraft();
-  };
+  }};
 
-  const add = (qData = null) => {
+  const add = (qData = null) => {{
     editor.insertAdjacentHTML('beforeend', card(cards().length + 1, qData));
     options(cards().at(-1), qData?.options);
     renumber();
     update();
-  };
+  }};
 
   editor.addEventListener('input', update);
-  editor.addEventListener('change', e => {
-    if (e.target.matches('.manual-question-type')) {
-      options(e.target.closest('[data-question-card]'));
-    }
-    update();
-  });
-  editor.addEventListener('click', e => {
+  editor.addEventListener('click', e => {{
+    const duplicate = e.target.closest('.manual-duplicate-question');
+    if (duplicate) {{
+      const source = duplicate.closest('[data-question-card]');
+      const index = cards().indexOf(source);
+      const data = _serializeCard(source, index);
+      source.insertAdjacentHTML('afterend', card(index + 2, data));
+      options(source.nextElementSibling, data.options);
+      renumber(); update(); return;
+    }}
+    const move = e.target.closest('.manual-move-question');
+    if (move) {{
+      const source = move.closest('[data-question-card]');
+      const sibling = move.dataset.direction === 'up' ? source.previousElementSibling : source.nextElementSibling;
+      if (sibling && sibling.matches('[data-question-card]')) {{
+        if (move.dataset.direction === 'up') editor.insertBefore(source, sibling);
+        else editor.insertBefore(sibling, source);
+        renumber(); update();
+      }}
+      return;
+    }}
     const b = e.target.closest('.manual-remove-question');
-    if (b && cards().length > 1) {
+    if (b && cards().length > 1) {{
       b.closest('[data-question-card]').remove();
       renumber();
       update();
-    }
-  });
+      return;
+    }}
 
-  document.getElementById('manual-add-question').addEventListener('click', () => add());
-  document.getElementById('manual-preview-button').addEventListener('click', () => {
-    document.getElementById('manual-preview-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-  document.getElementById('manual-subject').addEventListener('change', update);
-  document.getElementById('manual-grade').addEventListener('change', update);
+    // Open diagram modal from card
+    const openDiagBtn = e.target.closest('.manual-open-diagram-modal');
+    if (openDiagBtn) {{
+      activeQuestionCard = openDiagBtn.closest('[data-question-card]');
+      const modalEl = document.getElementById('diagram-library-modal');
+      if (modalEl && window.bootstrap && window.bootstrap.Modal) {{
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+      }}
+      return;
+    }}
 
-  const checkDraft = () => {
-    try {
+    // Remove diagram from card
+    const removeBtn = e.target.closest('.manual-remove-diagram');
+    if (removeBtn) {{
+      const cardEl = removeBtn.closest('[data-question-card]');
+      cardEl.querySelector('.manual-diagram-svg').value = '';
+      cardEl.querySelector('.manual-diagram-preview').innerHTML = '';
+      cardEl.querySelector('.manual-diagram-container').style.display = 'none';
+      const openBtn = cardEl.querySelector('.manual-open-diagram-modal');
+      if (openBtn) openBtn.innerHTML = '<i class="bi bi-images me-1"></i>+ Choose from Library (32 Ready)';
+      update();
+      return;
+    }}
+  }});
+
+  editor.addEventListener('change', e => {{
+    if (e.target.matches('.manual-question-type')) {{
+      options(e.target.closest('[data-question-card]'));
+    }}
+    if (e.target.matches('.manual-correct-radio')) {{
+      const cardEl = e.target.closest('[data-question-card]');
+      cardEl.querySelector('.manual-correct-answer').value = e.target.value;
+      cardEl.dataset.correctAnswer = e.target.value;
+    }}
+    update();
+  }});
+
+  const addButton = document.getElementById('manual-add-question');
+  if (addButton) addButton.addEventListener('click', (event) => {{ event.preventDefault(); add(); }});
+  const previewButton = document.getElementById('manual-preview-button');
+  if (previewButton) previewButton.addEventListener('click', () => {{
+    document.getElementById('manual-preview-card')?.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+  }});
+  document.getElementById('manual-subject')?.addEventListener('change', update);
+  document.getElementById('manual-grade')?.addEventListener('change', update);
+
+  const checkDraft = () => {{
+    try {{
       const raw = localStorage.getItem('skuphase_manual_draft');
       if (!raw) return;
       const draft = JSON.parse(raw);
@@ -4985,7 +5950,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
             <i class="bi bi-clock-history fs-5 text-warning-emphasis"></i>
             <div>
               <strong class="text-dark">Unsaved Draft Recovered</strong>
-              <span class="d-block small text-muted">Found an unsaved exam draft (${draft.questions.length} questions, saved at ${draft.savedAt || 'recently'}).</span>
+              <span class="d-block small text-muted">Found an unsaved exam draft (${{draft.questions.length}} questions, saved at ${{draft.savedAt || 'recently'}}).</span>
             </div>
           </div>
           <div class="d-flex gap-2">
@@ -4995,59 +5960,63 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         </div>
       `;
 
-      document.getElementById('manual-restore-btn').addEventListener('click', () => {
+      document.getElementById('manual-restore-btn').addEventListener('click', () => {{
         if (draft.subject) document.getElementById('manual-subject').value = draft.subject;
         if (draft.grade) document.getElementById('manual-grade').value = draft.grade;
         editor.innerHTML = '';
         draft.questions.forEach(q => add(q));
         bannerSlot.innerHTML = '';
-      });
+      }});
 
-      document.getElementById('manual-discard-btn').addEventListener('click', () => {
+      document.getElementById('manual-discard-btn').addEventListener('click', () => {{
         localStorage.removeItem('skuphase_manual_draft');
         bannerSlot.innerHTML = '';
-      });
-    } catch (e) {
-      console.warn('Draft check error:', e);
-    }
-  };
+      }});
+    }} catch (e) {{}}
+  }};
 
-  form.addEventListener('htmx:sendError', () => {
+  form.addEventListener('htmx:sendError', () => {{
     saveDraft();
     const res = document.getElementById('manual-result');
-    if (res) {
+    if (res) {{
       res.innerHTML = `
         <div class="alert alert-warning rounded-4 shadow-sm border-0 p-3 mt-3">
           <i class="bi bi-wifi-off me-2"></i>
           <strong>Network connection lost.</strong> Your draft is safely preserved on this device. You will not lose any questions. Click Submit again when reconnected.
         </div>
       `;
-    }
-  });
+    }}
+  }});
 
-  form.addEventListener('htmx:afterOnLoad', evt => {
-    if (evt.detail && evt.detail.successful) {
+  form.addEventListener('htmx:afterOnLoad', evt => {{
+    if (evt.detail && evt.detail.successful) {{
       localStorage.removeItem('skuphase_manual_draft');
-    }
-  });
+    }}
+  }});
 
-  window.skuPhaseManual = {
-    prepare: () => {
-      const data = cards().map((item, i) => ({
-        question_number: i + 1,
-        type: item.querySelector('.manual-question-type').value,
-        question_text: item.querySelector('.manual-question-text').value.trim(),
-        marks: Number(item.querySelector('.manual-question-marks').value) || 0,
-        options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean)
-      }));
+  window.skuPhaseManual = {{
+    editor,
+    insertFormula,
+    prepare: () => {{
+      const data = cards().map(_serializeCard);
+      if (!data.some(q => q.question_text)) {{
+        alert('Please add at least one question before submitting.');
+        return false;
+      }}
       document.getElementById('manual-questions-json').value = JSON.stringify(data);
       return true;
-    }
-  };
+    }}
+  }};
+
+  renderFormulaChips();
+  renderDiagramList();
+  if (CATALOG_DIAGRAMS.length > 0) {{
+    selectDiagram(CATALOG_DIAGRAMS[0].id);
+  }}
 
   add();
   checkDraft();
-})();
+}})();
 """)
 
     meta_card = Card(
@@ -5080,16 +6049,37 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
                 span=12,
                 md=6,
             ),
+            Col(
+                Label("Duration (minutes)", cls="form-label text-muted small fw-medium mb-1"),
+                Input(name="duration_minutes", type="number", value="60", min="30", max="300", cls="form-control rounded-3 border-0 py-2 px-3", style="background-color: #F4F6F4; font-size: 0.92rem;"),
+                span=12,
+                md=4,
+            ),
+            Col(
+                Label("Language", cls="form-label text-muted small fw-medium mb-1"),
+                HtmlSelect(Option("English", value="English"), Option("Hausa", value="Hausa"), Option("Igbo", value="Igbo"), Option("Yoruba", value="Yoruba"), name="language", cls="form-select rounded-3 border-0 py-2 px-3", style="background-color: #F4F6F4; font-size: 0.92rem;"),
+                span=12,
+                md=4,
+            ),
+            Col(
+                Label("Exam instructions", cls="form-label text-muted small fw-medium mb-1"),
+                Textarea(name="instructions", rows="2", placeholder="e.g. Answer all questions in Section A.", cls="form-control rounded-3 border-0 py-2 px-3", style="background-color: #F4F6F4; font-size: 0.92rem;"),
+                span=12,
+                md=4,
+            ),
             g=3,
         ),
         cls="bg-white rounded-4 border p-4 shadow-sm mb-4",
     )
 
+    formula_ribbon = _build_formula_ribbon()
+    diagram_modal = _build_diagram_modal()
+
     return Div(
         Div(
             Div(
                 H1("Manual Exam", cls="app-section-title fs-3 mb-1"),
-                P("Compose an exam manually with your own questions.", cls="app-body-copy text-muted mb-0"),
+                P("Compose an exam manually with your own questions, formulas, and visual diagrams.", cls="app-body-copy text-muted mb-0"),
             ),
             Div(
                 Button(
@@ -5120,6 +6110,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
                 Col(
                     Div(id="draft-rescue-banner-slot"),
                     meta_card,
+                    formula_ribbon,
                     Div(id="manual-question-editor"),
                     Button(
                         Icon("plus-lg", cls="bi me-2"),
@@ -5139,7 +6130,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
                         Div(id="manual-preview-content"),
                         id="manual-preview-card",
                         cls="bg-white rounded-4 border p-4 shadow-sm sticky-top",
-                        style="top: 1.5rem;",
+                        style="top: 5.5rem; max-height: calc(100vh - 6.5rem); overflow-y: auto; overflow-x: hidden;",
                     ),
                     span=12,
                     lg=5,
@@ -5161,6 +6152,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
             cls="htmx-indicator d-flex align-items-center gap-2 mt-3",
         ),
         Div(id="manual-result", cls="mt-3"),
+        diagram_modal,
         composer_script,
         cls="py-2",
     )
@@ -5175,15 +6167,25 @@ def register_manual_routes(app):
             return guard
         user = current_user(req) or {}
         flash = pop_flash(req)
-        body = _manual_exam_composer(
-            req,
-            [
+        class_level = req.query_params.get("class_level", "Primary 4")
+        board = req.query_params.get("board", "NERDC")
+        subjects_resp = await call_api(
+            req, "GET", "/curriculum/subjects",
+            params={"class_level": class_level, "board": board},
+        )
+        ok_subjects, subjects_data = unwrap(subjects_resp)
+        subject_options = [
+            item.get("subject_name") for item in (subjects_data.get("subjects", []) if isinstance(subjects_data, dict) else [])
+            if isinstance(item, dict) and item.get("subject_name")
+        ] if ok_subjects else []
+        if not subject_options:
+            subject_options = [
                 "Mathematics", "English Language", "Basic Science", "Social Studies",
                 "National Values", "Civic Education", "Agricultural Science", "Computer Studies",
                 "Physical & Health Education", "Home Economics", "Christian Religious Studies",
                 "Islamic Religious Studies", "Hausa", "Igbo", "Yoruba",
-            ],
-        )
+            ]
+        body = _manual_exam_composer(req, subject_options)
         return AppShell(
             Title("Manual Exam - SkuPhase"),
             body,
@@ -5209,24 +6211,72 @@ def register_manual_routes(app):
                 return show_toast("The question editor could not be read. Please refresh and try again.", "danger")
             if not isinstance(raw_questions, list):
                 return show_toast("Please add at least one question.", "danger")
-            allowed_types = {"multiple_choice", "short_answer", "essay", "true_false", "fill_in_blank"}
+            allowed_types = {
+                "multiple_choice", "short_answer", "essay", "true_false", "fill_in_blank"
+            }
+            allowed_difficulties = {"easy", "medium", "hard"}
+            section_numbers: dict[str, int] = {}
             for number, raw in enumerate(raw_questions, start=1):
                 if not isinstance(raw, dict):
                     continue
                 question_text = str(raw.get("question_text") or "").strip()
+                section_name = str(raw.get("section_name") or "Section A: General").strip()[:100]
+                if not section_name:
+                    section_name = "Section A: General"
+                section_number = section_numbers.setdefault(section_name, len(section_numbers) + 1)
                 question_type = str(raw.get("type") or "short_answer")
                 if question_type not in allowed_types or len(question_text) < 3:
-                    return show_toast("Every question needs at least three characters and a valid type.", "danger")
-                options = [str(option).strip() for option in (raw.get("options") or []) if str(option).strip()]
+                    return show_toast(
+                        "Every question needs at least three characters and a valid type.",
+                        "danger",
+                    )
+                options = [
+                    str(opt).strip() for opt in (raw.get("options") or [])
+                    if str(opt).strip()
+                ]
                 if question_type == "multiple_choice" and len(options) < 2:
                     return show_toast("Each MCQ needs at least two answer options.", "danger")
-                questions.append({
+
+                given_data = str(raw.get("given_data") or "").strip()
+                if given_data:
+                    question_text = f"Given data / constants: {given_data}\n\n{question_text}"
+
+                # Sanitize diagram SVG if provided
+                raw_svg = str(raw.get("diagram_svg") or "").strip()
+                safe_svg = sanitize_svg(raw_svg)
+                if raw_svg and safe_svg is None:
+                    return show_toast("A diagram must be a safe, complete SVG document.", "danger")
+
+                # Marking scheme: list of strings
+                ms_raw = raw.get("marking_scheme")
+                marking_scheme = (
+                    [str(x).strip() for x in ms_raw if str(x).strip()]
+                    if isinstance(ms_raw, list) else []
+                )
+
+                difficulty = str(raw.get("difficulty") or "").strip()
+                if difficulty not in allowed_difficulties:
+                    difficulty = None
+
+                question_payload = {
                     "question_number": number,
                     "type": "short_answer" if question_type == "fill_in_blank" else question_type,
                     "question_text": question_text,
                     "marks": max(1, min(100, _safe_int(raw.get("marks"), 2))),
                     "options": options or None,
-                })
+                }
+                if raw.get("section_name"):
+                    question_payload.update({"section_number": section_number, "section_name": section_name})
+                optional_fields = {
+                    "correct_answer": str(raw.get("correct_answer") or "").strip() or None,
+                    "marking_scheme": marking_scheme or None,
+                    "explanation": str(raw.get("explanation") or "").strip() or None,
+                    "difficulty": difficulty,
+                    "topic": str(raw.get("topic") or "").strip() or None,
+                    "diagram_svg": safe_svg,
+                }
+                question_payload.update({key: value for key, value in optional_fields.items() if value is not None})
+                questions.append(question_payload)
         else:
             questions = _parse_paste_questions((form.get("questions_text") or "").strip())
         if not questions:
@@ -5266,6 +6316,47 @@ def register_manual_routes(app):
             ),
             id="manual-result",
         )
+
+    @app.post("/ui/exams/manual-diagram-preview")
+    async def manual_diagram_preview(req: Request):
+        """Return a sanitized SVG string for the given archetype + field params.
+
+        Accepts JSON body: {"archetype": str, "params": dict}
+        Returns JSON: {"svg": str} or {"error": str}
+        """
+        guard = ensure_login(req)
+        if guard:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        try:
+            body = await req.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        archetype = str(body.get("archetype") or "").strip()
+        params = body.get("params") or {}
+        if not archetype:
+            return JSONResponse({"error": "No archetype specified"}, status_code=400)
+
+        try:
+            from app.services.library_service import LibraryService
+            from app.schemas.library import DiagramRenderSpec
+
+            spec = DiagramRenderSpec(
+                mode=body.get("mode", "exam"),
+                hidden_parts=body.get("hidden_parts", []),
+                callout_style=body.get("callout_style", "roman"),
+                show_values=bool(body.get("show_values", True)),
+                sample_label=str(body.get("sample_label") or ""),
+                params=params,
+            )
+            result = LibraryService.render_diagram(archetype, spec)
+            return JSONResponse({
+                "svg": result.svg,
+                "marking_points": result.marking_points,
+                "diagram_id": result.diagram_id,
+            })
+        except Exception as exc:
+            return JSONResponse({"error": f"Diagram generation failed: {exc}"}, status_code=500)
 
 
 def _parse_paste_questions(text: str) -> list:

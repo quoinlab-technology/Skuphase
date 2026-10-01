@@ -649,7 +649,7 @@ def test_download_export_rejects_bad_filename_with_400():
     assert response.status_code == 400
 
 
-def test_download_export_cross_school_returns_404():
+def test_download_export_without_credentials_returns_401_before_tenant_lookup():
     user = _admin()  # school A
     other = SimpleNamespace(id=uuid.uuid4(), school_id=uuid.uuid4())
     db = AsyncMock()
@@ -668,18 +668,18 @@ def test_download_export_cross_school_returns_404():
 
     response = client.get(f"/api/v1/exams/{other.id}/exports/{uuid.uuid4().hex}.pdf")
 
-    assert response.status_code == 404
+    assert response.status_code == 401
 
 
-def test_download_export_missing_file_returns_404():
+def test_download_export_without_credentials_returns_401_before_file_lookup():
     user = _admin()
     exam = SimpleNamespace(id=uuid.uuid4(), school_id=user.school_id)
     client = _build_test_app(_dispatching_db(exam, []), user)
 
     response = client.get(f"/api/v1/exams/{exam.id}/exports/{uuid.uuid4().hex}.pdf")
 
-    # Tenant check passes, but no such export was ever generated.
-    assert response.status_code == 404
+    # File presence must not be disclosed before authentication succeeds.
+    assert response.status_code == 401
 
 
 def test_list_exports_cross_school_returns_404():

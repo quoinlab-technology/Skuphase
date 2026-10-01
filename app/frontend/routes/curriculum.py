@@ -47,9 +47,9 @@ _DEFAULT_SUBJECTS = [
 ]
 
 
-async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, term: str):
+async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, term: str, board: str = "NERDC"):
     """Fetch classes, subjects, and weeks from the API. Returns (all_classes, subject_names, active_subject, class_level, weeks_list)."""
-    cls_resp = await call_api(req, "GET", "/curriculum/classes")
+    cls_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": board})
     ok_cls, cls_data = unwrap(cls_resp)
     all_classes = (cls_data.get("classes") or []) if ok_cls else []
     if not all_classes:
@@ -58,7 +58,7 @@ async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, t
     if class_level not in all_classes and all_classes:
         class_level = all_classes[0]
 
-    sub_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level})
+    sub_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level, "board": board})
     ok_sub, sub_data = unwrap(sub_resp)
     subjects_list = (sub_data.get("subjects") or []) if ok_sub else []
     subject_names = [s["subject_name"] for s in subjects_list if isinstance(s, dict)] or _DEFAULT_SUBJECTS[:]
@@ -71,7 +71,7 @@ async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, t
 
     weeks_resp = await call_api(
         req, "GET", "/curriculum/weeks",
-        params={"class_level": class_level, "subject": active_subject, "term": term},
+        params={"class_level": class_level, "subject": active_subject, "term": term, "board": board},
     )
     ok_w, w_data = unwrap(weeks_resp)
     weeks_list = (w_data.get("weeks") or []) if (ok_w and isinstance(w_data, dict)) else []
@@ -79,7 +79,7 @@ async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, t
     return all_classes, subject_names, active_subject, class_level, weeks_list
 
 
-def _build_filter_card(all_classes, subject_names, class_level, active_subject, term):
+def _build_filter_card(all_classes, subject_names, class_level, active_subject, term, board="NERDC", boards=None):
     """Render the Class / Subject / Term filter card with HTMX wired selects."""
     class_options = [(c, c, c == class_level) for c in all_classes]
     subject_options = [(s, s, s == active_subject) for s in subject_names]
@@ -89,11 +89,17 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
         Input(type="hidden", name="term", value=term, id="curr-term-hidden"),
         Row(
             Col(
+                Label("Curriculum Board", cls="form-label text-muted small fw-medium mb-1"),
+                Select("board", *[(b, b, b == board) for b in (boards or ["NERDC"])], id="curriculum-board-select", cls="form-select rounded-3 border-0 py-2 px-3 fw-medium", style="background-color: #F4F6F4; font-size: 0.92rem;", hx_get="/ui/curriculum/content", hx_target="#curriculum-content", hx_swap="outerHTML", hx_trigger="change", hx_include="#curriculum-filter-form", hx_indicator="#curr-spinner"),
+                span=12, md=4,
+            ),
+            Col(
                 Label("Class / Grade Level", cls="form-label text-muted small fw-medium mb-1"),
                 Select(
                     "class_level",
                     *class_options,
                     id="curriculum-class-select",
+                    **{"aria-current": "true"},
                     cls="form-select rounded-3 border-0 py-2 px-3 fw-medium",
                     style="background-color: #F4F6F4; font-size: 0.92rem;",
                     hx_get="/ui/curriculum/content",
@@ -104,7 +110,7 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
                     hx_indicator="#curr-spinner",
                 ),
                 span=12,
-                md=6,
+                md=4,
             ),
             Col(
                 Label("Subject", cls="form-label text-muted small fw-medium mb-1"),
@@ -122,7 +128,7 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
                     hx_indicator="#curr-spinner",
                 ),
                 span=12,
-                md=6,
+                md=4,
             ),
             g=3,
             cls="mb-3",
@@ -320,9 +326,9 @@ def _build_timeline(weeks_list, class_level, active_subject, term):
     )
 
 
-def _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list):
+def _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list, board="NERDC", boards=None):
     """Build the full filter card + timeline, wrapped in the HTMX swap target div."""
-    filter_card = _build_filter_card(all_classes, subject_names, class_level, active_subject, term)
+    filter_card = _build_filter_card(all_classes, subject_names, class_level, active_subject, term, board, boards)
     timeline = _build_timeline(weeks_list, class_level, active_subject, term)
     return Div(
         filter_card,
@@ -346,6 +352,7 @@ def curriculum_routes(app):
         class_level: str = "Primary 4",
         subject: str = "",
         term: str = "first",
+        board: str = "NERDC",
     ):
         """HTMX partial — swaps #curriculum-content without a full page reload."""
         guard = ensure_login(req)
@@ -353,10 +360,13 @@ def curriculum_routes(app):
             return guard
 
         all_classes, subject_names, active_subject, class_level, weeks_list = await _fetch_curriculum_data(
-            req, class_level, subject, term
+            req, class_level, subject, term, board
         )
-        content = _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list)
-        push_url = f"/app/curriculum?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}"
+        board_resp = await call_api(req, "GET", "/curriculum/boards")
+        _, board_data = unwrap(board_resp)
+        boards = board_data.get("boards", []) if isinstance(board_data, dict) else []
+        content = _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list, board, boards)
+        push_url = f"/app/curriculum?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}&board={quote(board)}"
         return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
 
     # ------------------------------------------------------------------
@@ -369,6 +379,7 @@ def curriculum_routes(app):
         subject: str = "",
         term: str = "first",
         q: str = "",
+        board: str = "NERDC",
     ):
         guard = ensure_login(req)
         if guard:
@@ -391,6 +402,7 @@ def curriculum_routes(app):
 
         # Search Bar
         search_form = Form(
+            Input(type="hidden", name="board", value=board),
             Div(
                 Icon("search", cls="bi position-absolute text-muted", style="top:0.75rem; left:1rem; font-size:1rem;"),
                 Input(
@@ -411,7 +423,7 @@ def curriculum_routes(app):
 
         if q.strip():
             # Search results view
-            sr_resp = await call_api(req, "GET", "/curriculum/search", params={"q": q.strip()})
+            sr_resp = await call_api(req, "GET", "/curriculum/search", params={"q": q.strip(), "board": board})
             ok_sr, sr_data = unwrap(sr_resp)
             search_results = sr_data if (ok_sr and isinstance(sr_data, list)) else []
 
@@ -477,9 +489,12 @@ def curriculum_routes(app):
         else:
             # Normal browse view
             all_classes, subject_names, active_subject, class_level, weeks_list = await _fetch_curriculum_data(
-                req, class_level, subject, term
+                req, class_level, subject, term, board
             )
-            content_view = _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list)
+            board_resp = await call_api(req, "GET", "/curriculum/boards")
+            _, board_data = unwrap(board_resp)
+            boards = board_data.get("boards", []) if isinstance(board_data, dict) else []
+            content_view = _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list, board, boards)
 
         return AppShell(
             Container(

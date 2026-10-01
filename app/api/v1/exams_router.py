@@ -258,10 +258,11 @@ async def _run_exam_preflight(
 
     # Total marks sanity check
     actual_marks_sum = sum((q.marks or 0) for q in questions)
-    if exam.total_marks and actual_marks_sum != exam.total_marks:
+    exam_total_marks = getattr(exam, "total_marks", None)
+    if exam_total_marks and actual_marks_sum != exam_total_marks:
         warnings.append({
             "code": "total_marks_mismatch",
-            "message": f"Sum of question marks ({actual_marks_sum}) does not match exam total ({exam.total_marks}).",
+            "message": f"Sum of question marks ({actual_marks_sum}) does not match exam total ({exam_total_marks}).",
         })
 
     return {
@@ -479,6 +480,8 @@ async def submit_manual_exam(
             id=uuid.uuid4(),
             exam_id=exam.id,
             question_number=question_data.question_number,
+            section_number=question_data.section_number,
+            section_name=question_data.section_name,
             type=question_data.type,
             question_text=question_data.question_text,
             marks=question_data.marks,
@@ -2524,6 +2527,7 @@ async def export_exam(
         school_name = None
         school_address = None
         school_logo_url = None
+        document_style = {}
         if getattr(current_user, "school_id", None):
             school_res = await db.execute(select(School).where(School.id == current_user.school_id))
             school_obj = school_res.scalar_one_or_none()
@@ -2534,6 +2538,8 @@ async def export_exam(
             settings_obj = settings_res.scalar_one_or_none()
             if settings_obj and isinstance(settings_obj, SchoolSettings) and getattr(settings_obj, "logo_url", None):
                 school_logo_url = getattr(settings_obj, "logo_url", None)
+            if settings_obj and isinstance(settings_obj, SchoolSettings):
+                document_style = getattr(settings_obj, "document_style", None) or {}
 
         doc_type = (getattr(request, "doc_type", None) or "exam").lower()
         if doc_type == "marking_guide":
@@ -2543,12 +2549,14 @@ async def export_exam(
                 questions=list(questions),
                 school_name=school_name,
                 school_address=school_address,
+                document_style=document_style,
             )
         elif doc_type == "omr":
             file_name = await asyncio.to_thread(
                 ExportService.export_omr_sheet_pdf,
                 exam=exam,
                 school_name=school_name,
+                document_style=document_style,
             )
         else:
             file_name = await asyncio.to_thread(
@@ -2560,6 +2568,7 @@ async def export_exam(
                 school_name=school_name,
                 school_address=school_address,
                 school_logo_path=school_logo_url,
+                document_style=document_style,
             )
         download_url = (
             f"/api/v1/exams/{exam_id}/exports/{file_name}"
@@ -2619,7 +2628,7 @@ async def download_export(
         raw_token = auth_header[7:].strip()
     elif token:
         raw_token = token.strip()
-    elif hasattr(req, "session") and req.session.get("access_token"):
+    elif "session" in req.scope and req.session.get("access_token"):
         raw_token = req.session.get("access_token")
     elif req.cookies.get("access_token"):
         raw_token = req.cookies.get("access_token")

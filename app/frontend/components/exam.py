@@ -18,12 +18,13 @@ from fasthtml.common import (
     NotStr,
 )
 
-from faststrap import Badge, Button, Card, Row, Col, Icon
+from faststrap import Badge, Button, Card, Row, Col, Icon, Svg
 
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES
 from app.utils.exam_utils import format_mcq_option
 
 from app.services.column_math import render_column_math_svg
+from app.services.svg_safety import sanitize_svg
 
 
 def render_rich_text(text: str) -> Span:
@@ -41,8 +42,11 @@ def render_column_arithmetic(text: str):
     svg = render_column_math_svg(text)
     if not svg:
         return None
+    safe_svg = sanitize_svg(svg)
+    if not safe_svg:
+        return None
     return Div(
-        NotStr(svg),
+        Svg(safe_svg, sanitize=False),
         cls="d-flex justify-content-center align-items-center p-2 my-2 column-math-viewport",
         style="max-width: 100%; overflow-x: auto;",
     )
@@ -313,10 +317,11 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
 
     # ── Diagram SVG (explicitly attached to the question) ─────────────────
     diagram_svg = (q.get("diagram_svg") or "").strip()
-    if diagram_svg:
+    safe_diagram_svg = sanitize_svg(diagram_svg)
+    if safe_diagram_svg:
         body_parts.append(
             Div(
-                NotStr(diagram_svg),
+                Svg(safe_diagram_svg, sanitize=False),
                 cls="d-flex justify-content-center align-items-center p-3 my-2 bg-body-tertiary rounded border diagram-viewport",
                 style="max-width: 100%; overflow-x: auto;",
             )

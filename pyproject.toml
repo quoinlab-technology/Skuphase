@@ -7,7 +7,31 @@ name = "skuphase"
 version = "0.1.0"
 description = "AI-powered exam generation backend for Nigerian schools (FastAPI + PostgreSQL, curriculum-first)"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-fasthtml",
+    "faststrap",
+    "bleach",
+    "markdown",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "psycopg2-binary",
+    "alembic",
+    "passlib[bcrypt]",
+    "bcrypt",
+    "python-jose[cryptography]",
+    "cryptography",
+    "pydantic",
+    "pydantic-settings",
+    "email-validator",
+    "openai",
+    "aiosmtplib",
+    "httpx",
+    "reportlab",
+    "svglib",
+    "python-dotenv",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

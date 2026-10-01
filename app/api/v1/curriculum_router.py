@@ -8,6 +8,7 @@ from app.core.database import get_db_session
 from app.services.curriculum_service import CurriculumService
 from app.schemas.curriculum import (
     ClassListResponse,
+    BoardListResponse,
     SubjectListResponse,
     TermListResponse,
     WeekListResponse,
@@ -15,6 +16,12 @@ from app.schemas.curriculum import (
 )
 
 router = APIRouter()
+
+
+@router.get("/boards", response_model=BoardListResponse)
+async def list_boards(db: AsyncSession = Depends(get_db_session)):
+    """Get educational boards available in the seeded curriculum database."""
+    return BoardListResponse(boards=await CurriculumService.get_boards(db))
 
 
 @router.get("/classes", response_model=ClassListResponse)
@@ -82,6 +89,7 @@ async def search_curriculum(
     q: str = Query(..., min_length=2, description="Search keyword in topics and objectives"),
     class_level: Optional[str] = Query(None, description="Optional class level filter"),
     subject: Optional[str] = Query(None, description="Optional subject filter"),
+    board: Optional[str] = Query(None, description="Optional educational board filter"),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -93,5 +101,6 @@ async def search_curriculum(
         db=db,
         class_level=class_level,
         subject_name=subject,
+        board=board,
         limit=limit,
     )

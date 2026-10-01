@@ -107,3 +107,66 @@ def test_export_path_rejects_bad_names():
     good = f"{uuid4().hex}.pdf"
     path = ExportService.export_path(exam_id, good)
     assert str(path).endswith(good)
+
+
+def test_svg_to_flowable_conversion():
+    """Verify that svglib converts SVG into a ReportLab Drawing flowable."""
+    from app.services.export_service import _svg_to_flowable
+
+    sample_svg = (
+        '<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">'
+        '<rect width="200" height="100" fill="#f0f0f0"/>'
+        '<circle cx="100" cy="50" r="40" fill="#0d6efd"/>'
+        '</svg>'
+    )
+    flowable = _svg_to_flowable(sample_svg)
+    assert flowable is not None
+    assert getattr(flowable, "width", 0) > 0
+    assert getattr(flowable, "height", 0) > 0
+
+
+def test_export_exam_pdf_with_svg_diagram(tmp_path):
+    """Golden-file regression test: exams with SVG diagrams render into valid PDFs."""
+    from app.services.diagram_templates import render_horizontal_y_fork
+
+    exam = _exam()
+    y_fork_svg = render_horizontal_y_fork(parent=10, child_top=3, child_bottom=7, sample_label="SAMPLE A")
+
+    questions = [
+        SimpleNamespace(
+            question_number=1,
+            type="multiple_choice",
+            question_text="Study the sample diagram below and determine the missing value in the circle.",
+            marks=2,
+            options=["A. 15", "B. 20", "C. 25", "D. 30"],
+            correct_answer="B",
+            explanation="The parent circle equals the sum of the two rectangles.",
+            marking_scheme=None,
+            diagram_svg=y_fork_svg,
+        )
+    ]
+
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_exam_pdf(
+            exam=exam,
+            questions=questions,
+            include_answers=True,
+            school_name="Federal Government College Lagos",
+            school_address="Ijanikin, Lagos",
+        )
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    assert created_path.exists()
+    assert created_path.stat().st_size > 1000
+
+    from pypdf import PdfReader
+    reader = PdfReader(str(created_path))
+    assert len(reader.pages) >= 1
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Study the sample diagram" in text
+    assert "FEDERAL GOVERNMENT COLLEGE LAGOS" in text
+

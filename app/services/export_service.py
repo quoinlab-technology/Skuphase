@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
+logger = logging.getLogger(__name__)
+
 from app.models.exam import Exam, Question
 from app.utils.exam_utils import format_mcq_option
+from app.services.svg_safety import sanitize_svg
+from app.services.math_rendering import extract_display_formulas, formula_to_svg
 
 
 
@@ -25,7 +30,9 @@ def _svg_to_flowable(svg_code: str, max_width_pt: float = 380.0, max_height_pt: 
     """Convert raw SVG string to a ReportLab Drawing flowable, scaled to fit margins."""
     if not svg_code or not isinstance(svg_code, str):
         return None
-    cleaned_svg = svg_code.strip()
+    cleaned_svg = sanitize_svg(svg_code)
+    if not cleaned_svg:
+        return None
     if not cleaned_svg.startswith("<svg") and "<svg" in cleaned_svg:
         start = cleaned_svg.find("<svg")
         end = cleaned_svg.rfind("</svg>")
@@ -58,7 +65,8 @@ def _svg_to_flowable(svg_code: str, max_width_pt: float = 380.0, max_height_pt: 
 
         drawing.hAlign = "CENTER"
         return drawing
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to convert SVG to ReportLab flowable: %s", exc)
         return None
 
 
@@ -71,6 +79,25 @@ class ExportService:
     """
 
     EXPORT_DIR = Path("exports")
+
+    @staticmethod
+    def _document_style(style: dict | None) -> dict:
+        """Normalize bounded admin document settings for every export."""
+        raw = style if isinstance(style, dict) else {}
+        def number(key, default, lower, upper):
+            try:
+                return max(lower, min(upper, float(raw.get(key, default))))
+            except (TypeError, ValueError):
+                return float(default)
+        return {
+            "margin_mm": number("margin_mm", 14, 8, 30),
+            "top_margin_mm": number("top_margin_mm", raw.get("margin_mm", 14), 8, 35),
+            "bottom_margin_mm": number("bottom_margin_mm", raw.get("margin_mm", 14), 8, 35),
+            "font_size": number("font_size", 10, 8, 14),
+            "line_spacing": number("line_spacing", 1.35, 1.0, 2.0),
+            "question_spacing_mm": number("question_spacing_mm", 2, 0, 8),
+            "show_page_numbers": bool(raw.get("show_page_numbers", True)),
+        }
 
     @classmethod
     def exam_dir(cls, exam_id: Any) -> Path:
@@ -182,6 +209,7 @@ class ExportService:
         school_name: str | None = None,
         school_address: str | None = None,
         school_logo_path: str | None = None,
+        document_style: dict | None = None,
     ) -> str:
         """
         Export exam to a fully word-wrapped PDF and return the file NAME.
@@ -191,6 +219,7 @@ class ExportService:
         comprehension sections; each passage renders once, above the first
         question that references it.
         """
+        style_cfg = cls._document_style(document_style)
         try:
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -270,7 +299,7 @@ class ExportService:
         )
         question_style = ParagraphStyle(
             "QuestionText", parent=styles["Normal"], fontName=_base_font,
-            fontSize=10, leading=13.5, spaceBefore=2 * mm, spaceAfter=0.5 * mm,
+            fontSize=style_cfg["font_size"], leading=style_cfg["font_size"] * style_cfg["line_spacing"], spaceBefore=style_cfg["question_spacing_mm"] * mm, spaceAfter=0.5 * mm,
         )
         option_style = ParagraphStyle(
             "OptionText", parent=styles["Normal"], fontName=_base_font,
@@ -332,15 +361,22 @@ class ExportService:
         if school_logo_path:
             try:
                 lpath = Path(school_logo_path)
-                if not lpath.is_file() and str(school_logo_path).startswith("/"):
-                    candidate = Path(str(school_logo_path).lstrip("/"))
-                    if candidate.is_file():
-                        lpath = candidate
-                    elif (Path("app") / candidate).is_file():
-                        lpath = Path("app") / candidate
+                if not lpath.is_file():
+                    raw_str = str(school_logo_path).lstrip("/")
+                    candidates = [
+                        Path(raw_str),
+                        Path("app") / raw_str,
+                        Path("assets") / raw_str,
+                        Path("assets") / raw_str.replace("assets/", "", 1),
+                    ]
+                    for cand in candidates:
+                        if cand.is_file():
+                            lpath = cand
+                            break
                 if lpath.is_file():
                     logo_flowable = ReportLabImage(str(lpath), width=22 * mm, height=22 * mm)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to load school logo '%s' for PDF: %s", school_logo_path, exc)
                 logo_flowable = None
 
         if logo_flowable:
@@ -449,6 +485,16 @@ class ExportService:
                 Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
             )
 
+            # Keep display equations visible in PDF exports even when a TeX
+            # binary is unavailable. The browser continues to use KaTeX, but
+            # both paths now share the same $$...$$ and \\[...\\] contract.
+            for display_formula in extract_display_formulas(q.question_text):
+                formula_drawing = _svg_to_flowable(formula_to_svg(display_formula), max_width_pt=380, max_height_pt=60)
+                if formula_drawing is not None:
+                    story.append(Spacer(1, 1 * mm))
+                    story.append(formula_drawing)
+                    story.append(Spacer(1, 1 * mm))
+
             # ── Column arithmetic (H T U place-value) ─────────────────────────
             from app.services.column_math import render_column_math_svg as _col_svg
             _col_math_svg = _col_svg(q.question_text or "")
@@ -519,19 +565,18 @@ class ExportService:
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=A4,
-            leftMargin=14 * mm,
-            rightMargin=14 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
+            topMargin=style_cfg["top_margin_mm"] * mm,
+            bottomMargin=style_cfg["bottom_margin_mm"] * mm,
+            leftMargin=style_cfg["margin_mm"] * mm,
+            rightMargin=style_cfg["margin_mm"] * mm,
             title=f"{exam.subject} {exam.grade_level}",
         )
 
         def _footer(canvas, _doc):
             canvas.saveState()
             canvas.setFont(_base_font, 8)
-            canvas.drawCentredString(
-                A4[0] / 2, 8 * mm, f"Page {_doc.page}"
-            )
+            if style_cfg["show_page_numbers"]:
+                canvas.drawCentredString(A4[0] / 2, 8 * mm, f"Page {_doc.page}")
             canvas.restoreState()
 
         doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
@@ -545,6 +590,7 @@ class ExportService:
         questions: List[Question],
         school_name: str | None = None,
         school_address: str | None = None,
+        document_style: dict | None = None,
     ) -> str:
         """Export a compact 1-page Teacher Answer Key & Marking Guide."""
         from reportlab.lib.pagesizes import A4
@@ -661,13 +707,14 @@ class ExportService:
         sig_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
         story.append(sig_table)
 
+        style_cfg = cls._document_style(document_style)
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=A4,
-            leftMargin=18 * mm,
-            rightMargin=18 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
+            leftMargin=style_cfg["margin_mm"] * mm,
+            rightMargin=style_cfg["margin_mm"] * mm,
+            topMargin=style_cfg["top_margin_mm"] * mm,
+            bottomMargin=style_cfg["bottom_margin_mm"] * mm,
             title=f"Marking Guide - {exam.subject}",
         )
         doc.build(story)
@@ -678,6 +725,7 @@ class ExportService:
         cls,
         exam: Exam,
         school_name: str | None = None,
+        document_style: dict | None = None,
     ) -> str:
         """Export a standardized 50-question A4 OMR Bubble Sheet for optical/rapid marking."""
         from reportlab.lib.pagesizes import A4
@@ -757,13 +805,14 @@ class ExportService:
         )
         story.append(omr_table)
 
+        style_cfg = cls._document_style(document_style)
         doc = SimpleDocTemplate(
             str(output_path),
             pagesize=A4,
-            leftMargin=18 * mm,
-            rightMargin=18 * mm,
-            topMargin=12 * mm,
-            bottomMargin=12 * mm,
+            leftMargin=style_cfg["margin_mm"] * mm,
+            rightMargin=style_cfg["margin_mm"] * mm,
+            topMargin=style_cfg["top_margin_mm"] * mm,
+            bottomMargin=style_cfg["bottom_margin_mm"] * mm,
             title=f"OMR Sheet - {exam.subject}",
         )
         doc.build(story)

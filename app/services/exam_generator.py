@@ -328,6 +328,12 @@ Return ONLY valid JSON in this exact format (no markdown, no preamble):
 
 {self._build_json_example(request.sections)}
 
+<internal_planning>
+Before producing the JSON, silently verify curriculum coverage, mark totals,
+question-type constraints, answer keys, and age-appropriate Nigerian context.
+Do not include this planning or these tags in the response.
+</internal_planning>
+
 <final_output>
 Generate the complete exam now. Ensure:
 • All {total_questions} questions are included

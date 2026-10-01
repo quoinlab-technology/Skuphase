@@ -1,6 +1,6 @@
 """School and tenant models."""
 
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from uuid import uuid4
@@ -51,6 +51,7 @@ class SchoolSettings(BaseModel):
     # Exam settings
     default_total_marks = Column(String(3), default="100")
     exam_format = Column(String(50), default="nigerian")  # Nigerian WAEC format
+    document_style = Column(JSON, nullable=False, default=dict, server_default="{}")
     
     # Relationships
     school = relationship("School", back_populates="settings")

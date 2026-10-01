@@ -3,9 +3,13 @@
 # Python 3.11+ required
 # =============================================================================
 
-# WEB FRAMEWORK
+# WEB FRAMEWORK & FRONTEND
 fastapi
 uvicorn[standard]
+python-fasthtml
+faststrap
+bleach
+markdown
 
 # DATABASE
 sqlalchemy[asyncio]
@@ -33,6 +37,7 @@ httpx          # Resend HTTP API provider + test client
 
 # FILE EXPORT
 reportlab            # PDF generation (platypus)
+svglib               # SVG to ReportLab flowable conversion
 
 # UTILITIES
 python-dotenv          # .env loading for pydantic-settings
@@ -55,10 +60,10 @@ mypy
 # NOTES
 # - Removed vs the legacy stack: torch, sentence-transformers, paddleocr,
 #   paddlepaddle, opencv, pytesseract, PyPDF2, tiktoken, numpy, weasyprint,
-#   python-docx, svglib, python-fasthtml, anthropic, sentry-sdk, structlog,
-#   python-json-logger, gunicorn, faker, factory-boy.
-#   Embeddings/RAG/OCR were deliberately removed from the server (owner
-#   decision D8); curated content is ingested offline via scripts.
+#   python-docx, anthropic, sentry-sdk, structlog, python-json-logger,
+#   gunicorn, faker, factory-boy.
+# - FastHTML + Faststrap provide the responsive UI layer.
+# - svglib provides SVG-to-ReportLab drawing flowables for PDF exam generation.
 # - Deploy with uvicorn workers, e.g.:
 #     uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
 # =============================================================================

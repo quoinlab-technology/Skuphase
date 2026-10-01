@@ -28,8 +28,8 @@ def home():
                     Div(
                         Span(
                             Icon("star", cls="bi me-2 small"),
-                            "Built for Nigerian schools · Trusted by 50+ academies",
-                            cls="badge rounded-pill px-3 py-2 fw-medium",
+                            "Built for Nigerian schools",
+                            cls="badge rounded-pill px-3 py-2 fw-medium ",
                             style="background-color: rgba(0, 65, 46, 0.08); color: #00412E; border: 1px solid rgba(0, 65, 46, 0.18); font-size: 0.82rem; letter-spacing: 0.01em;",
                         ),
                         cls="mb-4 text-center",
@@ -56,7 +56,7 @@ def home():
                             as_="a",
                             href="/register",
                             variant="success",
-                            size="lg",
+                            size="md",
                             cls="btn-brand rounded-pill px-4 py-3 fw-semibold text-white shadow-sm text-decoration-none",
                             style="background-color: #00412E !important; border-color: #00412E !important; padding: 12px 28px !important;",
                         ),
@@ -64,7 +64,7 @@ def home():
                             "Book Demo",
                             as_="a",
                             href="/contact",
-                            size="lg",
+                            size="md",
                             cls="btn bg-white text-dark fw-semibold shadow-sm text-decoration-none",
                             style="padding: 12px 28px !important; border: 1px solid rgba(0, 0, 0, 0.14) !important; border-radius: 10px !important;",
                         ),

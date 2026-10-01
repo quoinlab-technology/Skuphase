@@ -20,6 +20,18 @@ class CurriculumService:
     """Service for querying Nigerian Curriculums and Schemes of Work."""
 
     @staticmethod
+    async def get_boards(db: AsyncSession) -> List[str]:
+        """Return distinct boards, with the canonical board first."""
+        result = await db.execute(
+            select(Curriculum.board).where(Curriculum.board.is_not(None)).distinct()
+        )
+        boards = sorted({row[0] for row in result.fetchall() if row[0]})
+        if "NERDC" in boards:
+            boards.remove("NERDC")
+            boards.insert(0, "NERDC")
+        return boards
+
+    @staticmethod
     async def get_all_classes(db: AsyncSession, board: str = "NERDC") -> List[str]:
         """Get distinct available class levels ordered by ``level_order``.
 
@@ -131,6 +143,7 @@ class CurriculumService:
         db: AsyncSession,
         class_level: Optional[str] = None,
         subject_name: Optional[str] = None,
+        board: Optional[str] = None,
         limit: int = 20,
     ) -> List[CurriculumSearchResult]:
         """Search topics and subtopics in the curriculum."""
@@ -145,6 +158,8 @@ class CurriculumService:
             conditions.append(Curriculum.class_level == class_level)
         if subject_name:
             conditions.append(func.lower(Curriculum.subject_name) == subject_name.lower().strip())
+        if board:
+            conditions.append(Curriculum.board == board)
 
         stmt = (
             select(SchemeOfWork, Curriculum)

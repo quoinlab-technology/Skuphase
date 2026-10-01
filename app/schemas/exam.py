@@ -443,6 +443,8 @@ class ManualQuestionInput(BaseModel):
     """Teacher-provided question payload for manual submission."""
 
     question_number: int = Field(..., ge=1)
+    section_number: int = Field(default=1, ge=1, le=20)
+    section_name: Optional[str] = Field(default=None, max_length=100)
     type: str = Field(..., description="multiple_choice, short_answer, essay, true_false")
     question_text: str = Field(..., min_length=3)
     marks: int = Field(..., ge=1, le=100)
@@ -455,6 +457,19 @@ class ManualQuestionInput(BaseModel):
     marking_scheme: Optional[List[str]] = None
     sub_parts: Optional[List[SubPartResponse]] = None
     diagram_svg: Optional[str] = None
+
+    @field_validator("diagram_svg")
+    @classmethod
+    def validate_diagram_svg(cls, value: Optional[str]) -> Optional[str]:
+        """Accept only a canonical safe SVG document from every API client."""
+        if not value:
+            return None
+        from app.services.svg_safety import sanitize_svg
+
+        safe_svg = sanitize_svg(value)
+        if safe_svg is None:
+            raise ValueError("diagram_svg must be a safe, complete SVG document")
+        return safe_svg
 
 
 class ManualExamSubmissionRequest(BaseModel):

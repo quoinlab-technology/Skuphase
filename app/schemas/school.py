@@ -13,6 +13,7 @@ class SchoolSettingsUpdate(BaseModel):
     colors: Optional[Dict[str, str]] = None  # e.g., {"primary": "#0066cc", "secondary": "#ff6600"}
     llm_provider: Optional[str] = Field(None, pattern="^(grok|openrouter|openai)$")
     exam_format: Optional[str] = None  # e.g., "multiple_choice", "essay", "mixed"
+    document_style: Optional[Dict[str, Any]] = None
 
 
 class SchoolSettingsResponse(BaseModel):
@@ -23,6 +24,7 @@ class SchoolSettingsResponse(BaseModel):
     colors: Optional[Dict[str, str]] = None
     llm_provider: Optional[str] = None
     exam_format: Optional[str] = None
+    document_style: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     

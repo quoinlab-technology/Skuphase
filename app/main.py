@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import get_settings
 from app.core.database import init_db
 from app.api.v1 import auth_router, users_router, schools_router
-from app.api.v1 import exams_router, ops_router, curriculum_router
+from app.api.v1 import exams_router, ops_router, curriculum_router, library_router, partner_router
 
 
 logging.basicConfig(level=get_settings().log_level.upper())
@@ -68,6 +68,8 @@ app.include_router(schools_router.router, prefix="/api/v1/schools", tags=["Schoo
 app.include_router(exams_router.router, prefix="/api/v1/exams", tags=["Exams"])
 app.include_router(ops_router.router, prefix="/api/v1/ops", tags=["Operations"])
 app.include_router(curriculum_router.router, prefix="/api/v1/curriculum", tags=["Curriculum"])
+app.include_router(library_router.router, prefix="/api/v1/library", tags=["Library"])
+app.include_router(partner_router.router, prefix="/api/v1/partner", tags=["Partner API"])
 
 # Frontend (FastHTML + Faststrap) — mounted LAST so /api/v1/*, /docs and
 # /health keep precedence; the UI owns "/" (FRONTEND_SPEC.md §2.1).

@@ -69,6 +69,7 @@ class SchoolService:
                     },
                     llm_provider=settings.primary_llm_provider,
                     exam_format=settings.exam_format,
+                    document_style=settings.document_style or {},
                     created_at=settings.created_at,
                     updated_at=settings.updated_at,
                 )
@@ -168,6 +169,7 @@ class SchoolService:
             },
             llm_provider=settings.primary_llm_provider,
             exam_format=settings.exam_format,
+            document_style=settings.document_style or {},
             created_at=settings.created_at,
             updated_at=settings.updated_at,
         )
@@ -213,6 +215,15 @@ class SchoolService:
                 update_data["primary_llm_provider"] = request.llm_provider
             if request.exam_format:
                 update_data["exam_format"] = request.exam_format
+            if request.document_style is not None:
+                update_data["document_style"] = {
+                    str(k): v for k, v in request.document_style.items()
+                    if str(k) in {
+                        "page_size", "margin_mm", "top_margin_mm", "bottom_margin_mm",
+                        "font_size", "line_spacing", "question_spacing_mm",
+                        "compact_options", "show_page_numbers", "accent_color",
+                    }
+                }
 
             update_data["updated_at"] = datetime.utcnow()
 

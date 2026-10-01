@@ -45,6 +45,8 @@ NOTIF_PREFS = [
      "Know right away when a reviewer comments on your exam.", True),
     ("proposal_status_changes", "Proposal status changes",
      "Follow your proposal from request to generated exam.", True),
+    ("document_processing_done", "Document processing completed",
+     "Know when an uploaded curriculum or source document is ready.", True),
     ("user_joins_school", "User joins school",
      "Know when a new staff member joins your school.", False),
     ("preflight_check_failed", "Preflight check failed",
@@ -91,6 +93,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
     min_pass_mark = str(school_settings.get("min_pass_mark") or 50)
     address = school_data.get("address") or ""
     logo_url = school_settings.get("logo_url") or ""
+    document_style = school_settings.get("document_style") or {}
 
     def _tab_link(key: str, label: str, icon_name: str) -> A:
         is_curr = active_tab == key
@@ -160,6 +163,14 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
                     span=12,
                     md=6,
                 ),
+                cls="g-3 mb-3",
+            ),
+            Strong("Exam document defaults", cls="fs-6 text-dark d-block mt-3 mb-2"),
+            P("These settings apply to exam papers, marking guides, and OMR exports for all staff.", cls="text-muted small mb-2"),
+            Row(
+                Col(Input("doc_margin_mm", label="Page margin (mm)", value=str(document_style.get("margin_mm", 14)), input_type="number", min=8, max=30), span=12, md=4),
+                Col(Input("doc_font_size", label="Body font size", value=str(document_style.get("font_size", 10)), input_type="number", min=8, max=14, step="0.5"), span=12, md=4),
+                Col(Input("doc_question_spacing", label="Question spacing (mm)", value=str(document_style.get("question_spacing_mm", 2)), input_type="number", min=0, max=8, step="0.5"), span=12, md=4),
                 cls="g-3 mb-3",
             ),
             Input("address", label="School Physical Address (Printed on Exam Papers)", value=address, placeholder="e.g. 15 Commercial Avenue, Yaba, Lagos"),
@@ -481,8 +492,15 @@ def register_routes(app):
                     return RedirectResponse("/app/settings?tab=profile", status_code=303)
 
             logo_url_val = (form.get("logo_url") or "").strip()
-            if logo_url_val:
-                await call_api(req, "PUT", f"/schools/{school_id}/settings", json={"logo_url": logo_url_val})
+            settings_payload = {
+                "logo_url": logo_url_val,
+                "document_style": {
+                    "margin_mm": form.get("doc_margin_mm", 14),
+                    "font_size": form.get("doc_font_size", 10),
+                    "question_spacing_mm": form.get("doc_question_spacing", 2),
+                },
+            }
+            await call_api(req, "PUT", f"/schools/{school_id}/settings", json=settings_payload)
 
             push_flash(req, "School profile saved successfully.", "success")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)

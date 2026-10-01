@@ -47,6 +47,12 @@ class ClassListResponse(BaseModel):
     classes: List[str]
 
 
+class BoardListResponse(BaseModel):
+    """Educational boards represented in the curriculum database."""
+
+    boards: List[str]
+
+
 class SubjectListResponse(BaseModel):
     """List of available subjects for a class."""
     class_level: str

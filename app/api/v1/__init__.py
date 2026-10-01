@@ -8,6 +8,7 @@ from . import (
     ops_router,
     schools_router,
     users_router,
+    partner_router,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "schools_router",
     "exams_router",
     "ops_router",
+    "partner_router",
 ]
