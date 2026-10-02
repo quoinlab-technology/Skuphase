@@ -64,6 +64,7 @@ from app.services.exam_generator import ExamGenerator
 from app.services.exam_quality_report import ExamQualityReportService
 from app.services.export_service import ExportService
 from app.services.job_queue import enqueue_generation_job
+from app.services.blueprint_service import build_blueprint
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -349,6 +350,15 @@ async def generate_exam(
             )
 
         warnings: List[str] = []
+        blueprint_data = None
+        if request.blueprint:
+            if request.blueprint.subject.strip().casefold() != request.subject.strip().casefold():
+                raise HTTPException(status_code=422, detail="Blueprint subject must match exam subject")
+            if request.blueprint.grade_level.strip().casefold() != request.grade_level.strip().casefold():
+                raise HTTPException(status_code=422, detail="Blueprint grade level must match exam grade level")
+            blueprint_result = build_blueprint(request.blueprint)
+            warnings.extend(blueprint_result.warnings)
+            blueprint_data = request.blueprint.model_dump(mode="json")
         if request.term and request.selected_weeks:
             scheme_data = await CurriculumService.get_objectives_for_weeks(
                 class_level=request.grade_level,
@@ -399,6 +409,7 @@ async def generate_exam(
             llm_call_limit=3,
             total_marks=0,  # Will be updated by the job worker
             duration_minutes=request.duration_minutes,
+            blueprint=blueprint_data,
         )
 
         db.add(exam)
@@ -533,6 +544,7 @@ async def submit_manual_exam(
         duration_minutes=exam.duration_minutes,
         instructions=exam.instructions,
         language=(getattr(exam, "language", None) or "English"),
+        blueprint=getattr(exam, "blueprint", None),
         questions=[
             QuestionResponse(
                 id=q.id,

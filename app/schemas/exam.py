@@ -258,6 +258,7 @@ class ExamResponse(BaseModel):
     duration_minutes: Optional[int] = None
     instructions: Optional[str] = None
     language: str = "English"
+    blueprint: Optional[dict] = None
     
     sections: Optional[List[SectionResponse]] = None
     questions: Optional[List[QuestionResponse]] = None  # Flat list for backward compatibility

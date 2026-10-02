@@ -34,6 +34,9 @@ class Exam(BaseModel):
     # Metadata
     duration_minutes = Column(Integer)  # Time allowed for exam
     instructions = Column(Text)
+    # Optional table-of-specification captured at generation time. Keeping the
+    # source blueprint with the exam makes review and export auditable.
+    blueprint = Column(JSON, nullable=True)
     
     # Relationships
     school = relationship("School", back_populates="exams")
