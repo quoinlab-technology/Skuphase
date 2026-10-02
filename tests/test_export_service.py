@@ -170,3 +170,38 @@ def test_export_exam_pdf_with_svg_diagram(tmp_path):
     assert "Study the sample diagram" in text
     assert "FEDERAL GOVERNMENT COLLEGE LAGOS" in text
 
+
+def test_export_exam_pdf_renders_structured_question_blocks(tmp_path):
+    exam = _exam()
+    questions = [
+        SimpleNamespace(
+            question_number=1,
+            type="short_answer",
+            question_text="Use the working blocks below.",
+            marks=3,
+            options=None,
+            correct_answer=None,
+            explanation=None,
+            marking_scheme=None,
+            diagram_svg=None,
+            content_blocks=[
+                {"type": "text", "text": "Show your substitution."},
+                {"type": "math", "latex": "x^2 + 1 = 5"},
+                {"type": "table", "rows": [["Value", "Result"], ["2", "4"]]},
+            ],
+        )
+    ]
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_exam_pdf(exam=exam, questions=questions)
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(created_path)).pages)
+    assert "Show your substitution" in text
+    assert "Value" in text
+    assert "Result" in text

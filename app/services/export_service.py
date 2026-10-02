@@ -320,6 +320,50 @@ class ExportService:
             cleaned = cls._clean(safe)
             return cleaned.replace("\n", "<br/>")
 
+        def structured_block_flowables(question) -> list:
+            """Render persisted Faststrap blocks with safe legacy fallbacks."""
+            raw_blocks = getattr(question, "content_blocks", None) or []
+            if isinstance(raw_blocks, dict):
+                raw_blocks = raw_blocks.get("blocks", [])
+            flowables = []
+            for block in raw_blocks:
+                kind = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+                value = block if isinstance(block, dict) else block.model_dump()
+                if kind == "text":
+                    text = value.get("text", "")
+                    if text.strip():
+                        flowables.append(Paragraph(esc(text), question_style))
+                elif kind == "math":
+                    latex = value.get("latex", "")
+                    drawing = _svg_to_flowable(
+                        formula_to_svg(latex), max_width_pt=380, max_height_pt=80
+                    )
+                    if drawing is not None:
+                        flowables.extend([Spacer(1, 1 * mm), drawing, Spacer(1, 1 * mm)])
+                    elif latex:
+                        flowables.append(Paragraph(esc(latex), question_style))
+                elif kind == "svg":
+                    drawing = _svg_to_flowable(
+                        value.get("svg", ""), max_width_pt=A4[0] - 28 * mm, max_height_pt=180
+                    )
+                    if drawing is not None:
+                        flowables.extend([Spacer(1, 1.5 * mm), drawing, Spacer(1, 1.5 * mm)])
+                elif kind == "table":
+                    rows = value.get("rows") or []
+                    if rows:
+                        table_data = [[Paragraph(esc(cell), option_style) for cell in row] for row in rows]
+                        table = Table(table_data, repeatRows=1 if value.get("headers", True) else 0)
+                        table.setStyle(TableStyle([
+                            ("GRID", (0, 0), (-1, -1), 0.35, "#777777"),
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                            ("TOPPADDING", (0, 0), (-1, -1), 3),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                        ]))
+                        flowables.extend([Spacer(1, 1 * mm), table, Spacer(1, 1 * mm)])
+            return flowables
+
         story: list = []
 
         header = []
@@ -484,6 +528,8 @@ class ExportService:
             story.append(
                 Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
             )
+
+            story.extend(structured_block_flowables(q))
 
             # Keep display equations visible in PDF exports even when a TeX
             # binary is unavailable. The browser continues to use KaTeX, but
