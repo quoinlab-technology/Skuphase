@@ -11,6 +11,12 @@ def test_constants_filter_by_subject():
     assert any(c["id"] == "chem.avogadro" for c in list_constants("Chemistry"))
     assert not any(c["id"] == "chem.avogadro" for c in list_constants("Physics"))
 
+
+def test_constants_expose_editorial_metadata():
+    item = list_constants("Physics")[0]
+    assert item["review_status"] == "verified"
+    assert item["class_levels"]
+
 def test_blueprint_reports_allocation_and_bloom_warnings():
     req = BlueprintRequest(subject="Physics", grade_level="SSS 1", total_questions=2, total_marks=4, sections=[{"topic":"Motion", "bloom":"application", "questions":2, "marks":4}])
     result = build_blueprint(req)

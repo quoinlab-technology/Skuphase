@@ -103,6 +103,12 @@ class FormulaItem(BaseModel):
     class_levels: List[str] = Field(default_factory=list, description="Applicable grade levels")
     variables: List[FormulaVariable] = Field(default_factory=list, description="Breakdown of formula symbols")
     description: Optional[str] = Field(None, description="Usage note or condition of validity")
+    unit_system: str = Field(default="SI", description="Unit convention used by the formula")
+    source: str = Field(default="SkuPhase verified school formula catalog", description="Reference/source label")
+    review_status: Literal["verified", "needs_review", "deprecated"] = Field(
+        default="verified", description="Editorial verification state"
+    )
+    reviewed_at: Optional[str] = Field(None, description="ISO date of latest editorial review")
 
 
 class RenderedDiagramResponse(BaseModel):

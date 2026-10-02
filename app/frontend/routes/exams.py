@@ -4667,6 +4667,35 @@ _wizard_options = _wizard_confirm
 
 def register_action_routes(app):
 
+    @app.post("/ui/exams/manual-copilot")
+    async def manual_copilot(req: Request):
+        """Teacher-in-the-loop copilot assist for the manual editor.
+
+        The route returns suggestions only; the browser must explicitly apply
+        them, so AI output never silently overwrites authored content.
+        """
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        payload = {
+            "action": str(form.get("action") or "rewrite"),
+            "subject": str(form.get("subject") or "General"),
+            "grade_level": str(form.get("grade_level") or "General"),
+            "question": str(form.get("question") or "").strip(),
+            "marks": _safe_int(form.get("marks"), 1),
+            "options": [str(x) for x in form.getlist("options") if str(x).strip()],
+            "topic": str(form.get("topic") or "").strip() or None,
+        }
+        if len(payload["question"]) < 3:
+            return JSONResponse({"detail": "Enter a question before requesting AI assistance."}, status_code=422)
+        resp = await call_api(req, "POST", "/copilot/assist", json=payload)
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"detail": "The copilot returned an invalid response."}
+        return JSONResponse(data, status_code=resp.status_code)
+
     @app.post("/ui/exams/generate")
     async def exam_generate(req: Request):
         guard = ensure_login(req)
@@ -5668,8 +5697,11 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
           <button type="button" class="btn btn-link text-danger p-0 manual-remove-question" aria-label="Remove question"><i class="bi bi-trash3"></i></button>
         </div>
       </div>
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label text-muted small fw-medium mb-0">Question <span class="text-danger">*</span></label>
+        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill manual-copilot-btn" title="Ask AI for a suggestion; nothing is applied automatically"><i class="bi bi-stars me-1"></i>AI assist</button>
+      </div>
       <div class="mb-3">
-        <label class="form-label text-muted small fw-medium mb-1">Question <span class="text-danger">*</span></label>
         <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text… (supports LaTeX: $x^2+5=0$)" style="background:#F4F6F4;font-size:0.92rem;" required>${{text}}</textarea>
       </div>
       <div class="row g-3 mb-3">
@@ -5863,7 +5895,43 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
   }};
 
   editor.addEventListener('input', update);
-  editor.addEventListener('click', e => {{
+    editor.addEventListener('click', e => {{
+    const copilot = e.target.closest('.manual-copilot-btn');
+    if (copilot) {{
+      const cardEl = copilot.closest('[data-question-card]');
+      const question = cardEl.querySelector('.manual-question-text')?.value.trim() || '';
+      if (!question) {{ window.alert('Enter a question before requesting AI assistance.'); return; }}
+      const action = window.prompt('AI assist type: rewrite, options, marking_guide, or diagram_prompt', 'rewrite');
+      if (!['rewrite','options','marking_guide','diagram_prompt'].includes(action)) return;
+      copilot.disabled = true;
+      const body = new URLSearchParams({{
+        action,
+        subject: document.getElementById('manual-subject')?.value || 'General',
+        grade_level: document.getElementById('manual-grade')?.value || 'General',
+        question,
+        marks: cardEl.querySelector('.manual-question-marks')?.value || '1',
+        topic: cardEl.querySelector('.manual-question-topic')?.value || '',
+      }});
+      fetch('/ui/exams/manual-copilot', {{method:'POST', headers:{{'Content-Type':'application/x-www-form-urlencoded'}}, body}})
+        .then(r => r.json().then(data => ({{ok:r.ok, data}})))
+        .then(result => {{
+          if (!result.ok) {{ window.alert(result.data.detail || 'Copilot request failed.'); return; }}
+          const data = result.data || {{}};
+          const suggestion = data.content || (data.options || []).join('\\n');
+          if (!suggestion) {{ window.alert('The copilot returned no suggestion.'); return; }}
+          if (!window.confirm('AI suggestion (nothing has been changed yet):\\n\\n' + suggestion + '\\n\\nApply this suggestion?')) return;
+          if (action === 'rewrite') cardEl.querySelector('.manual-question-text').value = data.content || question;
+          if (action === 'marking_guide' && data.marking_points) cardEl.querySelector('.manual-marking-scheme').value = data.marking_points.join(String.fromCharCode(10));
+          if (action === 'options' && data.options) {{
+            options(cardEl, data.options);
+            [...cardEl.querySelectorAll('.manual-option')].forEach((input, i) => input.value = data.options[i] || '');
+          }}
+          update();
+        }})
+        .catch(() => window.alert('Could not contact the AI copilot.'))
+        .finally(() => {{ copilot.disabled = false; }});
+      return;
+    }}
     const duplicate = e.target.closest('.manual-duplicate-question');
     if (duplicate) {{
       const source = duplicate.closest('[data-question-card]');

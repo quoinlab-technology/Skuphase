@@ -31,6 +31,7 @@ dependencies = [
     "reportlab",
     "svglib",
     "python-dotenv",
+    "python-docx",
 ]
 
 [tool.pytest.ini_options]

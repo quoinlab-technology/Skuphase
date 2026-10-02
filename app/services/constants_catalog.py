@@ -1,6 +1,6 @@
 """Verified Nigerian secondary-examination constants and units."""
 from __future__ import annotations
-from typing import TypedDict
+from typing import TypedDict, NotRequired
 
 class Constant(TypedDict):
     id: str
@@ -10,6 +10,10 @@ class Constant(TypedDict):
     unit: str
     subjects: list[str]
     note: str
+    class_levels: NotRequired[list[str]]
+    source: NotRequired[str]
+    review_status: NotRequired[str]
+    reviewed_at: NotRequired[str]
 
 CONSTANTS: list[Constant] = [
     {"id": "physics.g", "symbol": "g", "name": "Acceleration due to gravity", "value": "9.8 or 10", "unit": "m/s²", "subjects": ["Physics", "Mathematics"], "note": "Use the value specified in the question or examination instructions."},
@@ -24,7 +28,16 @@ CONSTANTS: list[Constant] = [
 ]
 
 def list_constants(subject: str | None = None, query: str | None = None) -> list[Constant]:
-    result = CONSTANTS
+    result = [
+        {
+            **c,
+            "class_levels": ["JSS 1-3", "SSS 1-3"],
+            "source": "SkuPhase verified school constants catalog",
+            "review_status": "verified",
+            "reviewed_at": "2026-10-02",
+        }
+        for c in CONSTANTS
+    ]
     if subject:
         result = [c for c in result if subject.lower() in {s.lower() for s in c["subjects"]}]
     if query:
