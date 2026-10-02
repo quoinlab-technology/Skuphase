@@ -780,10 +780,12 @@ def _render_answer_key_paper(exam: dict, user: dict) -> Div:
         ms = q.get("marking_scheme") or []
         ans = q.get("correct_answer") or ""
         pts = [Li(str(p), style="margin-bottom: 2px;") for p in ms] if ms else [Li(ans)] if ans else [Li("Award marks per teacher rubric.")]
+        structured = render_structured_blocks(q.get("content_blocks"))
         theory_items.append(
             Div(
                 Strong(f"Q{q.get('question_number', '?')}. [{q.get('marks', 1)} marks] ", style="font-size: 0.88rem;"),
                 Span(q.get("question_text", ""), style="font-size: 0.85rem; color: #444;"),
+                structured if structured is not None else Div(),
                 Ul(*pts, style="font-size: 0.82rem; margin-top: 4px; padding-left: 20px;"),
                 style="margin-bottom: 8px; border-bottom: 1px dashed #ccc; padding-bottom: 6px;",
             )

@@ -205,3 +205,36 @@ def test_export_exam_pdf_renders_structured_question_blocks(tmp_path):
     assert "Show your substitution" in text
     assert "Value" in text
     assert "Result" in text
+
+
+def test_export_marking_guide_includes_structured_block_notes(tmp_path):
+    exam = _exam()
+    question = SimpleNamespace(
+        question_number=1,
+        type="short_answer",
+        question_text="Solve the problem.",
+        marks=3,
+        correct_answer="x = 2",
+        marking_scheme=["Correct substitution"],
+        explanation=None,
+        content_blocks=[
+            {"type": "text", "text": "Show your substitution."},
+            {"type": "math", "latex": "x^2 = 4"},
+            {"type": "table", "rows": [["x", "x²"], ["2", "4"]]},
+            {"type": "svg", "svg": "<svg width='10' height='10'></svg>"},
+        ],
+    )
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_marking_guide_pdf(exam, [question])
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(created_path)).pages)
+    assert "Show your substitution" in text
+    assert "Formula:" in text
+    assert "Attached diagram" in text

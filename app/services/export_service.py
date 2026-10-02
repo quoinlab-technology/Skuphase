@@ -722,6 +722,24 @@ class ExportService:
                         criteria.append(f"• {esc(str(pt))}")
                 if q.explanation:
                     criteria.append(f"<i>Note: {esc(q.explanation)}</i>")
+                raw_blocks = getattr(q, "content_blocks", None) or []
+                if isinstance(raw_blocks, dict):
+                    raw_blocks = raw_blocks.get("blocks", [])
+                block_notes = []
+                for block in raw_blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text" and block.get("text"):
+                        block_notes.append(esc(block["text"]))
+                    elif block.get("type") == "math" and block.get("latex"):
+                        block_notes.append(f"<b>Formula:</b> {esc(block['latex'])}")
+                    elif block.get("type") == "table" and block.get("rows"):
+                        rows = [" | ".join(str(cell) for cell in row) for row in block["rows"]]
+                        block_notes.append(f"<b>Table:</b> {esc(' / '.join(rows))}")
+                    elif block.get("type") == "svg":
+                        block_notes.append("<i>[Attached diagram]</i>")
+                if block_notes:
+                    criteria.append("<b>Question document:</b> " + "<br/>".join(block_notes))
                 criteria_text = "<br/>".join(criteria) if criteria else "Award marks per teacher rubric."
 
                 theory_rows.append([
