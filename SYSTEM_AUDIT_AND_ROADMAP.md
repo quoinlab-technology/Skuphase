@@ -567,3 +567,184 @@ Requirements:
 With **Part V**, `SYSTEM_AUDIT_AND_ROADMAP.md` is now the single, complete, and reconciled master plan for SkuPhase. It fixes all 9 accuracy defects, unblocks immediate manual exam authoring in Phase 1 by leveraging the existing 10 diagram archetypes, establishes the SMS architectural decoupling guardrail, and includes Part IV's high-value daily lesson delivery engine.
 
 We are ready to begin execution with **Phase 0 (Core Stability & Release Gate)**.
+
+---
+
+# Current Execution Status and Locked Sequence (2026-10-02)
+
+This section supersedes the historical execution statement above. It is the
+working status ledger for the implementation team. A proposal is not marked
+complete merely because it appears in an earlier mapping table: it is complete
+only when the feature exists, is reachable through the intended workflow, and
+has regression coverage.
+
+## Original phases: verified status
+
+### Phase 0 — Core Stability and Release Gate
+
+**Status: Complete.**
+
+Completed work includes dependency and startup corrections, SVG safety and
+stored-XSS protections, PDF diagram preservation, export-path security, core
+regression fixes, and a passing full test suite.
+
+### Phase 1 — Assessment Studio Workshop
+
+**Status: Core workflow complete; final product-hardening remains.**
+
+Implemented:
+
+- manual exam creation and question editing;
+- answer keys, marking schemes, explanations, and given-data fields;
+- MCQ answer selection;
+- question duplication, ordering, and removal;
+- sections and section metadata;
+- curriculum week tagging;
+- diagram archetype insertion;
+- formula/KaTeX preview;
+- school branding and export controls;
+- question-bank integration already present in the application;
+- OMR export;
+- export preflight and SVG validation.
+
+Still outstanding from the broader Phase 1/Category B definition:
+
+- complete multi-part question editing with nested sub-question persistence;
+- full DOCX/CSV/GIFT/QTI import/export audit and round-trip tests;
+- teacher-facing AI co-pilot controls inside the manual editor;
+- final browser QA across desktop and mobile layouts.
+
+### Phase 2 — Curriculum, Science, and Assessment Studio Expansion
+
+**Status: Core expansion complete; several roadmap capabilities are now being
+closed through the current Assessment Studio work package.**
+
+Implemented:
+
+- board-aware curriculum API and search;
+- validated future curriculum importer;
+- formula catalog;
+- constants catalog foundation;
+- 32 categorized diagram templates;
+- study/exam diagram modes and callout masking;
+- generated marking points;
+- visual diagram gallery and thumbnails;
+- structured assessment document contract;
+- blueprint/Table-of-Specification service and API;
+- server-side safe formula fallback and PDF SVG rendering;
+- school-wide document style settings;
+- responsive manual preview behavior.
+
+Not yet complete:
+
+- authoritative JSS/SSS/NAPS curriculum data ingestion (the importer is ready;
+  the source images still need extraction and review);
+- full KaTeX/MathJax server parity rather than the current safe fallback;
+- verified constants review by subject experts;
+- full visual/PDF golden-file QA for all templates;
+- Part IV lesson delivery features;
+- complete structured-document persistence and rendering across every output
+  format.
+
+### Phase 3 — Commercial Partner API
+
+**Status: Started, intentionally paused for the free-school pilot.**
+
+Implemented foundation:
+
+- tenant API-key model;
+- SHA-256 secret storage;
+- scopes, expiration, revocation, and quotas;
+- school-admin key-management endpoints;
+- partner-key verification dependency.
+
+Deferred until product validation:
+
+- attaching scopes to all partner operations;
+- quota accounting and enforcement;
+- idempotency records for generation requests;
+- signed webhook delivery and retry handling;
+- developer portal/API documentation;
+- embeddable preview widget;
+- commercial packaging and pricing.
+
+The Phase 3 foundation must not redirect current work away from the free pilot.
+
+## Reordered implementation sequence
+
+### Work Package A — Finish the Assessment Studio
+
+This is the current work package and must be completed before lesson delivery.
+
+1. Complete the structured question document model and connect it to stored
+   questions, browser preview, PDF export, and answer-key export.
+2. Finish the verified formula and constants bank, including units,
+   class-level applicability, source/review status, and chemistry notation.
+3. Connect the AI co-pilot to the manual editor for options, marking guides,
+   wording improvement, and diagram suggestions, with explicit teacher
+   approval before applying changes.
+4. Connect blueprint results to the AI generation request so generation can be
+   constrained by topic, Bloom level, marks, and question count.
+5. Complete and test CSV/DOCX/GIFT/QTI import/export round trips.
+6. Finish question-block pagination and golden PDF tests for papers, marking
+   guides, OMR sheets, and future worksheets.
+
+### Work Package B — Part IV Curriculum Delivery Studio
+
+Build this against the existing Scheme of Work without coupling the
+assessment engine to student/fee records:
+
+1. `LessonPlan` model and CRUD workflow;
+2. `WeeklyExercise` model and printable worksheet export;
+3. `TeacherSyllabusCoverage` model and teacher completion workflow;
+4. AI lesson-note generation grounded in canonical scheme weeks;
+5. HOD verification and approval;
+6. weekly coverage dashboard and exam-generation coverage warnings;
+7. teacher notes, assignments, and locally accessible instructional materials.
+
+### Work Package C — Free-school production pilot
+
+Before public or commercial release:
+
+- onboarding and school setup;
+- role/permission and tenant-isolation audit;
+- backups and recovery procedure;
+- audit logs and error monitoring;
+- low-bandwidth/mobile testing;
+- privacy and data-retention policy;
+- school feedback and issue-triage workflow;
+- real-school validation through December 2026.
+
+### Work Package D — SMS bounded context
+
+Only after pilot evidence supports it, add `app/modules/sms/` for:
+
+- academic sessions and terms;
+- class streams;
+- students and enrollments;
+- grade scales;
+- continuous assessment;
+- report cards;
+- item analysis;
+- moderation and sign-off.
+
+The assessment engine must not acquire foreign keys to SMS student, classroom,
+or fee entities.
+
+### Work Package E — Resume commercial Phase 3
+
+After pilot validation, complete partner scopes, quotas, idempotency, webhooks,
+white-label export, embeddable preview, documentation, and pricing.
+
+## Team operating rule
+
+Every future implementation report must state:
+
+1. the work package being closed;
+2. the files and workflows changed;
+3. the tests run;
+4. what remains in that work package;
+5. the commit containing the completed slice.
+
+No roadmap item should be described as complete solely because a schema,
+placeholder, or isolated endpoint exists.
