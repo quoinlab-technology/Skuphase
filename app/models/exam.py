@@ -113,6 +113,8 @@ class Question(BaseModel):
     
     # Diagram support
     diagram_svg = Column(Text)  # SVG diagram if applicable
+    # Structured Faststrap-compatible blocks (text, math, SVG, table).
+    content_blocks = Column(JSON, nullable=True)
     
     # Relationships
     exam = relationship("Exam", back_populates="questions")

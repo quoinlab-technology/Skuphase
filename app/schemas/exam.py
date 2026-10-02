@@ -5,6 +5,7 @@ from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from app.schemas.assessment_studio import BlueprintRequest
+from app.schemas.assessment_studio import QuestionDocument
 
 
 class PassageSpec(BaseModel):
@@ -214,6 +215,7 @@ class QuestionResponse(BaseModel):
 
     # Diagram
     diagram_svg: Optional[str] = None
+    content_blocks: Optional[QuestionDocument] = None
 
     # Comprehension passage link
     passage_id: Optional[UUID] = None
@@ -462,6 +464,7 @@ class ManualQuestionInput(BaseModel):
     marking_scheme: Optional[List[str]] = None
     sub_parts: Optional[List[SubPartResponse]] = None
     diagram_svg: Optional[str] = None
+    content_blocks: Optional[QuestionDocument] = None
 
     @field_validator("diagram_svg")
     @classmethod

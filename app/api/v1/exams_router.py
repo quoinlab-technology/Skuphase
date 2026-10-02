@@ -509,6 +509,11 @@ async def submit_manual_exam(
                 else None
             ),
             diagram_svg=question_data.diagram_svg,
+            content_blocks=(
+                [block.model_dump(mode="json") for block in question_data.content_blocks.blocks]
+                if question_data.content_blocks
+                else None
+            ),
         )
         db.add(question)
 
@@ -561,6 +566,11 @@ async def submit_manual_exam(
                 marking_scheme=q.marking_scheme,
                 sub_parts=q.sub_parts,
                 diagram_svg=q.diagram_svg,
+                content_blocks=(
+                    {"blocks": q.content_blocks}
+                    if getattr(q, "content_blocks", None)
+                    else None
+                ),
             )
             for q in questions
         ],
