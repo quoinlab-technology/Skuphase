@@ -10,6 +10,7 @@ from . import (
     users_router,
     partner_router,
     assessment_router,
+    copilot_router,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "ops_router",
     "partner_router",
     "assessment_router",
+    "copilot_router",
 ]
