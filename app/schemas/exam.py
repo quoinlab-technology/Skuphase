@@ -4,6 +4,7 @@ from typing import List, Optional, Dict
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+from app.schemas.assessment_studio import BlueprintRequest
 
 
 class PassageSpec(BaseModel):
@@ -102,6 +103,9 @@ class ExamGenerationRequest(BaseModel):
         "English",
         max_length=30,
         description="Language of instruction for questions/answers (English, Igbo, Yoruba, Hausa...)",
+    )
+    blueprint: Optional[BlueprintRequest] = Field(
+        None, description="Optional validated topic/Bloom/marks blueprint for generation"
     )
 
     difficulty_distribution: Optional[Dict[str, float]] = Field(

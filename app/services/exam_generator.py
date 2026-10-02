@@ -268,6 +268,13 @@ class ExamGenerator:
         difficulty_block = self._build_difficulty_instructions(request.difficulty_distribution)
         primary_layout_block = self._build_primary_layout_instructions(request)
         language_block = self._build_language_instructions(request.language)
+        blueprint_block = ""
+        if request.blueprint:
+            blueprint = request.blueprint
+            blueprint_block = "\nBLUEPRINT CONSTRAINT (MUST FOLLOW):\n" + "\n".join(
+                f"- Topic: {s.topic}; Bloom: {s.bloom}; Questions: {s.questions}; Marks: {s.marks}"
+                for s in blueprint.sections
+            ) + "\nDo not substitute topics or Bloom levels without stating a warning.\n"
 
         # Build base prompt
         prompt = f"""You are an expert Nigerian school examiner creating high-quality exam questions for {request.subject} at {request.grade_level} level.
@@ -319,6 +326,8 @@ Duration: {request.duration_minutes} minutes
 {language_block}
 
 {primary_layout_block}
+
+{blueprint_block}
 
 ═══════════════════════════════════════════════════════════════
 SECTION 4: OUTPUT FORMAT (STRICT JSON)
