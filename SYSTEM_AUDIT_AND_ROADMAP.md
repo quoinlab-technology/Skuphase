@@ -748,3 +748,20 @@ Every future implementation report must state:
 
 No roadmap item should be described as complete solely because a schema,
 placeholder, or isolated endpoint exists.
+
+## Work Package A completion checkpoint (2026-10-02)
+
+Work Package A is implementation-complete for the pilot transition. Structured
+question blocks now persist and render in review UI, printable papers, marking
+guides, answer-key PDFs, and OMR-tested export flows. Blueprint constraints are
+validated, stored, and passed to generation. Formula/constants catalogs expose
+editorial metadata. The manual editor has a teacher-approved copilot assist
+flow, and CSV, DOCX, GIFT, and QTI exchange adapters have deterministic
+round-trip tests.
+
+Remaining before pilot launch is operational verification rather than a new
+assessment-studio feature: browser-level visual checks on representative
+desktop/mobile screens, real school data fixtures, and production PDF print
+sampling. Work Package B may begin; any defects found in that verification are
+to be treated as pilot hardening tickets, not silently folded into curriculum
+delivery scope.
