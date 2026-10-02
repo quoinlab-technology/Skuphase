@@ -238,3 +238,23 @@ def test_export_marking_guide_includes_structured_block_notes(tmp_path):
     assert "Show your substitution" in text
     assert "Formula:" in text
     assert "Attached diagram" in text
+
+
+def test_export_omr_sheet_is_valid_multi_page_pdf(tmp_path):
+    exam = _exam()
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_omr_sheet_pdf(exam)
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(created_path))
+    assert created_path.exists()
+    assert len(reader.pages) >= 1
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "OMR ANSWER SHEET" in text
+    assert "50." in text
