@@ -81,6 +81,7 @@ from app.frontend.components.exam import (
     exam_header,
     render_questions,
     render_rich_text,
+    render_structured_blocks,
 )
 from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_toast
 from app.frontend.components.layout import AppShell
@@ -693,6 +694,10 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         q_parts = [
             Div(Strong(f"Q{idx}. "), Span(q.get("question_text", "")), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 3px; font-size: 0.88rem;"),
         ]
+
+        structured = render_structured_blocks(q.get("content_blocks"))
+        if structured is not None:
+            q_parts.append(structured)
 
         if q.get("diagram_svg"):
             q_parts.append(

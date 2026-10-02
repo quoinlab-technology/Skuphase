@@ -15,7 +15,7 @@ from app.services.diagram_templates import (
     render_triangle_puzzle,
 )
 from app.services.export_service import _svg_to_flowable, ExportService
-from app.frontend.components.exam import QuestionBlock
+from app.frontend.components.exam import QuestionBlock, render_structured_blocks
 
 
 def test_diagram_templates_output_valid_svg():
@@ -73,6 +73,18 @@ def test_question_card_renders_diagram_viewport():
     assert "diagram-viewport" in rendered_html
     assert "<svg" in rendered_html
     assert "<circle" in rendered_html
+
+
+def test_question_card_renders_structured_blocks():
+    rendered_html = str(render_structured_blocks({"blocks": [
+        {"type": "text", "text": "Show your working."},
+        {"type": "math", "latex": "x^2 + 1 = 5"},
+        {"type": "table", "rows": [["x", "x²"], ["2", "4"]]},
+    ]}))
+    assert "structured-question-blocks" in rendered_html
+    assert "Show your working." in rendered_html
+    assert "x^2 + 1 = 5" in rendered_html
+    assert "structured-table-preview" in rendered_html
 
 
 def test_pdf_export_with_diagram(tmp_path, monkeypatch):

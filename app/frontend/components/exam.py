@@ -34,6 +34,34 @@ def render_rich_text(text: str) -> Span:
     return Span(text, cls="math-content")
 
 
+def render_structured_blocks(blocks) -> Div | None:
+    """Render persisted question document blocks in the review/print UI."""
+    if isinstance(blocks, dict):
+        blocks = blocks.get("blocks", [])
+    if not blocks:
+        return None
+    parts = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "text" and block.get("text"):
+            parts.append(Div(render_rich_text(block["text"]), cls="small mb-2 math-content"))
+        elif kind == "math" and block.get("latex"):
+            parts.append(Div(render_rich_text(f"\\[{block['latex']}\\]"), cls="my-2 text-center math-content"))
+        elif kind == "svg":
+            safe_svg = sanitize_svg(block.get("svg", ""))
+            if safe_svg:
+                parts.append(Div(Svg(safe_svg, sanitize=False), cls="structured-svg-preview my-2"))
+        elif kind == "table" and block.get("rows"):
+            rows = []
+            for row_index, row in enumerate(block["rows"]):
+                cells = [Div(str(cell), cls="flex-fill px-2 py-1 border-end") for cell in row]
+                rows.append(Div(*cells, cls="d-flex border-bottom"))
+            parts.append(Div(*rows, cls="structured-table-preview border rounded mb-2", style="max-width:100%; overflow-x:auto;"))
+    return Div(*parts, cls="structured-question-blocks") if parts else None
+
+
 def render_column_arithmetic(text: str):
     """Detect an H T U column-arithmetic block in *text* and render it as SVG.
 
@@ -308,6 +336,10 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
 
     # Body details: Collapsed/expanded when toggled
     body_parts = []
+
+    structured = render_structured_blocks(q.get("content_blocks"))
+    if structured is not None:
+        body_parts.append(structured)
 
     # ── Column arithmetic (H T U place-value) ─────────────────────────────
     q_text_raw = q.get("question_text", "") or ""
