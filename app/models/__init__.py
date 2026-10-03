@@ -15,6 +15,7 @@ from app.models.curriculum_mapping import CurriculumMapping
 from app.models.job import GenerationJob
 from app.models.login_attempt import LoginAttempt
 from app.models.api_key import ApiKey
+from app.models.lesson_plan import LessonPlan
 
 __all__ = [
     "BaseModel",
@@ -38,4 +39,5 @@ __all__ = [
     "GenerationJob",
     "LoginAttempt",
     "ApiKey",
+    "LessonPlan",
 ]
