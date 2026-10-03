@@ -829,7 +829,7 @@ future planning.
 | Weekly exercises and worksheet export | Implemented (API/export) | CRUD, PDF export, and download exist; teacher-facing management screens remain. |
 | Syllabus coverage | Implemented (API) | Coverage states, verification, and summary exist; visual dashboard and curriculum-wide bulk workflow remain. |
 | AI lesson notes | Implemented (service/API) | Grounded generation exists; teacher editing, approval, versioning, and export remain. |
-| Exam-generation coverage warnings | Not implemented | Generation must warn when requested weeks are not marked covered. |
+| Exam-generation coverage warnings | Implemented (advisory) | Generation now warns when selected scheme weeks are not completed or verified for the school; browser acceptance coverage remains. |
 | Teacher notes, assignments, local materials | Not implemented | Requires bounded content/material workflow and low-bandwidth delivery design. |
 
 ### Part V - pilot and architectural guardrails
