@@ -46,3 +46,54 @@ class LessonPlanResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    ai_lesson_note: str | None = None
+    hod_feedback: str | None = None
+    approved_by_user_id: UUID | None = None
+    approved_at: datetime | None = None
+
+
+class WeeklyExerciseCreate(BaseModel):
+    lesson_plan_id: UUID
+    title: str = Field(..., min_length=3, max_length=255)
+    instructions: str | None = Field(None, max_length=2000)
+    questions: list[dict] = Field(..., min_length=1, max_length=100)
+
+
+class WeeklyExerciseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    school_id: UUID
+    lesson_plan_id: UUID
+    created_by_user_id: UUID | None = None
+    title: str
+    instructions: str | None = None
+    questions: list[dict] = Field(default_factory=list)
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CoverageUpdate(BaseModel):
+    status: str = Field(..., pattern="^(planned|in_progress|completed|verified)$")
+    teacher_notes: str | None = Field(None, max_length=5000)
+
+
+class CoverageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    school_id: UUID
+    curriculum_id: UUID
+    scheme_id: UUID
+    teacher_id: UUID | None = None
+    status: str
+    teacher_notes: str | None = None
+    completed_at: datetime | None = None
+    verified_by_user_id: UUID | None = None
+    verified_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LessonNoteRequest(BaseModel):
+    lesson_plan_id: UUID
+    additional_guidance: str | None = Field(None, max_length=2000)
