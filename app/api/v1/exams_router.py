@@ -32,6 +32,8 @@ from app.models.proposal import ExamGenerationProposal
 from app.models.quality import ExamQualitySnapshot
 from app.models.question_bank import QuestionBankItem
 from app.models.usage_log import UsageLog
+from app.models.curriculum import Curriculum, SchemeOfWork
+from app.models.lesson_plan import SyllabusCoverage
 from app.schemas.exam import (
     GenerateFromProposalRequest,
     ExamGenerationProposalCreateRequest,
@@ -375,6 +377,39 @@ async def generate_exam(
                     f"{request.subject} {request.term}. Generating from general "
                     f"curriculum knowledge instead. Available classes: {available}"
                 )
+            else:
+                # Coverage is advisory: generation remains available, but the
+                # teacher sees exactly which selected weeks are not completed
+                # or HOD-verified in this school.
+                coverage_result = await db.execute(
+                    select(SchemeOfWork.week_number, SyllabusCoverage.status)
+                    .join(Curriculum, Curriculum.id == SchemeOfWork.curriculum_id)
+                    .outerjoin(
+                        SyllabusCoverage,
+                        and_(
+                            SyllabusCoverage.scheme_id == SchemeOfWork.id,
+                            SyllabusCoverage.school_id == current_user.school_id,
+                        ),
+                    )
+                    .where(
+                        Curriculum.class_level == request.grade_level,
+                        Curriculum.subject_name == request.subject,
+                        SchemeOfWork.term == request.term,
+                        SchemeOfWork.week_number.in_(request.selected_weeks),
+                    )
+                )
+                coverage_rows = coverage_result.all() if hasattr(coverage_result, "all") else []
+                covered = {
+                    week for week, status in coverage_rows
+                    if status in {"completed", "verified"}
+                }
+                missing = sorted(set(request.selected_weeks) - covered)
+                if missing:
+                    warnings.append(
+                        "Selected scheme weeks are not marked completed or verified: "
+                        + ", ".join(str(week) for week in missing)
+                        + ". Review coverage before using this paper."
+                    )
 
         # Check rate limit (10 exams per day per school)
         from datetime import datetime, timedelta
