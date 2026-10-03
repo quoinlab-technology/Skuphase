@@ -10,6 +10,8 @@ from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
 from app.models.exam import Exam
 from app.models.user import User
+from app.models.school import School
+from app.models.curriculum import Curriculum
 
 router = APIRouter()
 
@@ -86,3 +88,20 @@ async def ops_stats(
             "failed_last_24h": failed_24h_result.scalar_one(),
         },
     }
+
+
+@router.get("/pilot-readiness", response_model=dict, tags=["Operations"])
+async def pilot_readiness(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)) -> dict:
+    """Return the school setup checks needed before pilot use."""
+    if current_user.role != "school_admin":
+        raise HTTPException(status_code=403, detail="Only school administrators can view pilot readiness")
+    school = await db.scalar(select(School).where(School.id == current_user.school_id))
+    staff_count = await db.scalar(select(func.count()).select_from(User).where(User.school_id == current_user.school_id))
+    curriculum_count = await db.scalar(select(func.count()).select_from(Curriculum))
+    checks = {
+        "school_profile": bool(school and school.name and school.contact_email),
+        "admin_account": True,
+        "staff_members": (staff_count or 0) > 0,
+        "curriculum_catalog": (curriculum_count or 0) > 0,
+    }
+    return {"school_id": str(current_user.school_id), "ready": all(checks.values()), "checks": checks, "staff_count": staff_count or 0, "curriculum_count": curriculum_count or 0}

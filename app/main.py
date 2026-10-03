@@ -10,6 +10,7 @@ from app.config.settings import get_settings
 from app.core.database import init_db
 from app.api.v1 import auth_router, users_router, schools_router
 from app.api.v1 import exams_router, ops_router, curriculum_router, library_router, partner_router, assessment_router, copilot_router, lesson_plans_router
+from app.core.observability import RequestCorrelationMiddleware
 
 
 logging.basicConfig(level=get_settings().log_level.upper())
@@ -54,11 +55,12 @@ app.add_middleware(
     allow_methods=settings.cors_methods,
     allow_headers=settings.cors_headers,
 )
+app.add_middleware(RequestCorrelationMiddleware)
 
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "healthy", "environment": settings.app_env}
+    return {"status": "healthy", "environment": settings.app_env, "version": settings.app_version}
 
 
 # API v1 routers
