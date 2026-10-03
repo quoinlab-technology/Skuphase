@@ -778,3 +778,74 @@ desktop/mobile screens, real school data fixtures, and production PDF print
 sampling. Work Package B may begin; any defects found in that verification are
 to be treated as pilot hardening tickets, not silently folded into curriculum
 delivery scope.
+
+## Authoritative gap ledger: partial and not implemented (2026-10-03)
+
+This ledger supersedes broad statements such as “Package A complete.” A feature
+is only complete when its intended user workflow, persistence, output formats,
+and regression coverage all exist. The items below must not be dropped from
+future planning.
+
+### Part III / Category A - visual reasoning and science authoring
+
+| Item | Status | Evidence / completion criterion |
+|---|---|---|
+| Universal structured question document | Implemented | Blocks persist and render in review, paper, marking guide, answer-key, and worksheet paths; remaining work is wider format parity. |
+| Server-side LaTeX parity | Partial | Safe SVG/ReportLab fallback exists; full KaTeX/MathJax-compatible server rendering and golden equation corpus are still required. |
+| Nigerian science/math diagram catalog | Partial | 32 parameterized templates exist; proposed optics, organic chemistry, biology, statistics, and other archetype coverage needs a reviewed subject-by-subject inventory. |
+| Faststrap symbol/formula bar | Partial | Formula ribbon and catalog insertion exist; full symbol constructs, chemistry notation, accessibility, and mobile QA remain. |
+| Verified formula/constants bank | Partial | Metadata and seeded constants exist; subject-expert verification, provenance, class applicability review, and chemistry notation audit remain. |
+
+### Part III / Category B - teacher workflow
+
+| Item | Status | Evidence / completion criterion |
+|---|---|---|
+| Multi-part authoring | Partial | Basic sub-parts persist; rich nested editing, per-part marks, answers, and rubric editing remain. |
+| AI copilot | Partial | Manual-editor suggestion route and approval flow exist; diagram suggestions and all apply-to-block operations need end-to-end browser QA. |
+| CSV/DOCX/GIFT/QTI exchange | Partial | Deterministic adapters and tests exist; authenticated upload/download UI/API integration and real LMS fixture validation remain. |
+| OMR and grading | Partial | OMR PDF generation exists; personalized metadata, scan/camera grading, error correction, and result audit trail remain. |
+| Visual blueprint matrix | Partial | Blueprint schema, validation, persistence, and generation constraints exist; full visual topic/Bloom matrix editing and review screen remain. |
+
+### Part III / Category C - commercial platform
+
+| Item | Status |
+|---|---|
+| Partner API productization | Deferred | Key foundation exists; scopes, quota enforcement, idempotency, webhooks, widget, developer portal, white-label API, and pricing remain intentionally deferred. |
+
+### Part III / Category D - school-management modules
+
+| Item | Status |
+|---|---|
+| Academic sessions, terms, streams, students, enrollments, grade scales | Not implemented | Reserved for the SMS bounded context after pilot evidence. |
+| Continuous assessment and report cards | Not implemented | Reserved for the SMS bounded context. |
+| Item analysis and student performance history | Not implemented | Reserved for the SMS bounded context. |
+| Principal/HOD moderation across SMS records | Partial | Exam/lesson approval exists; full multi-role SMS moderation and sign-off remain. |
+
+### Part IV - curriculum delivery studio
+
+| Item | Status | Evidence / completion criterion |
+|---|---|---|
+| Lesson plans | Implemented (API) | Scheme-grounded CRUD and approval metadata exist; complete Faststrap teacher workspace remains. |
+| Weekly exercises and worksheet export | Implemented (API/export) | CRUD, PDF export, and download exist; teacher-facing management screens remain. |
+| Syllabus coverage | Implemented (API) | Coverage states, verification, and summary exist; visual dashboard and curriculum-wide bulk workflow remain. |
+| AI lesson notes | Implemented (service/API) | Grounded generation exists; teacher editing, approval, versioning, and export remain. |
+| Exam-generation coverage warnings | Not implemented | Generation must warn when requested weeks are not marked covered. |
+| Teacher notes, assignments, local materials | Not implemented | Requires bounded content/material workflow and low-bandwidth delivery design. |
+
+### Part V - pilot and architectural guardrails
+
+| Item | Status |
+|---|---|
+| Tenant-scoped API/query guards | Implemented in core workflows; requires full endpoint audit before public pilot. |
+| Backups and recovery | Documented | Backup script/runbook exist; restore drill and evidence record remain. |
+| Monitoring and error reporting | Partial | Request IDs, health, and ops readiness exist; production log aggregation, alerting, and retention remain. |
+| Mobile/low-bandwidth acceptance | Not audited | Requires real-browser/device pass on representative workflows. |
+| Privacy/data retention | Documented draft | Formal legal review, consent/DPA decisions, and deletion/export execution remain. |
+| Real-school pilot validation | Not started | Requires selected schools, fixtures, feedback cadence, and issue triage. |
+
+### Required order from this ledger
+
+1. Close the partial Category A/B items that affect assessment quality and teacher trust.
+2. Complete the missing Part IV coverage warnings and teacher-facing delivery workflows.
+3. Run Package C operational validation with real pilot schools.
+4. Only then decide whether to implement the deferred SMS or commercial work.
