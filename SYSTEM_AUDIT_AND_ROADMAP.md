@@ -749,6 +749,15 @@ Every future implementation report must state:
 No roadmap item should be described as complete solely because a schema,
 placeholder, or isolated endpoint exists.
 
+## Package C pilot-hardening checkpoint (2026-10-03)
+
+The first pilot-hardening slice is complete: migration state is verified in the
+database, school-scoped operational health/stats surfaces exist, and the
+repository contains a backup/recovery runbook, privacy/retention policy, and a
+guarded PostgreSQL backup script. Remaining Package C work is live-school
+onboarding, browser/mobile/low-bandwidth validation, backup restore drills,
+monitoring integration, and formal privacy/legal review.
+
 ## Work Package A completion checkpoint (2026-10-02)
 
 Work Package A is implementation-complete for the pilot transition. Structured
