@@ -232,6 +232,8 @@ class QuestionEditRequest(BaseModel):
     marks: Optional[int] = Field(None, ge=1, le=100, description="Updated marks")
     explanation: Optional[str] = Field(None, max_length=2000, description="Updated explanation")
     marking_scheme: Optional[List[str]] = Field(None, description="Updated marking scheme points")
+    sub_parts: Optional[List[dict]] = Field(None, description="Nested sub-question parts and marks")
+    content_blocks: Optional[QuestionDocument] = Field(None, description="Structured text/math/SVG/table blocks")
 
 
 class SectionResponse(BaseModel):

@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, update
 
@@ -67,6 +67,7 @@ from app.services.exam_quality_report import ExamQualityReportService
 from app.services.export_service import ExportService
 from app.services.job_queue import enqueue_generation_job
 from app.services.blueprint_service import build_blueprint
+from app.services.question_exchange import export_csv, export_gift, export_qti, import_csv, import_gift, import_qti, export_docx, import_docx
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -1713,6 +1714,10 @@ async def update_exam_question(
         if not payload:
             return QuestionResponse.model_validate(question)
 
+        if "content_blocks" in payload and payload["content_blocks"] is not None:
+            payload["content_blocks"] = [
+                block.model_dump(mode="json") for block in request.content_blocks.blocks
+            ]
         for field_name, val in payload.items():
             setattr(question, field_name, val)
 
@@ -1760,6 +1765,57 @@ async def update_exam_question(
             status_code=500,
             detail=f"Failed to update question: {str(e)}",
         )
+
+
+@router.get("/{exam_id}/exchange/{format_name}")
+async def export_exam_exchange(
+    exam_id: uuid.UUID,
+    format_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Export a tenant-owned exam to CSV, DOCX, GIFT, or QTI."""
+    exam = await db.scalar(select(Exam).where(Exam.id == exam_id, Exam.school_id == current_user.school_id))
+    if exam is None:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    result = await db.execute(select(Question).where(Question.exam_id == exam_id).order_by(Question.question_number))
+    questions = [
+        {"question_number": q.question_number, "type": q.type, "question_text": q.question_text, "marks": q.marks,
+         "options": q.options, "correct_answer": q.correct_answer, "explanation": q.explanation,
+         "marking_scheme": q.marking_scheme, "content_blocks": q.content_blocks}
+        for q in result.scalars().all()
+    ]
+    name = format_name = format_name.lower()
+    exporters = {"csv": (export_csv, "text/csv"), "gift": (export_gift, "text/plain"), "qti": (export_qti, "application/xml"), "docx": (export_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    if name not in exporters:
+        raise HTTPException(status_code=400, detail="format_name must be csv, docx, gift, or qti")
+    content = exporters[name][0](questions)
+    return Response(content=content, media_type=exporters[name][1], headers={"Content-Disposition": f'attachment; filename="exam-{exam_id}.{name}"'})
+
+
+@router.post("/{exam_id}/exchange/{format_name}/preview")
+async def preview_exam_exchange(exam_id: uuid.UUID, format_name: str, request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+    """Validate an uploaded exchange payload without mutating the exam."""
+    exam = await db.scalar(select(Exam).where(Exam.id == exam_id, Exam.school_id == current_user.school_id))
+    if exam is None:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    payload = await request.body()
+    try:
+        if format_name == "csv":
+            questions = import_csv(payload.decode("utf-8-sig"))
+        elif format_name == "gift":
+            questions = import_gift(payload.decode("utf-8"))
+        elif format_name == "qti":
+            questions = import_qti(payload.decode("utf-8"))
+        elif format_name == "docx":
+            questions = import_docx(payload)
+        else:
+            raise HTTPException(status_code=400, detail="format_name must be csv, docx, gift, or qti")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not parse {format_name} payload: {exc}")
+    return {"exam_id": str(exam_id), "question_count": len(questions), "questions": questions, "committed": False}
 
 
 # ============================================================================
