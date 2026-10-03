@@ -800,9 +800,9 @@ future planning.
 
 | Item | Status | Evidence / completion criterion |
 |---|---|---|
-| Multi-part authoring | Partial | Basic sub-parts persist; rich nested editing, per-part marks, answers, and rubric editing remain. |
+| Multi-part authoring | Partial | API editing now persists nested `sub_parts` and structured blocks; rich browser nested editing, per-part marks, answers, and rubric editing remain. |
 | AI copilot | Partial | Manual-editor suggestion route and approval flow exist; diagram suggestions and all apply-to-block operations need end-to-end browser QA. |
-| CSV/DOCX/GIFT/QTI exchange | Partial | Deterministic adapters and tests exist; authenticated upload/download UI/API integration and real LMS fixture validation remain. |
+| CSV/DOCX/GIFT/QTI exchange | Partial | Deterministic adapters, tests, authenticated exam export endpoints, and non-mutating import preview now exist; committed import UI and real LMS fixture validation remain. |
 | OMR and grading | Partial | OMR PDF generation exists; personalized metadata, scan/camera grading, error correction, and result audit trail remain. |
 | Visual blueprint matrix | Partial | Blueprint schema, validation, persistence, and generation constraints exist; full visual topic/Bloom matrix editing and review screen remain. |
 
