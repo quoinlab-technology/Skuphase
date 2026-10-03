@@ -758,6 +758,10 @@ guarded PostgreSQL backup script. Remaining Package C work is live-school
 onboarding, browser/mobile/low-bandwidth validation, backup restore drills,
 monitoring integration, and formal privacy/legal review.
 
+The next hardening slice adds request correlation IDs to every response and a
+school-admin `/api/v1/ops/pilot-readiness` checklist covering school profile,
+staff, and curriculum setup.
+
 ## Work Package A completion checkpoint (2026-10-02)
 
 Work Package A is implementation-complete for the pilot transition. Structured
