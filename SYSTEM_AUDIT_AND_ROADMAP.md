@@ -849,3 +849,41 @@ future planning.
 2. Complete the missing Part IV coverage warnings and teacher-facing delivery workflows.
 3. Run Package C operational validation with real pilot schools.
 4. Only then decide whether to implement the deferred SMS or commercial work.
+
+## Audit remediation checkpoint (2026-10-05)
+
+The KiloCode and Cline production audits were reconciled in
+`AUDIT_REMEDIATION_PLAN.md`. The following pilot blockers are now fixed and
+covered by regression tests:
+
+- Curriculum search uses a typed JSONB cast; the legacy invalid `func.text`
+  cast no longer raises a 500.
+- Question-bank creation records `current_user.user_id` and is tenant-scoped.
+- DOCX exchange removes XML-illegal control characters at the format boundary.
+- Marking-guide exports preserve generated superscript/subscript markup instead
+  of printing literal ReportLab tags.
+- The curriculum seeder now passes structured lists to JSONB. Migration
+  `0014_fix_curriculum_jsonb` repairs rows created by the old string-encoding
+  behavior.
+
+The supplied **JSS & SSS - NERDC Scheme (2025).pdf** is now represented by the
+reviewable extractor and dataset at:
+
+- `pdf_process/secondary_curriculum/extract_nerdc_pdf.py`
+- `skuphase/data/nerdc_secondary_scheme_database.2025.json`
+- `skuphase/data/nerdc_secondary_scheme_database.2025.qa.md`
+
+The local database has been seeded idempotently. It now contains JSS 1-3 and
+SSS 1-3 alongside the existing primary curriculum (7,334 scheme rows total).
+The extractor preserves source text because the PDF's multi-column layout is
+not losslessly recoverable from plain text extraction; subject-expert review of
+the QA report remains required before treating every subject/term as equally
+complete.
+
+Remaining audit hardening is operational rather than a new product phase:
+PDF-to-image print QA, CSP nonce/hash migration, accessibility and low-bandwidth
+acceptance, backup restore evidence, secret rotation/secret-manager setup,
+privacy/DPA review, and Package B teacher-facing workspace coverage. After
+those checks, resume the pre-audit partial Category A/B authoring work and the
+Package B UI slice. Partner API, pricing, and SMS bounded contexts remain
+deferred by design.

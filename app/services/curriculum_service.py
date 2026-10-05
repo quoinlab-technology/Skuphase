@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import String, and_, cast, func, or_, select
 
 from app.models.curriculum import Curriculum, SchemeOfWork
 from app.schemas.curriculum import (
@@ -150,7 +150,9 @@ class CurriculumService:
         conditions = [
             or_(
                 SchemeOfWork.topic.ilike(f"%{query}%"),
-                func.cast(SchemeOfWork.subtopics, func.text).ilike(f"%{query}%"),
+                # ``func.text`` is a SQL function object, not a SQLAlchemy
+                # type. Use a typed cast for PostgreSQL JSONB keyword search.
+                cast(SchemeOfWork.subtopics, String).ilike(f"%{query}%"),
             )
         ]
 

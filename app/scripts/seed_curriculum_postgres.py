@@ -79,7 +79,10 @@ def _rows(records: List[Dict[str, Any]]):
                 "term": r["term"],
                 "week_number": r["week"],
                 "topic": topic,
-                "subtopics": json.dumps(r.get("subtopics", [])),
+                # JSONB expects a Python list. Serialising here stores a JSON
+                # *string* in PostgreSQL, which later breaks curriculum
+                # search result validation. Keep the structured value intact.
+                "subtopics": r.get("subtopics", []) or [],
                 "raw_content": r.get("raw_text"),
                 "is_exam_or_break": bool(r.get("is_exam_or_break", False)),
             }

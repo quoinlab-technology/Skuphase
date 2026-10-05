@@ -1,6 +1,7 @@
 import pytest
 
 from app.scripts.ingest_curriculum import validate_records
+from app.scripts.seed_curriculum_postgres import _rows
 
 
 def test_validate_records_normalizes_board_and_optional_fields():
@@ -10,6 +11,21 @@ def test_validate_records_normalizes_board_and_optional_fields():
     )
     assert rows[0]["board"] == "LAGOS_UNIFIED"
     assert rows[0]["subtopics"] == []
+
+
+def test_postgres_seed_keeps_subtopics_as_structured_json_values():
+    _, schemes = _rows([
+        {
+            "board": "NERDC",
+            "class_level": "JSS 1",
+            "subject": "Physics",
+            "term": "First Term",
+            "week": 1,
+            "topic": "Motion",
+            "subtopics": ["Distance", "Displacement"],
+        }
+    ])
+    assert schemes[0]["subtopics"] == ["Distance", "Displacement"]
 
 
 @pytest.mark.parametrize(

@@ -646,7 +646,9 @@ class ExportService:
         from xml.sax.saxutils import escape
 
         def esc(text: str) -> str:
-            return escape(cls._clean(text)).replace("\n", "<br/>")
+            """Escape user text while preserving generated math markup."""
+            safe = escape(str(text) if text else "")
+            return cls._clean(safe).replace("\n", "<br/>")
 
         directory = cls.exam_dir(exam.id)
         directory.mkdir(parents=True, exist_ok=True)

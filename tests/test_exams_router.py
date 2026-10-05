@@ -272,6 +272,39 @@ def test_export_exam_endpoint_rejects_non_pdf_format():
     assert db.commit.await_count == 0
 
 
+def test_question_bank_create_uses_authenticated_user_id():
+    user = _admin()
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(item):
+        item.id = uuid.uuid4()
+        item.created_at = datetime.now(timezone.utc)
+        item.usage_count = 0
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    client = _build_test_app(db, user)
+
+    response = client.post(
+        "/api/v1/exams/question-bank/items",
+        json={
+            "subject": "Mathematics",
+            "grade_level": "Primary 4",
+            "topic": "Fractions",
+            "question_text": "What is one half of 10?",
+            "marks": 1,
+            "options": ["A. 2", "B. 5", "C. 10"],
+            "correct_answer": "B",
+        },
+    )
+
+    assert response.status_code == 201
+    created = db.add.call_args.args[0]
+    assert created.created_by_user_id == user.user_id
+    assert created.school_id == user.school_id
+
+
 def test_auditor_can_submit_exam_audit_comment():
     user = _admin(role="auditor")
     exam = SimpleNamespace(id=uuid.uuid4(), school_id=user.school_id, status="completed")

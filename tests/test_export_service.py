@@ -240,6 +240,33 @@ def test_export_marking_guide_includes_structured_block_notes(tmp_path):
     assert "Attached diagram" in text
 
 
+def test_marking_guide_renders_latex_superscript_without_literal_tags(tmp_path):
+    exam = _exam()
+    question = SimpleNamespace(
+        question_number=1,
+        type="short_answer",
+        question_text="Evaluate x^2.",
+        marks=2,
+        correct_answer="x^2 = 4",
+        marking_scheme=["Correct x^2 notation"],
+        explanation=None,
+        content_blocks=[],
+    )
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_marking_guide_pdf(exam, [question])
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(created_path)).pages)
+    assert "<super>" not in text
+    assert "x" in text and "2" in text
+
+
 def test_export_omr_sheet_is_valid_multi_page_pdf(tmp_path):
     exam = _exam()
     original_dir = ExportService.EXPORT_DIR

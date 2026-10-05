@@ -44,3 +44,12 @@ def test_qti_round_trip_is_valid_xml():
 def test_docx_round_trip_preserves_question_text():
     result = import_docx(export_docx(_questions()))
     assert result[0]["question_text"] == "What is 2 + 2?"
+
+
+def test_docx_export_removes_xml_illegal_control_characters():
+    payload = _questions()
+    payload[0]["question_text"] = "Clean\x00 this\x07 pasted text"
+    payload[0]["options"] = ["A\x0b", "B"]
+
+    result = import_docx(export_docx(payload))
+    assert result[0]["question_text"] == "Clean this pasted text"

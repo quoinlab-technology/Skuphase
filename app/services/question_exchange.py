@@ -13,6 +13,14 @@ import re
 from xml.etree.ElementTree import Element, SubElement, tostring, fromstring
 
 
+_XML_ILLEGAL_CONTROLS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+
+
+def _xml_safe_text(value) -> str:
+    """Remove only characters that XML 1.0 (and therefore DOCX) forbids."""
+    return _XML_ILLEGAL_CONTROLS.sub("", str(value or ""))
+
+
 CSV_FIELDS = (
     "question_number", "type", "question_text", "marks", "options",
     "correct_answer", "explanation", "marking_scheme", "content_blocks",
@@ -123,13 +131,13 @@ def export_docx(questions: list[dict]) -> bytes:
     for index, question in enumerate(questions, 1):
         paragraph = document.add_paragraph()
         paragraph.add_run(f"{index}. ").bold = True
-        paragraph.add_run(str(question.get("question_text") or ""))
+        paragraph.add_run(_xml_safe_text(question.get("question_text")))
         for option in question.get("options") or []:
-            document.add_paragraph(str(option), style="List Bullet")
+            document.add_paragraph(_xml_safe_text(option), style="List Bullet")
         if question.get("marking_scheme"):
             document.add_paragraph("Marking scheme:")
             for point in question["marking_scheme"]:
-                document.add_paragraph(str(point), style="List Bullet 2")
+                document.add_paragraph(_xml_safe_text(point), style="List Bullet 2")
     stream = io.BytesIO()
     document.save(stream)
     return stream.getvalue()

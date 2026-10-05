@@ -765,7 +765,7 @@ async def create_question_bank_item(
     item = QuestionBankItem(
         school_id=current_user.school_id,
         owner_type="school",
-        created_by_user_id=current_user.id,
+        created_by_user_id=current_user.user_id,
         subject=request.subject,
         grade_level=request.grade_level,
         topic=request.topic,

@@ -424,3 +424,64 @@ With Step 0's git baseline these are all recoverable later if needed.
 - True diagram/math rendering in PDF exports (KaTeX/Mermaid ΓåÆ vector graphics).
 - Multi-instance horizontal scaling, Redis, object storage migration (designs leave seams; not built).
 - Prompt-injection hardening beyond current scoping (low blast-radius, revisit with billing).
+
+---
+
+## 6. Consolidated production-audit reconciliation (2026-10-05)
+
+This section reconciles `AUDIT_REPORT_2026-10-04.md` (KiloCode) and
+`PRODUCTION_READINESS_AUDIT.md` (Cline) without changing the earlier owner
+decisions above.
+
+### Confirmed fixes completed in this slice
+
+| ID | Finding | Implementation | Evidence |
+|---|---|---|---|
+| BLK-001 | Curriculum search used an invalid SQLAlchemy cast and returned 500 | Typed JSONB-to-text cast plus regression test | Live topic searches now return validated results |
+| BLK-003 | Question-bank creation used `current_user.id` | Uses `current_user.user_id` plus authenticated route regression test | Create route returns 201 and preserves school/creator ownership |
+| MED-002a | DOCX failed on XML-illegal control characters | Exchange boundary strips only illegal XML 1.0 controls | DOCX round-trip regression test passes |
+| MED-002b | Marking guide printed literal `<super>/<sub>` tags | Escape-before-clean ReportLab markup path | PDF text regression test passes |
+| Data integrity | Curriculum seeder stored lists as JSON strings | Seeder now passes native lists; migration `0014_fix_curriculum_jsonb` repairs legacy rows | Curriculum search and response validation work against the repaired DB |
+
+### Secondary curriculum work completed
+
+The supplied `JSS & SSS - NERDC Scheme (2025).pdf` now has a deterministic,
+reviewable extractor at `pdf_process/secondary_curriculum/`. It produced:
+
+- `data/nerdc_secondary_scheme_database.2025.json` (3,821 week rows)
+- `data/nerdc_secondary_scheme_database.2025.qa.md`
+- all six expected classes: JSS 1-3 and SSS 1-3
+
+The existing idempotent seeder has loaded the secondary data alongside the
+primary data. The local database now contains 7,334 scheme rows. Because the
+PDF uses multi-column tables, the extractor preserves complete raw text rather
+than claiming lossless visual column reconstruction; the QA report remains the
+review gate for subject-expert corrections.
+
+### Remaining findings, deliberately not hidden
+
+- PDF-to-image print fidelity still needs Poppler/PyMuPDF rendering and visual
+  review for paper, answer key, marking guide, OMR, worksheet, diagrams, and
+  page breaks.
+- CSP still permits `unsafe-inline`; a nonce/hash migration needs browser
+  regression because FastHTML/htmx/KaTeX assets currently depend on inline
+  behavior.
+- Package B has API/export foundations but its teacher-facing workspace is not
+  complete.
+- Keyboard/focus/screen-reader checks, stress tests, backup restore evidence,
+  privacy/DPA review, secret rotation/secret-manager deployment, local fonts,
+  and real-school fixtures remain pilot-hardening work.
+- Category A/B items in the authoritative roadmap ledger remain partial:
+  server LaTeX parity, reviewed diagram coverage, full formula/constants QA,
+  rich nested authoring, copilot browser approval, exchange import UI, OMR
+  scanning/grading, and blueprint matrix UI.
+- Partner API productization, pricing, and SMS bounded contexts remain deferred
+  by design.
+
+### Next execution point
+
+Re-run the full audit probes against the repaired database, then resume the
+pre-audit stopping point: close the remaining partial Category A/B assessment
+items, expose the Package B teacher workspace, and complete Package C pilot
+hardening. Do not jump to commercial or SMS work until those gates have
+evidence.
