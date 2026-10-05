@@ -51,7 +51,7 @@ def _status_badge(status: str) -> Span:
     return Span(status.replace("_", " ").title(), cls=f"badge rounded-pill bg-{tone}-subtle text-{tone} border border-{tone}-subtle px-3 py-2")
 
 
-def _plan_card(plan: dict) -> Card:
+def _plan_card(plan: dict, user: dict) -> Card:
     plan_id = plan.get("id", "")
     return Card(
         Div(
@@ -62,7 +62,24 @@ def _plan_card(plan: dict) -> Card:
                 cls="d-flex justify-content-between align-items-start",
             ),
             P(" · ".join((plan.get("learning_objectives") or [])[:2]) or "Add learning objectives from the curriculum week.", cls="small text-muted mt-3 mb-3"),
-            Div(Strong("AI lesson note ready", cls="small text-success d-block mb-1"), P(str(plan.get("ai_lesson_note"))[:260], cls="small text-muted mb-0"), cls="rounded-3 p-3 mb-3", style="background:#F1F8F2;") if plan.get("ai_lesson_note") else None,
+            Div(
+                Strong("AI lesson note", cls="small text-success d-block mb-1"),
+                Form(
+                    Textarea(name="ai_lesson_note", rows="5", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2;", value=plan.get("ai_lesson_note", "")),
+                    Input(type="hidden", name="status", value="submitted"),
+                    Button("Save and submit", type="submit", variant="success", size="sm", cls="rounded-pill mt-2"),
+                    action=f"/app/teaching/{plan_id}/save-note",
+                    method="post",
+                ),
+                Form(
+                    Button("Approve", type="submit", variant="outline-primary", size="sm", cls="rounded-pill mt-2"),
+                    action=f"/app/teaching/{plan_id}/approve",
+                    method="post",
+                    cls="d-inline-block",
+                ) if user.get("role") == "school_admin" and plan.get("status") == "submitted" else None,
+                cls="rounded-3 p-3 mb-3",
+                style="background:#F1F8F2;",
+            ) if plan.get("ai_lesson_note") else None,
             Div(
                 Form(
                     Input(type="hidden", name="lesson_plan_id", value=plan_id),
@@ -153,6 +170,7 @@ def teaching_routes(app):
             Div(Label("Plan title", cls="small fw-semibold text-muted mb-1"), Input(name="title", required=True, value=f"{subject} · {term}", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
             Div(Label("Activities", cls="small fw-semibold text-muted mb-1"), Textarea(name="activities", placeholder="One activity per line", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
             Div(Label("Assessment notes", cls="small fw-semibold text-muted mb-1"), Textarea(name="assessment_notes", placeholder="How will learners demonstrate understanding?", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
+            Div(Label("Instructional materials", cls="small fw-semibold text-muted mb-1"), Textarea(name="resources", placeholder="One resource per line (chart, realia, local example)", rows="2", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
             Div(Button(Icon("plus-lg", cls="bi me-1"), "Create lesson plan", type="submit", variant="success", cls="rounded-pill px-4 btn-brand"), cls="col-12"),
             action="/app/teaching/create",
             method="post",
@@ -170,7 +188,7 @@ def teaching_routes(app):
             cls="row g-3",
         )
 
-        plans_view = Row(*[Col(_plan_card(p), span=12, md=6) for p in plans[:8]], g=3) if plans else Card(
+        plans_view = Row(*[Col(_plan_card(p, user), span=12, md=6) for p in plans[:8]], g=3) if plans else Card(
             Div(
                 Icon("journal-text", cls="bi fs-2 text-success mb-2"),
                 P("No plans yet. Select a week above to create your first grounded lesson plan.", cls="text-muted small mb-0"),
@@ -193,6 +211,7 @@ def teaching_routes(app):
                 g=3,
                 cls="mb-4",
             ),
+            Div(Icon("exclamation-triangle", cls="bi me-2"), summary.get("warning"), cls="alert alert-warning rounded-4 border-0") if summary.get("warning") else None,
             Row(
                 Col(Card(Div(H2("Build a weekly worksheet", cls="fs-5 fw-bold mb-3"), P("Turn a lesson plan into printable practice for learners.", cls="small text-muted mb-3"), exercise_form, cls="p-4"), cls="border-0 shadow-sm rounded-4"), span=12, lg=5),
                 Col(Div(H2("Recent worksheets", cls="fs-5 fw-bold mb-3"), Row(*[Col(_exercise_card(item), span=12, md=6) for item in exercises[:6]], g=3) if exercises else P("Your exported worksheets will appear here.", cls="text-muted small")), span=12, lg=7),
@@ -219,7 +238,8 @@ def teaching_routes(app):
             return guard
         form = await req.form()
         activities = [line.strip() for line in str(form.get("activities", "")).splitlines() if line.strip()]
-        payload = {"curriculum_id": str(form.get("curriculum_id", "")), "scheme_id": str(form.get("scheme_id", "")), "title": str(form.get("title", "")), "activities": activities, "assessment_notes": str(form.get("assessment_notes", "")) or None}
+        resources = [line.strip() for line in str(form.get("resources", "")).splitlines() if line.strip()]
+        payload = {"curriculum_id": str(form.get("curriculum_id", "")), "scheme_id": str(form.get("scheme_id", "")), "title": str(form.get("title", "")), "activities": activities, "resources": resources, "assessment_notes": str(form.get("assessment_notes", "")) or None}
         resp = await call_api(req, "POST", "/lesson-plans", json=payload)
         ok, data = unwrap(resp)
         if ok:
@@ -236,6 +256,29 @@ def teaching_routes(app):
         resp = await call_api(req, "POST", f"/lesson-plans/{plan_id}/lesson-note", json={"lesson_plan_id": plan_id})
         ok, data = unwrap(resp)
         push_flash(req, "AI lesson note drafted from the scheme." if ok else data.get("message", "Lesson note failed."), "success" if ok else "danger")
+        return RedirectResponse("/app/teaching", status_code=303)
+
+    @app.post("/app/teaching/{plan_id}/save-note")
+    async def save_note(req: Request, plan_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        status = str(form.get("status", "submitted"))
+        payload = {"ai_lesson_note": str(form.get("ai_lesson_note", "")), "status": status}
+        resp = await call_api(req, "PATCH", f"/lesson-plans/{plan_id}", json=payload)
+        ok, data = unwrap(resp)
+        push_flash(req, "Lesson note saved and submitted for review." if ok else data.get("message", "Could not save lesson note."), "success" if ok else "danger")
+        return RedirectResponse("/app/teaching", status_code=303)
+
+    @app.post("/app/teaching/{plan_id}/approve")
+    async def approve_plan(req: Request, plan_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        resp = await call_api(req, "PATCH", f"/lesson-plans/{plan_id}", json={"status": "approved"})
+        ok, data = unwrap(resp)
+        push_flash(req, "Lesson plan approved for teaching." if ok else data.get("message", "Could not approve lesson plan."), "success" if ok else "danger")
         return RedirectResponse("/app/teaching", status_code=303)
 
     @app.post("/app/teaching/{plan_id}/coverage")

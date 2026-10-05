@@ -18,4 +18,14 @@ Use clear headings: objectives, starter, explanation, guided practice, assessmen
 def coverage_summary(rows: list[dict]) -> dict:
     total = len(rows)
     counts = {status: sum(1 for row in rows if row.get("status") == status) for status in ("planned", "in_progress", "completed", "verified")}
-    return {"total": total, "counts": counts, "completion_percent": round(((counts["completed"] + counts["verified"]) / total) * 100, 1) if total else 0.0}
+    completion_percent = round(((counts["completed"] + counts["verified"]) / total) * 100, 1) if total else 0.0
+    return {
+        "total": total,
+        "counts": counts,
+        "planned": counts["planned"],
+        "in_progress": counts["in_progress"],
+        "completed": counts["completed"],
+        "verified": counts["verified"],
+        "completion_percent": completion_percent,
+        "warning": "Curriculum coverage is incomplete for this school." if total and completion_percent < 100 else None,
+    }

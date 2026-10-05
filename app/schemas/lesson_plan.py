@@ -25,6 +25,8 @@ class LessonPlanUpdate(BaseModel):
     activities: list[str] | None = Field(None, max_length=30)
     resources: list[str] | None = Field(None, max_length=30)
     assessment_notes: str | None = Field(None, max_length=5000)
+    ai_lesson_note: str | None = Field(None, max_length=20000)
+    hod_feedback: str | None = Field(None, max_length=5000)
     status: str | None = Field(None, pattern="^(draft|submitted|approved|returned)$")
 
 

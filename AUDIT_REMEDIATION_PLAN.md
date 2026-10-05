@@ -478,10 +478,17 @@ review gate for subject-expert corrections.
 - Partner API productization, pricing, and SMS bounded contexts remain deferred
   by design.
 
+### Package B implementation checkpoint (2026-10-05)
+
+The teacher-facing Package B workspace is now implementation-complete: lesson
+plans, AI notes, teacher submission/admin approval, coverage progression,
+instructional resources, exercises, and worksheet export are wired end to end.
+Remaining B work is browser/mobile and real-school output QA, plus consuming the
+coverage warning in any generation wizard that does not yet read it.
+
 ### Next execution point
 
-Re-run the full audit probes against the repaired database, then resume the
-pre-audit stopping point: close the remaining partial Category A/B assessment
-items, expose the Package B teacher workspace, and complete Package C pilot
-hardening. Do not jump to commercial or SMS work until those gates have
-evidence.
+Re-run the full audit probes against the repaired database, then verify Package
+B in browser/mobile and real-school fixtures, close the remaining partial
+Category A/B assessment items, and complete Package C pilot hardening. Do not
+jump to commercial or SMS work until those gates have evidence.

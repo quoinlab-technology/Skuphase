@@ -736,6 +736,19 @@ or fee entities.
 After pilot validation, complete partner scopes, quotas, idempotency, webhooks,
 white-label export, embeddable preview, documentation, and pricing.
 
+## Work Package B completion checkpoint (2026-10-05)
+
+Package B implementation is complete for the pilot workflow. The Teaching
+workspace covers scheme-week selection, lesson-plan creation with
+activities/resources/assessment notes, grounded AI lesson-note drafting,
+teacher editing and submission, administrator approval, syllabus coverage
+progression and verification, weekly exercise creation, and authenticated
+worksheet PDF export/download. Coverage summaries expose completion metrics
+and an incomplete-coverage warning. Remaining work is verification only:
+browser/mobile review, real-school lesson-note quality sampling, worksheet
+print sampling, and consuming the warning in any generation wizard surface
+that does not yet read the coverage contract.
+
 ## Team operating rule
 
 Every future implementation report must state:
