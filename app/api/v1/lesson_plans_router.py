@@ -170,6 +170,17 @@ async def update_coverage(coverage_id: UUID, request: CoverageUpdate, current_us
     return row
 
 
+@router.get("/coverage", response_model=list[CoverageResponse])
+async def list_coverage(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+    """Return the school's coverage rows for the teaching workspace."""
+    result = await db.execute(
+        select(SyllabusCoverage)
+        .where(SyllabusCoverage.school_id == current_user.school_id)
+        .order_by(SyllabusCoverage.updated_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 @router.get("/coverage/summary", response_model=dict)
 async def coverage_dashboard(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
     result = await db.execute(select(SyllabusCoverage).where(SyllabusCoverage.school_id == current_user.school_id))

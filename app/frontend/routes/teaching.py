@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from fasthtml.common import A, Div, Form, H1, H2, Input, Label, Option, P, Span, Strong, Textarea
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from faststrap import Button, Card, Col, Container, Icon, Row, Select
 
@@ -62,6 +62,7 @@ def _plan_card(plan: dict) -> Card:
                 cls="d-flex justify-content-between align-items-start",
             ),
             P(" · ".join((plan.get("learning_objectives") or [])[:2]) or "Add learning objectives from the curriculum week.", cls="small text-muted mt-3 mb-3"),
+            Div(Strong("AI lesson note ready", cls="small text-success d-block mb-1"), P(str(plan.get("ai_lesson_note"))[:260], cls="small text-muted mb-0"), cls="rounded-3 p-3 mb-3", style="background:#F1F8F2;") if plan.get("ai_lesson_note") else None,
             Div(
                 Form(
                     Input(type="hidden", name="lesson_plan_id", value=plan_id),
@@ -84,6 +85,35 @@ def _plan_card(plan: dict) -> Card:
     )
 
 
+def _exercise_card(exercise: dict) -> Card:
+    return Card(
+        Div(
+            Strong(exercise.get("title") or "Weekly exercise", cls="d-block text-dark"),
+            Span(f"{len(exercise.get('questions') or [])} questions", cls="small text-muted d-block mb-2"),
+            P(exercise.get("instructions") or "No instructions added.", cls="small text-muted mb-3"),
+            A(Icon("download", cls="bi me-1"), "Export worksheet", href=f"/app/teaching/exercises/{exercise.get('id')}/export", cls="btn btn-sm btn-outline-success rounded-pill"),
+            cls="p-3",
+        ),
+        cls="border rounded-4 shadow-sm bg-white h-100",
+    )
+
+
+def _coverage_card(row: dict, user: dict) -> Card:
+    status = row.get("status", "planned")
+    next_status = {"planned": "in_progress", "in_progress": "completed", "completed": "verified"}.get(status)
+    label = {"planned": "Start teaching", "in_progress": "Mark complete", "completed": "Verify coverage"}.get(status)
+    action = None
+    if next_status and (next_status != "verified" or user.get("role") == "school_admin"):
+        action = Form(
+            Input(type="hidden", name="status", value=next_status),
+            Button(label, type="submit", variant="outline-success", size="sm", cls="rounded-pill"),
+            action=f"/app/teaching/coverage/{row.get('id')}",
+            method="post",
+            cls="mt-2",
+        )
+    return Card(Div(Span(status.replace("_", " ").title(), cls="small fw-semibold text-success"), P("Coverage record", cls="small text-muted mb-1"), action, cls="p-3"), cls="border rounded-4 shadow-sm bg-white")
+
+
 def teaching_routes(app):
     @app.get("/app/teaching")
     async def teaching_workspace(req: Request, class_level: str = "Primary 4", subject: str = "", term: str = "First Term"):
@@ -98,6 +128,12 @@ def teaching_routes(app):
         summary_resp = await call_api(req, "GET", "/lesson-plans/coverage/summary")
         ok_summary, summary = unwrap(summary_resp)
         summary = summary if ok_summary and isinstance(summary, dict) else {"total": 0, "completed": 0, "verified": 0}
+        exercises_resp = await call_api(req, "GET", "/lesson-plans/exercises")
+        ok_exercises, exercises_data = unwrap(exercises_resp)
+        exercises = exercises_data if ok_exercises and isinstance(exercises_data, list) else []
+        coverage_resp = await call_api(req, "GET", "/lesson-plans/coverage")
+        ok_coverage, coverage_data = unwrap(coverage_resp)
+        coverage_rows = coverage_data if ok_coverage and isinstance(coverage_data, list) else []
 
         scope_form = Form(
             Div(Label("Class", cls="small fw-semibold text-muted mb-1"), Select(*[Option(c, value=c, selected=c == class_level) for c in classes], name="class_level", cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-4"),
@@ -119,6 +155,17 @@ def teaching_routes(app):
             Div(Label("Assessment notes", cls="small fw-semibold text-muted mb-1"), Textarea(name="assessment_notes", placeholder="How will learners demonstrate understanding?", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
             Div(Button(Icon("plus-lg", cls="bi me-1"), "Create lesson plan", type="submit", variant="success", cls="rounded-pill px-4 btn-brand"), cls="col-12"),
             action="/app/teaching/create",
+            method="post",
+            cls="row g-3",
+        )
+        active_plan = plans[0] if plans else {}
+        exercise_form = Form(
+            Input(type="hidden", name="lesson_plan_id", value=active_plan.get("id", "")),
+            Div(Label("Exercise title", cls="small fw-semibold text-muted mb-1"), Input(name="title", required=True, value=f"{subject} · Week {active_plan.get('week_number', 1)} practice", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(Label("Instructions", cls="small fw-semibold text-muted mb-1"), Textarea(name="instructions", rows="2", placeholder="Answer all questions...", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(Label("Questions (one per line)", cls="small fw-semibold text-muted mb-1"), Textarea(name="questions", required=True, rows="4", placeholder="Define photosynthesis.\nState two examples.", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(Button(Icon("file-earmark-plus", cls="bi me-1"), "Create worksheet", type="submit", variant="success", cls="rounded-pill px-4 btn-brand", disabled=not bool(active_plan)), cls="col-12"),
+            action="/app/teaching/exercises/create",
             method="post",
             cls="row g-3",
         )
@@ -145,6 +192,16 @@ def teaching_routes(app):
                 Col(Card(Div(Span("VERIFIED", cls="small text-muted fw-semibold"), Strong(str(summary.get("verified", 0)), cls="d-block fs-2 text-primary"), P("Admin-confirmed coverage", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
                 g=3,
                 cls="mb-4",
+            ),
+            Row(
+                Col(Card(Div(H2("Build a weekly worksheet", cls="fs-5 fw-bold mb-3"), P("Turn a lesson plan into printable practice for learners.", cls="small text-muted mb-3"), exercise_form, cls="p-4"), cls="border-0 shadow-sm rounded-4"), span=12, lg=5),
+                Col(Div(H2("Recent worksheets", cls="fs-5 fw-bold mb-3"), Row(*[Col(_exercise_card(item), span=12, md=6) for item in exercises[:6]], g=3) if exercises else P("Your exported worksheets will appear here.", cls="text-muted small")), span=12, lg=7),
+                g=4,
+                cls="mt-4",
+            ),
+            Card(
+                Div(H2("Coverage progress", cls="fs-5 fw-bold mb-3"), Row(*[_coverage_card(row, user) for row in coverage_rows[:12]], g=3) if coverage_rows else P("Start tracking a plan to build your syllabus coverage record.", cls="text-muted small mb-0"), cls="p-4"),
+                cls="border-0 shadow-sm rounded-4 mt-4",
             ),
             Row(
                 Col(Card(Div(H2("Create a lesson plan", cls="fs-5 fw-bold mb-3"), P(f"Grounded in {subject or 'your selected subject'} · {term}.", cls="small text-muted mb-3"), create_form, cls="p-4"), cls="border-0 shadow-sm rounded-4"), span=12, lg=5),
@@ -190,3 +247,54 @@ def teaching_routes(app):
         ok, data = unwrap(resp)
         push_flash(req, "Coverage tracking started for this week." if ok else data.get("message", "Could not start coverage."), "success" if ok else "danger")
         return RedirectResponse("/app/teaching", status_code=303)
+
+    @app.post("/app/teaching/coverage/{coverage_id}")
+    async def update_coverage(req: Request, coverage_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        status = str(form.get("status", "planned"))
+        resp = await call_api(req, "PATCH", f"/lesson-plans/coverage/{coverage_id}", json={"status": status})
+        ok, data = unwrap(resp)
+        push_flash(req, "Coverage status updated." if ok else data.get("message", "Could not update coverage."), "success" if ok else "danger")
+        return RedirectResponse("/app/teaching", status_code=303)
+
+    @app.post("/app/teaching/exercises/create")
+    async def create_exercise(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        questions = [
+            {"question_number": i, "type": "short_answer", "question_text": line.strip(), "marks": 1}
+            for i, line in enumerate(str(form.get("questions", "")).splitlines(), 1)
+            if line.strip()
+        ]
+        payload = {
+            "lesson_plan_id": str(form.get("lesson_plan_id", "")),
+            "title": str(form.get("title", "")),
+            "instructions": str(form.get("instructions", "")) or None,
+            "questions": questions,
+        }
+        resp = await call_api(req, "POST", "/lesson-plans/exercises", json=payload)
+        ok, data = unwrap(resp)
+        push_flash(req, "Weekly worksheet created." if ok else data.get("message", "Could not create worksheet."), "success" if ok else "danger")
+        return RedirectResponse("/app/teaching", status_code=303)
+
+    @app.get("/app/teaching/exercises/{exercise_id}/export")
+    async def export_exercise(req: Request, exercise_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        export_resp = await call_api(req, "POST", f"/lesson-plans/exercises/{exercise_id}/export")
+        ok, data = unwrap(export_resp)
+        if not ok:
+            push_flash(req, data.get("message", "Could not export worksheet."), "danger")
+            return RedirectResponse("/app/teaching", status_code=303)
+        filename = data.get("filename", "worksheet.pdf")
+        download_resp = await call_api(req, "GET", f"/lesson-plans/exercises/{exercise_id}/download/{filename}")
+        if not download_resp.is_success:
+            push_flash(req, "Worksheet was generated but could not be downloaded.", "danger")
+            return RedirectResponse("/app/teaching", status_code=303)
+        return Response(content=download_resp.content, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={filename}"})
