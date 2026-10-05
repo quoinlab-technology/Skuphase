@@ -281,6 +281,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         ("Dashboard", "/app", "dashboard", "grid-fill"),
         ("Exams", "/app/exams", "exams", "file-earmark-text"),
         ("Curriculum", "/app/curriculum", "curriculum", "compass"),
+        ("Teaching", "/app/teaching", "teaching", "journal-bookmark"),
     ]
     if is_school_staff:
         nav_items.append(("Generation Proposals", "/app/proposals", "proposals", "lightbulb"))

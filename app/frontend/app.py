@@ -28,6 +28,7 @@ from app.frontend.routes import proposals as proposals_routes
 from app.frontend.routes import public as public_routes
 from app.frontend.routes import settings as settings_routes
 from app.frontend.routes import staff as staff_routes
+from app.frontend.routes import teaching as teaching_routes
 from app.frontend.middleware import register_middlewares
 
 settings = get_settings()
@@ -172,3 +173,4 @@ proposals_routes.register_routes(frontend_app)
 staff_routes.register_routes(frontend_app)
 settings_routes.register_routes(frontend_app)
 ops_routes.register_routes(frontend_app)
+teaching_routes.teaching_routes(frontend_app)
