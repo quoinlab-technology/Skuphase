@@ -10,7 +10,7 @@ from app.models.question import QuestionRefinement, ExamAuditComment
 from app.models.proposal import ExamGenerationProposal
 from app.models.quality import ExamQualitySnapshot
 from app.models.question_bank import QuestionBankItem
-from app.models.curriculum import Curriculum, SchemeOfWork
+from app.models.curriculum import Curriculum, SchemeOfWork, SchemeOfWorkOverride
 from app.models.curriculum_mapping import CurriculumMapping
 from app.models.job import GenerationJob
 from app.models.login_attempt import LoginAttempt
@@ -35,6 +35,7 @@ __all__ = [
     "QuestionBankItem",
     "Curriculum",
     "SchemeOfWork",
+    "SchemeOfWorkOverride",
     "CurriculumMapping",
     "GenerationJob",
     "LoginAttempt",

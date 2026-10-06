@@ -6,9 +6,11 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import String, and_, cast, func, or_, select
 
-from app.models.curriculum import Curriculum, SchemeOfWork
+from app.models.curriculum import Curriculum, SchemeOfWork, SchemeOfWorkOverride
 from app.schemas.curriculum import (
     CurriculumSubjectResponse,
+    SchemeOfWorkDetailResponse,
+    SchemeOfWorkOverrideRequest,
     SchemeOfWorkResponse,
     CurriculumSearchResult,
 )
@@ -187,3 +189,237 @@ class CurriculumService:
                 )
             )
         return results
+
+
+# ---------------------------------------------------------------------------
+# School-scoped overrides
+# ---------------------------------------------------------------------------
+
+#: Roles that may amend shared curriculum text (topic / subtopics).
+CANONICAL_EDIT_ROLES = {"school_admin"}
+#: Roles that may attach school-local notes and resources.
+LOCAL_EDIT_ROLES = {"school_admin", "teacher"}
+
+
+async def _raw_weeks(
+    db: AsyncSession,
+    *,
+    class_level: str,
+    subject_name: str,
+    term: str,
+    board: str,
+) -> List[SchemeOfWork]:
+    """Fetch seeded scheme weeks without applying any school override."""
+    result = await db.execute(
+        select(SchemeOfWork)
+        .join(Curriculum, SchemeOfWork.curriculum_id == Curriculum.id)
+        .where(
+            and_(
+                Curriculum.board == board,
+                Curriculum.class_level == class_level,
+                func.lower(Curriculum.subject_name) == subject_name.lower().strip(),
+                SchemeOfWork.term == term,
+            )
+        )
+        .order_by(SchemeOfWork.week_number)
+    )
+    return list(result.scalars().all())
+
+
+class CurriculumAuthoringService:
+    """Create, update, and revert a school's own curriculum corrections.
+
+    Seeded :class:`SchemeOfWork` rows are shared across every tenant, so all
+    writes land in :class:`SchemeOfWorkOverride` instead. Read paths call
+    :meth:`get_weeks_for_school` so lesson planning and exam generation see the
+    same corrected text the teacher sees.
+    """
+
+    @staticmethod
+    async def _load_overrides(
+        db: AsyncSession, school_id: uuid.UUID, scheme_ids: List[uuid.UUID]
+    ) -> Dict[uuid.UUID, SchemeOfWorkOverride]:
+        if not scheme_ids:
+            return {}
+        result = await db.execute(
+            select(SchemeOfWorkOverride).where(
+                SchemeOfWorkOverride.school_id == school_id,
+                SchemeOfWorkOverride.scheme_of_work_id.in_(scheme_ids),
+            )
+        )
+        return {row.scheme_of_work_id: row for row in result.scalars().all()}
+
+    @staticmethod
+    def apply_overrides(
+        schemes: List[SchemeOfWork],
+        overrides: Dict[uuid.UUID, SchemeOfWorkOverride],
+    ) -> List[SchemeOfWorkResponse]:
+        """Return scheme weeks with the school's corrections merged in.
+
+        Builds copies, so the shared ORM rows are never mutated.
+        """
+        merged: List[SchemeOfWorkResponse] = []
+        for scheme in schemes:
+            response = SchemeOfWorkResponse.model_validate(scheme)
+            override = overrides.get(scheme.id)
+            if override is not None:
+                # Keep the shared text visible so the UI can show what changed.
+                response.seeded_topic = scheme.topic
+                response.has_override = True
+                response.is_archived = override.is_archived
+                response.teacher_notes = override.teacher_notes
+                response.resources = list(override.resources or [])
+                if override.topic:
+                    response.topic = override.topic
+                if override.subtopics is not None:
+                    response.subtopics = list(override.subtopics)
+            merged.append(response)
+        return merged
+
+    @staticmethod
+    async def get_weeks_for_school(
+        db: AsyncSession,
+        *,
+        school_id: uuid.UUID,
+        class_level: str,
+        subject_name: str,
+        term: str,
+        board: str = "NERDC",
+    ) -> List[SchemeOfWorkResponse]:
+        """Weeks with the school's overrides applied; archived weeks hidden."""
+        schemes = await _raw_weeks(
+            db,
+            class_level=class_level,
+            subject_name=subject_name,
+            term=term,
+            board=board,
+        )
+        overrides = await CurriculumAuthoringService._load_overrides(
+            db, school_id, [s.id for s in schemes]
+        )
+        merged = CurriculumAuthoringService.apply_overrides(schemes, overrides)
+        return [
+            week
+            for week in merged
+            if not (overrides.get(week.id) and overrides[week.id].is_archived)
+        ]
+
+    @staticmethod
+    async def get_detail(
+        db: AsyncSession, *, school_id: uuid.UUID, scheme_id: uuid.UUID, role: str
+    ) -> SchemeOfWorkDetailResponse:
+        """Seeded week merged with this school's overlay, plus permission hints."""
+        scheme = await db.scalar(select(SchemeOfWork).where(SchemeOfWork.id == scheme_id))
+        if scheme is None:
+            raise ValueError("Scheme week not found")
+        override = await db.scalar(
+            select(SchemeOfWorkOverride).where(
+                SchemeOfWorkOverride.school_id == school_id,
+                SchemeOfWorkOverride.scheme_of_work_id == scheme_id,
+            )
+        )
+        detail = SchemeOfWorkDetailResponse(
+            id=scheme.id,
+            curriculum_id=scheme.curriculum_id,
+            term=scheme.term,
+            week_number=scheme.week_number,
+            topic=scheme.topic,
+            subtopics=list(scheme.subtopics or []),
+            raw_content=scheme.raw_content,
+            is_exam_or_break=bool(scheme.is_exam_or_break),
+            seeded_topic=scheme.topic,
+            seeded_subtopics=list(scheme.subtopics or []),
+            has_override=override is not None,
+            is_archived=bool(override.is_archived) if override else False,
+            teacher_notes=override.teacher_notes if override else None,
+            resources=list(override.resources or []) if override else [],
+            updated_by_user_id=override.updated_by_user_id if override else None,
+            can_edit_canonical=role in CANONICAL_EDIT_ROLES,
+            can_edit_local=role in LOCAL_EDIT_ROLES,
+        )
+        if override is not None:
+            if override.topic:
+                detail.topic = override.topic
+            if override.subtopics is not None:
+                detail.subtopics = list(override.subtopics)
+        return detail
+
+    @staticmethod
+    async def upsert(
+        db: AsyncSession,
+        *,
+        school_id: uuid.UUID,
+        scheme_id: uuid.UUID,
+        user_id: uuid.UUID,
+        role: str,
+        payload: SchemeOfWorkOverrideRequest,
+    ) -> SchemeOfWorkDetailResponse:
+        """Create or update the school's override for one scheme week."""
+        scheme = await db.scalar(select(SchemeOfWork).where(SchemeOfWork.id == scheme_id))
+        if scheme is None:
+            raise ValueError("Scheme week not found")
+        if role not in LOCAL_EDIT_ROLES:
+            raise PermissionError("You do not have access to curriculum authoring")
+
+        data = payload.model_dump(exclude_unset=True)
+        if any(data.get(f) is not None for f in ("topic", "subtopics")) and role not in CANONICAL_EDIT_ROLES:
+            raise PermissionError(
+                "Only a school administrator can correct shared curriculum text"
+            )
+
+        override = await db.scalar(
+            select(SchemeOfWorkOverride).where(
+                SchemeOfWorkOverride.school_id == school_id,
+                SchemeOfWorkOverride.scheme_of_work_id == scheme_id,
+            )
+        )
+        if override is None:
+            override = SchemeOfWorkOverride(
+                school_id=school_id,
+                scheme_of_work_id=scheme_id,
+                created_by_user_id=user_id,
+            )
+            db.add(override)
+
+        if "topic" in data:
+            override.topic = data["topic"]
+        if "subtopics" in data:
+            override.subtopics = data["subtopics"]
+        if "teacher_notes" in data:
+            override.teacher_notes = data["teacher_notes"]
+        if "resources" in data:
+            override.resources = data["resources"]
+        if "is_archived" in data:
+            if role not in CANONICAL_EDIT_ROLES:
+                raise PermissionError("Only a school administrator can archive or restore a week")
+            override.is_archived = bool(data["is_archived"])
+
+        override.updated_by_user_id = user_id
+        await db.commit()
+        await db.refresh(override)
+        return await CurriculumAuthoringService.get_detail(
+            db, school_id=school_id, scheme_id=scheme_id, role=role
+        )
+
+    @staticmethod
+    async def revert(
+        db: AsyncSession, *, school_id: uuid.UUID, scheme_id: uuid.UUID, role: str
+    ) -> SchemeOfWorkDetailResponse:
+        """Drop the school's override, restoring the seeded text."""
+        if role not in LOCAL_EDIT_ROLES:
+            raise PermissionError("You do not have access to curriculum authoring")
+        override = await db.scalar(
+            select(SchemeOfWorkOverride).where(
+                SchemeOfWorkOverride.school_id == school_id,
+                SchemeOfWorkOverride.scheme_of_work_id == scheme_id,
+            )
+        )
+        if override is None:
+            raise ValueError("This week has no school corrections to revert")
+        if role not in CANONICAL_EDIT_ROLES and (override.topic is not None or override.subtopics is not None or override.is_archived):
+            raise PermissionError("Only a school administrator can revert canonical curriculum corrections")
+        await db.delete(override)
+        await db.commit()
+        return await CurriculumAuthoringService.get_detail(
+            db, school_id=school_id, scheme_id=scheme_id, role=role
+        )

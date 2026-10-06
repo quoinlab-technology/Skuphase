@@ -267,7 +267,7 @@ def _exam_row(exam: dict, user: dict = None):
     subject = exam.get("subject", "Untitled exam")
     grade = exam.get("grade_level", "")
     total_marks = exam.get("total_marks", 0)
-    questions_count = exam.get("total_questions") or len(exam.get("questions") or []) or 0
+    questions_count = exam.get("question_count") or exam.get("total_questions") or len(exam.get("questions") or []) or 0
     created_by = exam.get("creator_name") or exam.get("created_by_name") or "Adaeze"
     workflow_state = exam.get("workflow_state") or exam.get("status") or "draft"
     ai_generated = (
@@ -311,6 +311,7 @@ def _exam_row(exam: dict, user: dict = None):
         TCell(
             Div(
                 subject,
+                Span(" \u00b7 ", cls="text-muted"),
                 Span(grade, cls="text-muted"),
                 cls="text-muted small",
             ),
@@ -5049,8 +5050,11 @@ def register_action_routes(app):
                 msg += '<br><a href="/app/exams/' + exam_id + '?tab=preflight" class="small">Open Preflight tab →</a>'
             return show_toast(msg, "danger", title="Export blocked")
         file_name = data.get("file_name", "exam.pdf")
+        # Prefer a signed provider URL when the API returns one. Older/local
+        # exports may only expose the authenticated API path, so the frontend
+        # proxy remains the safe fallback for browser navigation.
         download_link = data.get("download_url") or f"/app/exams/{exam_id}/exports/{file_name}"
-        wa_text = quote(f"SkuPhase Exam Export ({file_name}): {req.base_url}app/exams/{exam_id}/exports/{file_name}")
+        wa_text = quote(f"SkuPhase Exam Export ({file_name}): {download_link}")
         wa_url = f"https://wa.me/?text={wa_text}"
         return Div(
             show_toast(f"PDF export '{file_name}' ready.", "success"),
@@ -5076,6 +5080,33 @@ def register_action_routes(app):
             id="export-result",
         )
 
+
+    @app.get("/app/exams/{exam_id}/exports/{file_name}")
+    async def exam_export_download(req: Request, exam_id: str, file_name: str):
+        """Stream a generated export PDF using the browser session.
+
+        The API export endpoint authenticates with a bearer token, so a direct
+        browser navigation is rejected with 401. Proxying here keeps tenant
+        checks in the API while letting the session cookie reach the file.
+        """
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        resp = await call_api(req, "GET", f"/exams/{exam_id}/exports/{file_name}")
+        if not resp.is_success:
+            return Div(
+                show_toast(
+                    "That export is no longer available. Please generate it again.",
+                    "danger",
+                    title="Download failed",
+                ),
+                id="export-result",
+            )
+        return Response(
+            content=resp.content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+        )
 
     @app.delete("/ui/exams/{exam_id}")
     async def exam_delete(req: Request, exam_id: str):

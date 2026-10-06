@@ -38,10 +38,18 @@ async def _scope(req: Request, class_level: str, subject: str, term: str):
     weeks_resp = await call_api(
         req,
         "GET",
-        "/curriculum/weeks",
+        "/curriculum/school/weeks",
         params={"class_level": class_level, "subject": subject, "term": term},
     )
     ok_weeks, weeks_data = unwrap(weeks_resp)
+    if not ok_weeks:
+        weeks_resp = await call_api(
+            req,
+            "GET",
+            "/curriculum/weeks",
+            params={"class_level": class_level, "subject": subject, "term": term},
+        )
+        ok_weeks, weeks_data = unwrap(weeks_resp)
     weeks = weeks_data.get("weeks", []) if ok_weeks and isinstance(weeks_data, dict) else []
     return classes, subjects, weeks, class_level, subject
 
@@ -65,7 +73,7 @@ def _plan_card(plan: dict, user: dict) -> Card:
             Div(
                 Strong("AI lesson note", cls="small text-success d-block mb-1"),
                 Form(
-                    Textarea(name="ai_lesson_note", rows="5", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2;", value=plan.get("ai_lesson_note", "")),
+                    Textarea(plan.get("ai_lesson_note", ""), name="ai_lesson_note", rows="5", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2;"),
                     Input(type="hidden", name="status", value="submitted"),
                     Button("Save and submit", type="submit", variant="success", size="sm", cls="rounded-pill mt-2"),
                     action=f"/app/teaching/{plan_id}/save-note",
@@ -152,21 +160,23 @@ def teaching_routes(app):
         ok_coverage, coverage_data = unwrap(coverage_resp)
         coverage_rows = coverage_data if ok_coverage and isinstance(coverage_data, list) else []
 
+        select_cls = "border-0 rounded-3"
+        select_style = "background:#F1F4F1;"
         scope_form = Form(
-            Div(Label("Class", cls="small fw-semibold text-muted mb-1"), Select(*[Option(c, value=c, selected=c == class_level) for c in classes], name="class_level", cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-4"),
-            Div(Label("Subject", cls="small fw-semibold text-muted mb-1"), Select(*[Option(s.get("subject_name", ""), value=s.get("subject_name", ""), selected=s.get("subject_name") == subject) for s in subjects], name="subject", cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-5"),
-            Div(Label("Term", cls="small fw-semibold text-muted mb-1"), Select(*[Option(label, value=value, selected=value == term) for label, value in _terms()], name="term", cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-3"),
+            Div(Label("Class", cls="small fw-semibold text-muted mb-1"), Select("class_level", *[(c, c, c == class_level) for c in classes], cls=select_cls, style=select_style), cls="col-md-4"),
+            Div(Label("Subject", cls="small fw-semibold text-muted mb-1"), Select("subject", *[(s.get("subject_name", ""), s.get("subject_name", ""), s.get("subject_name") == subject) for s in subjects], cls=select_cls, style=select_style), cls="col-md-5"),
+            Div(Label("Term", cls="small fw-semibold text-muted mb-1"), Select("term", *[(value, label, value == term) for label, value in _terms()], cls=select_cls, style=select_style), cls="col-md-3"),
             Div(Button("Refresh scheme", type="submit", variant="success", cls="rounded-pill px-4 btn-brand mt-3"), cls="col-12"),
             action="/app/teaching",
             method="get",
             cls="row g-3 align-items-end",
         )
 
-        week_options = [Option(f"Week {w.get('week_number')}: {w.get('topic', '')}", value=str(w.get("id"))) for w in weeks]
+        week_options = [(str(w.get("id")), f"Week {w.get('week_number')}: {w.get('topic', '')}") for w in weeks]
         selected_week = weeks[0] if weeks else {}
         create_form = Form(
             Input(type="hidden", name="curriculum_id", value=selected_week.get("curriculum_id", "")),
-            Div(Label("Scheme week", cls="small fw-semibold text-muted mb-1"), Select(*week_options, name="scheme_id", required=True, cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(Label("Scheme week", cls="small fw-semibold text-muted mb-1"), Select("scheme_id", *week_options, required=True, cls=select_cls, style=select_style), cls="col-12"),
             Div(Label("Plan title", cls="small fw-semibold text-muted mb-1"), Input(name="title", required=True, value=f"{subject} · {term}", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
             Div(Label("Activities", cls="small fw-semibold text-muted mb-1"), Textarea(name="activities", placeholder="One activity per line", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
             Div(Label("Assessment notes", cls="small fw-semibold text-muted mb-1"), Textarea(name="assessment_notes", placeholder="How will learners demonstrate understanding?", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),

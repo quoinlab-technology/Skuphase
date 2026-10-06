@@ -74,3 +74,60 @@ class SchemeOfWork(BaseModel):
 
     def __repr__(self) -> str:
         return f"<SchemeOfWork(id={self.id}, term={self.term}, week={self.week_number}, topic={self.topic})>"
+
+
+
+class SchemeOfWorkOverride(BaseModel):
+    """School-scoped corrections and local notes for a seeded scheme week.
+
+    ``Curriculum``/``SchemeOfWork`` are shared national reference data with no
+    ``school_id``, so editing them in place would let one school silently change
+    the curriculum seen by every other tenant. Instead each school stores its own
+    overlay here and the read paths merge the two. This keeps the seeded NERDC
+    rows intact while letting a school repair imported text (a common import
+    artefact where word spaces are lost) and attach local notes/resources.
+    """
+
+    __tablename__ = "scheme_of_work_overrides"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    scheme_of_work_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("scheme_of_works.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # NULL means "keep the seeded value"; a value replaces it for this school only.
+    topic = Column(String(255), nullable=True)
+    subtopics = Column(JSONB, nullable=True)
+    # Local additions are always school-owned and never touch shared data.
+    teacher_notes = Column(Text, nullable=True)
+    resources = Column(JSONB, default=list, nullable=True)
+    is_archived = Column(Boolean, default=False, nullable=False)
+    created_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_scheme_override_school_week",
+            "school_id",
+            "scheme_of_work_id",
+            unique=True,
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SchemeOfWorkOverride(school={self.school_id}, "
+            f"scheme={self.scheme_of_work_id})>"
+        )

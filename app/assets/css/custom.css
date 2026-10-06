@@ -1199,6 +1199,42 @@ body {
    Audit Remediation — Accessibility & Polish
    ============================================================ */
 
+/* Ultra-narrow phones (320px and below): keep the authenticated shell from
+   creating horizontal scroll while preserving the normal mobile controls. */
+@media (max-width: 359.98px) {
+  .app-topbar {
+    padding-left: 0.65rem !important;
+    padding-right: 0.45rem !important;
+  }
+
+  .app-topbar > .d-flex.align-items-center.gap-1 {
+    min-width: 0;
+    max-width: 46%;
+  }
+
+  .app-topbar > .d-flex.align-items-center.gap-1 .app-crumb-current {
+    min-width: 0;
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-topbar-bell {
+    display: none !important;
+  }
+
+  .app-user-btn {
+    padding-left: 0.25rem !important;
+    padding-right: 0.25rem !important;
+  }
+
+  .app-topbar > .d-flex.align-items-center.ms-auto,
+  .app-topbar > .d-flex.align-items-center.ms-auto > .dropdown {
+    min-width: 0;
+  }
+}
+
 /* WCAG AA: muted text must be >= #64748b on white (#4.5:1 ratio). */
 .text-muted-custom,
 .text-muted-light {
@@ -1691,4 +1727,3 @@ body {
   color: #64748b;
   font-weight: 500;
 }
-
