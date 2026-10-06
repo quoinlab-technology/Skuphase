@@ -572,6 +572,17 @@ body {
   background: var(--brand-secondary-dark);
 }
 
+/* Dashboard CTAs fill narrow cards but keep their compact desktop width. */
+.dashboard-responsive-cta {
+  width: 100%;
+}
+
+@media (min-width: 992px) {
+  .dashboard-responsive-cta {
+    width: auto;
+  }
+}
+
 .app-step.done .app-step-dot {
   border-color: var(--brand-secondary);
   background: var(--brand-secondary);

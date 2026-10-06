@@ -246,9 +246,64 @@ def register_routes(app):
                     cls="ms-2 px-3 py-2",
                     **{"data-bs-toggle": "modal", "data-bs-target": "#createExamModal"},
                 ),
-                cls="d-flex align-items-center gap-2 mt-3 mt-md-0",
+                Button(
+                    Icon("compass", cls="bi me-1"),
+                    "Start guided workflow",
+                    as_="a",
+                    href="/app/start",
+                    variant="outline-success",
+                    cls="ms-2 px-3 py-2",
+                ),
+                cls="d-flex flex-wrap align-items-center gap-2 mt-3 mt-md-0 w-100 w-md-auto",
             ),
             cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
+        )
+
+        # Task-oriented front door. The existing metrics, advanced actions, and
+        # full workspaces remain below; these cards simply give a new teacher a
+        # clear first decision without hiding any capability.
+        workflow_section = Div(
+            Div(
+                Strong("Your teaching workflow", cls="fs-5 text-dark"),
+                A("Open guided mode", href="/app/start", cls="small text-brand text-decoration-none fw-semibold"),
+                cls="d-flex justify-content-between align-items-center mb-3",
+            ),
+            Row(
+                Col(
+                    A(
+                        Div(Icon("journal-bookmark", cls="bi"), cls="app-quick-action-icon"),
+                        Div(Strong("Prepare a lesson", cls="d-block text-dark small"), Span("Start from your class and subject", cls="text-muted", style="font-size:0.75rem")),
+                        href="/app/start?output=lesson",
+                        cls="app-quick-action",
+                    ), span=12, sm=6, lg=3,
+                ),
+                Col(
+                    A(
+                        Div(Icon("file-earmark-text", cls="bi"), cls="app-quick-action-icon"),
+                        Div(Strong("Create classwork", cls="d-block text-dark small"), Span("Build an exercise or worksheet", cls="text-muted", style="font-size:0.75rem")),
+                        href="/app/start?output=exercise",
+                        cls="app-quick-action",
+                    ), span=12, sm=6, lg=3,
+                ),
+                Col(
+                    A(
+                        Div(Icon("lightning-charge-fill", cls="bi"), cls="app-quick-action-icon"),
+                        Div(Strong("Generate an exam", cls="d-block text-dark small"), Span("Use curriculum-aligned generation", cls="text-muted", style="font-size:0.75rem")),
+                        href="/app/start?output=exam",
+                        cls="app-quick-action",
+                    ), span=12, sm=6, lg=3,
+                ),
+                Col(
+                    A(
+                        Div(Icon("check2-square", cls="bi"), cls="app-quick-action-icon"),
+                        Div(Strong("Review and export", cls="d-block text-dark small"), Span("Return to work awaiting attention", cls="text-muted", style="font-size:0.75rem")),
+                        href="/app/start?output=review",
+                        cls="app-quick-action",
+                    ), span=12, sm=6, lg=3,
+                ),
+                g=3,
+            ),
+            cls="mb-4",
         )
 
         # 4 KPI cards row
@@ -389,7 +444,7 @@ def register_routes(app):
                     P("Pick a class, subject and week from the NERDC scheme — we pre-fill the exam for you.", cls="text-muted small mb-0"),
                 ),
                 A(Icon("arrow-right-circle", cls="bi me-1"), "Open Curriculum Explorer",
-                  href="/app/curriculum", cls="btn btn-brand rounded-pill px-4 flex-shrink-0"),
+                  href="/app/curriculum", cls="btn btn-brand rounded-pill px-4 flex-shrink-0 dashboard-responsive-cta"),
                 cls="d-flex flex-wrap align-items-center gap-3 p-3",
             ),
             cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
@@ -407,7 +462,7 @@ def register_routes(app):
                         cls="flex-grow-1",
                     ),
                     A(Icon("gear", cls="bi me-1"), "Configure School Profile",
-                      href="/app/settings?tab=profile", cls="btn btn-outline-success rounded-pill px-4 flex-shrink-0 fw-semibold"),
+                      href="/app/settings?tab=profile", cls="btn btn-outline-success rounded-pill px-4 flex-shrink-0 fw-semibold dashboard-responsive-cta"),
                     cls="d-flex flex-wrap align-items-center gap-3 p-3",
                 ),
                 cls="border-0 shadow-sm rounded-4 mb-4 bg-white border-start border-4 border-success",
@@ -419,6 +474,7 @@ def register_routes(app):
                 header,
                 setup_alert,
                 curriculum_cta,
+                workflow_section,
                 metrics_row,
                 Row(
                     Col(recent_exams_card, span=12, lg=8),
