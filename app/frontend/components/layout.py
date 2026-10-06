@@ -278,6 +278,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
 
     # Role-filtered navigation (FRONTEND_SPEC.md §3.3)
     nav_items = [
+        ("Start here", "/app/start", "start", "compass"),
         ("Dashboard", "/app", "dashboard", "grid-fill"),
         ("Exams", "/app/exams", "exams", "file-earmark-text"),
         ("Curriculum", "/app/curriculum", "curriculum", "compass"),

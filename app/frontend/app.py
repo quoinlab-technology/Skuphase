@@ -29,6 +29,7 @@ from app.frontend.routes import public as public_routes
 from app.frontend.routes import settings as settings_routes
 from app.frontend.routes import staff as staff_routes
 from app.frontend.routes import teaching as teaching_routes
+from app.frontend.routes import guided as guided_routes
 from app.frontend.middleware import register_middlewares
 
 settings = get_settings()
@@ -166,6 +167,7 @@ auth_routes.register_routes(frontend_app)
 auth_routes.register_more_routes(frontend_app)
 auth_routes.register_settlement_routes(frontend_app)
 dashboard_routes.register_routes(frontend_app)
+guided_routes.guided_routes(frontend_app)
 exams_routes.register_routes(frontend_app)
 curriculum_routes.curriculum_routes(frontend_app)
 curriculum_routes.register_curriculum_authoring_routes(frontend_app)
