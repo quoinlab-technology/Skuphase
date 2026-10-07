@@ -11,6 +11,11 @@ exports/
 /UI_design/
 /samples/
 /docs/archive/
+/FRONTEND_SPEC.md
+/QUICK_REFERENCE.md
+/SUPABASE_CONNECTION_AND_MIGRATION.md
+/SYSTEM_AUDIT_AND_ROADMAP.md
+/TEACHER_WORKFLOW_UX_IMPLEMENTATION_PLAN.md
 
 # Python
 __pycache__/
