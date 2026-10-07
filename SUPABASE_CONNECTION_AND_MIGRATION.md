@@ -64,3 +64,18 @@ application runtime/serverless-style connections; shared session pooling or a
 direct connection is for migrations and other operations that need a stable
 session. The paid IPv4 add-on is only relevant to the direct connection and
 Dedicated Pooler; it is not required for the shared pooler.
+
+## Supabase Storage for school logos
+
+Create a bucket named `school-assets` in Supabase Storage and mark it public
+for school branding assets. Configure these server-only secrets in FastAPI
+Cloud (never expose the service-role key to the browser):
+
+```text
+SUPABASE_URL=https://<PROJECT_REF>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY>
+SUPABASE_STORAGE_BUCKET=school-assets
+```
+
+Logo uploads are written to `schools/<school-id>/...` and only the resulting
+public object URL is stored in `school_settings.logo_url`.

@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     database_pool_size: int = 10
     database_max_overflow: int = 20
 
+    # Supabase Storage (server-side uploads; never expose the service key)
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    supabase_storage_bucket: str = "school-assets"
+
     # Authentication
     jwt_secret_key: str = Field(..., min_length=32)
     jwt_algorithm: str = "HS256"

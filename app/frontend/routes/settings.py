@@ -5,8 +5,8 @@ curriculum levels, and exam generation policies.
 """
 
 import secrets
-from pathlib import Path
 
+import httpx
 from fasthtml.common import (
     A,
     Div,
@@ -38,6 +38,7 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.config.settings import get_settings
 
 # Audit2 Phase 2 — Settings → Notifications tab (mirrors prototype
 # Settings.png–Settings6.png and NotificationPrefs schema defaults).
@@ -560,15 +561,33 @@ def register_routes(app):
         if len(content) > 5 * 1024 * 1024:
             push_flash(req, "Logo must be 5 MB or smaller.", "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
-        upload_dir = Path(__file__).resolve().parents[2] / "assets" / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
         filename = f"school-logo-{secrets.token_urlsafe(12)}{extension}"
-        (upload_dir / filename).write_bytes(content)
-        logo_url = f"/assets/uploads/{filename}"
+        settings = get_settings()
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            push_flash(req, "Logo storage is not configured yet. Add Supabase Storage credentials first.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        object_path = f"schools/{school_id}/{filename}"
+        storage_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/{settings.supabase_storage_bucket}/{object_path}"
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                storage_response = await client.post(
+                    storage_url,
+                    content=content,
+                    headers={
+                        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                        "apikey": settings.supabase_service_role_key,
+                        "Content-Type": getattr(upload, "content_type", "application/octet-stream"),
+                        "x-upsert": "true",
+                    },
+                )
+            storage_response.raise_for_status()
+        except Exception:
+            push_flash(req, "The logo could not be uploaded to Supabase Storage.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        logo_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{settings.supabase_storage_bucket}/{object_path}"
         response = await call_api(req, "PUT", f"/schools/{school_id}/settings", json={"logo_url": logo_url})
         ok, data = unwrap(response)
         if not ok:
-            (upload_dir / filename).unlink(missing_ok=True)
             push_flash(req, data.get("message", "Could not save the uploaded logo."), "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
         push_flash(req, "School logo uploaded successfully.", "success")
