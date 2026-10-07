@@ -73,10 +73,6 @@ def _rows(records: List[Dict[str, Any]]):
             continue
         seen_scheme_keys.add(scheme_key)
         topic = r["topic"]
-        if len(topic) > 255:
-            # 14 legacy rows exceed varchar(255); keep them, truncated.
-            logger.warning("Truncating topic longer than 255 chars (week %s)", r["week"])
-            topic = topic[:255]
         schemes.append(
             {
                 "board": r["board"],

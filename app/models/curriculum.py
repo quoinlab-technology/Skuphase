@@ -60,7 +60,7 @@ class SchemeOfWork(BaseModel):
     )
     term = Column(String(20), nullable=False, index=True)  # First Term, Second Term, Third Term
     week_number = Column(Integer, nullable=False, index=True)  # 1 to 13
-    topic = Column(String(255), nullable=False)
+    topic = Column(Text, nullable=False)
     subtopics = Column(JSONB, default=list, nullable=False)  # List of detailed learning objectives
     raw_content = Column(Text, nullable=True)
     is_exam_or_break = Column(Boolean, default=False, nullable=False)
