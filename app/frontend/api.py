@@ -53,6 +53,8 @@ async def call_api(
     path: str,
     json: Optional[dict] = None,
     params: Optional[dict] = None,
+    content: Optional[bytes] = None,
+    headers: Optional[dict] = None,
 ) -> Any:
     """Forward an in-process request to ``/api/v1<path>``.
 
@@ -60,8 +62,10 @@ async def call_api(
     access tokens if a refresh token is present in the session.
     """
     client = _get_client()
-    headers = auth_headers_from_session(request)
-    resp = await client.request(method, f"/api/v1{path}", json=json, params=params, headers=headers)
+    request_headers = auth_headers_from_session(request)
+    if headers:
+        request_headers.update(headers)
+    resp = await client.request(method, f"/api/v1{path}", json=json, content=content, params=params, headers=request_headers)
 
     # Automatic token revalidation & refresh on 401.
     # If the access token is expired and we have a refresh token, try to get a
@@ -85,7 +89,9 @@ async def call_api(
                             request.session["user"] = tokens["user"]
                         request.session["_refreshed"] = True
                         new_headers = {"Authorization": f"Bearer {new_acc}"}
-                        resp = await client.request(method, f"/api/v1{path}", json=json, params=params, headers=new_headers)
+                        if headers:
+                            new_headers.update(headers)
+                        resp = await client.request(method, f"/api/v1{path}", json=json, content=content, params=params, headers=new_headers)
                 # If refresh fails, return original 401; ensure_login handles the redirect.
             except Exception:
                 pass

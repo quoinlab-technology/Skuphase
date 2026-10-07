@@ -115,6 +115,21 @@ TERMS = ["First Term", "Second Term", "Third Term"]
 GRADE_LEVELS = [
     "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6",
     "Pre-Nursery", "Nursery 1", "Nursery 2", "Nursery 3",
+    "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3",
+]
+
+# The manual composer must remain usable when the curriculum endpoint is
+# scoped to a primary class (the default route) or temporarily unavailable.
+# Keep the fallback broad enough for Nigerian primary and secondary schools;
+# API-provided subjects are still shown first and de-duplicated below.
+MANUAL_SECONDARY_SUBJECTS = [
+    "Basic Technology", "Basic Science", "Business Studies", "Computer Studies",
+    "Civic Education", "Cultural & Creative Arts", "Economics", "English Language",
+    "Financial Accounting", "Further Mathematics", "Geography", "Government",
+    "Hausa", "Igbo", "Islamic Religious Studies", "Literature in English",
+    "Mathematics", "Physical & Health Education", "Physics", "Chemistry", "Biology",
+    "Agricultural Science", "Christian Religious Studies", "Technical Drawing",
+    "Yoruba", "French Language", "Home Economics",
 ]
 
 
@@ -226,7 +241,7 @@ def _row_actions(exam: dict, user: dict = None):
                 Icon("arrow-counterclockwise", cls="me-2"),
                 "Retry",
                 href="#",
-                onclick="alert('Retry queued')",
+                onclick="this.textContent='Retry queued'; this.classList.add('text-success'); return false;",
             )
         )
 
@@ -916,6 +931,49 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
 def register_page_routes(app):
 
     """Register list and detail routes (full pages)."""
+
+    @app.get("/app/exams/{exam_id}/exchange/{format_name}")
+    async def exam_exchange_download(req: Request, exam_id: str, format_name: str):
+        """Authenticated browser download proxy for teacher exchange formats."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        if format_name.lower() not in {"csv", "docx", "gift", "qti"}:
+            return Response("Unsupported exchange format", status_code=400)
+        upstream = await call_api(req, "GET", f"/exams/{exam_id}/exchange/{format_name.lower()}")
+        if not upstream.is_success:
+            ok, data = unwrap(upstream)
+            return Response(data.get("message", "Could not export this exam."), status_code=upstream.status_code)
+        return Response(
+            content=upstream.content,
+            media_type=upstream.headers.get("content-type", "application/octet-stream"),
+            headers={"Content-Disposition": upstream.headers.get("content-disposition", f'attachment; filename="exam-{exam_id}.{format_name}"')},
+        )
+
+    @app.post("/app/exams/{exam_id}/exchange/{format_name}/preview")
+    async def exam_exchange_preview(req: Request, exam_id: str, format_name: str):
+        """Preview an uploaded CSV/DOCX/GIFT/QTI file without changing an exam."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        uploaded = form.get("exchange_file")
+        if not uploaded or not hasattr(uploaded, "read"):
+            return Alert("Choose an exchange file first.", variant="warning")
+        content = await uploaded.read()
+        media = getattr(uploaded, "content_type", None) or "application/octet-stream"
+        upstream = await call_api(
+            req, "POST", f"/exams/{exam_id}/exchange/{format_name.lower()}/preview",
+            content=content, headers={"Content-Type": media},
+        )
+        ok, data = unwrap(upstream)
+        if not ok:
+            return Alert(data.get("message", "Could not read this exchange file."), variant="danger")
+        return Card(
+            Strong(f"Preview ready: {data.get('question_count', 0)} question(s)"),
+            P("No changes were made. Review the file before importing it into the question bank or exam.", cls="text-muted small mb-0"),
+            cls="border-success bg-success-subtle rounded-3 p-3 mt-3",
+        )
 
     @app.get("/app/exams")
     async def exams_list(req: Request):
@@ -2588,7 +2646,46 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
         cls="bg-white border rounded-4 p-4 shadow-sm",
     )
 
-    return Div(eco_card, pdf_card)
+    exchange_card = Card(
+        H5("Question Exchange", cls="fw-bold text-dark mb-2"),
+        P("Download this exam for another LMS or keep a portable backup. The exports preserve question text, options, answers, marks, and marking schemes.", cls="text-muted small mb-3"),
+        Div(
+            *[
+                A(
+                    Icon("download", cls="bi me-1"), label,
+                    href=f"/app/exams/{exam_id}/exchange/{fmt}",
+                    cls="btn btn-sm btn-outline-secondary rounded-pill px-3",
+                )
+                for fmt, label in (("csv", "CSV"), ("docx", "Word"), ("gift", "GIFT"), ("qti", "QTI"))
+            ],
+            cls="d-flex flex-wrap gap-2",
+        ),
+        Form(
+            Label("Preview an exchange file", cls="form-label small fw-semibold text-muted mb-1"),
+            Div(
+                Input(type="file", name="exchange_file", accept=".csv,.docx,.gift,.xml", cls="form-control form-control-sm", required=True),
+                HtmlSelect(
+                    Option("CSV", value="csv", selected=True), Option("Word", value="docx"),
+                    Option("GIFT", value="gift"), Option("QTI", value="qti"),
+                    name="format_name", id=f"exchange-format-{exam_id}", cls="form-select form-select-sm", style="max-width:7rem;",
+                    onchange=f"this.form.setAttribute('hx-post','/app/exams/{exam_id}/exchange/' + this.value + '/preview'); htmx.process(this.form);",
+                ),
+                Button("Preview", type="submit", cls="btn btn-sm btn-outline-primary rounded-pill px-3"),
+                cls="d-flex flex-wrap gap-2",
+            ),
+            Div(id="exchange-preview-result"),
+            hx_post=f"/app/exams/{exam_id}/exchange/csv/preview",
+            hx_target="#exchange-preview-result",
+            hx_swap="innerHTML",
+            **{"hx-encoding": "multipart/form-data"},
+            onsubmit="this.action='/app/exams/' + this.dataset.examId + '/exchange/' + this.querySelector('[name=format_name]').value + '/preview';",
+            data_exam_id=exam_id,
+            cls="border-top pt-3 mt-3",
+        ),
+        cls="bg-white border rounded-4 p-4 shadow-sm mt-4",
+    )
+
+    return Div(eco_card, pdf_card, exchange_card)
 
 
 def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
@@ -3833,8 +3930,6 @@ def _wizard_scope(request: Request) -> Div:
             if (msgEl) msgEl.textContent = msg;
             const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
-          } else {
-            alert(title + ': ' + msg);
           }
         }
         """),
@@ -4222,8 +4317,6 @@ def _wizard_structure(request: Request) -> Div:
         if (msgEl) msgEl.textContent = msg;
         const modal = bootstrap.Modal.getOrCreateInstance(el);
         modal.show();
-      }}}} else {{{{
-        alert(title + ': ' + msg);
       }}}}
     }}}}
 
@@ -5274,6 +5367,14 @@ def _build_diagram_modal() -> Div:
                 max-width: 100%;
                 overflow-x: hidden !important;
             }
+            #diagram-library-modal .modal-dialog,
+            #diagram-library-modal .modal-content,
+            #diagram-library-modal .modal-body {
+                max-width: 100vw;
+                min-width: 0;
+                overflow-x: hidden;
+            }
+            #diagram-library-modal svg { max-width: 100% !important; height: auto !important; }
             .diag-item-card:hover {
                 border-color: #00412E !important;
                 background-color: #F8FAF9;
@@ -5455,6 +5556,15 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
   const CATALOG_FORMULAS = {form_json};
 
   const esc = v => String(v || '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}}[c]));
+
+  const showManualNotice = (title, message) => {{
+    const modal = document.getElementById('manualNoticeModal');
+    const titleEl = document.getElementById('manual-notice-title');
+    const messageEl = document.getElementById('manual-notice-message');
+    if (titleEl) titleEl.textContent = title || 'Notice';
+    if (messageEl) messageEl.textContent = message || '';
+    if (modal && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
+  }};
 
   // Track active input for formula insertion
   let lastFocusedInput = null;
@@ -5646,7 +5756,11 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
 
     const mode = document.querySelector('input[name="diag-mode-radio"]:checked')?.value || 'exam';
     const calloutStyle = document.getElementById('diag-callout-style')?.value || 'roman';
-    const hiddenParts = [...document.querySelectorAll('.diag-hideable-check:checked')].map(c => c.value);
+    // Study mode must render the complete labelled specimen even if the
+    // teacher previously checked hidden parts while in Exam mode.
+    const hiddenParts = mode === 'exam'
+      ? [...document.querySelectorAll('.diag-hideable-check:checked')].map(c => c.value)
+      : [];
 
     const params = {{}};
     document.querySelectorAll('.diag-modal-field').forEach(input => {{
@@ -6064,7 +6178,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       const cardEl = copilot.closest('[data-question-card]');
       const panel = cardEl.querySelector('[data-copilot-panel]');
       const question = cardEl.querySelector('.manual-question-text')?.value.trim() || '';
-      if (!question) {{ window.alert('Enter a question before requesting AI assistance.'); return; }}
+      if (!question) {{ showManualNotice('Question needed', 'Enter a question before requesting AI assistance.'); return; }}
       panel?.classList.remove('d-none');
       panel?.querySelector('.manual-copilot-action')?.focus();
       return;
@@ -6084,7 +6198,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       const panel = copilotRun.closest('[data-copilot-panel]');
       const cardEl = copilotRun.closest('[data-question-card]');
       const question = cardEl.querySelector('.manual-question-text')?.value.trim() || '';
-      if (!question) {{ window.alert('Enter a question before requesting AI assistance.'); return; }}
+      if (!question) {{ showManualNotice('Question needed', 'Enter a question before requesting AI assistance.'); return; }}
       const action = panel.querySelector('.manual-copilot-action').value;
       const status = panel.querySelector('.manual-copilot-status');
       copilotRun.disabled = true;
@@ -6300,7 +6414,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     prepare: () => {{
       const data = cards().map(_serializeCard);
       if (!data.some(q => q.question_text)) {{
-        alert('Please add at least one question before submitting.');
+        showManualNotice('Question needed', 'Please add at least one question before submitting.');
         return false;
       }}
       document.getElementById('manual-questions-json').value = JSON.stringify(data);
@@ -6374,6 +6488,33 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
 
     formula_ribbon = _build_formula_ribbon()
     diagram_modal = _build_diagram_modal()
+    manual_notice_modal = Div(
+        Div(
+            Div(
+                Div(
+                    Icon("exclamation-circle", cls="bi fs-3 text-warning"),
+                    cls="d-inline-flex align-items-center justify-content-center mb-3",
+                    style="width:3.2rem;height:3.2rem;border-radius:50%;background:#FEF3C7;",
+                ),
+                H5("Notice", id="manual-notice-title", cls="modal-title fw-bold text-dark mb-2"),
+                P(id="manual-notice-message", cls="text-muted small mb-0", style="line-height:1.5;"),
+                cls="text-center w-100",
+            ),
+            Div(
+                Button("Okay, got it", type="button", cls="btn btn-brand rounded-pill px-4", **{"data-bs-dismiss": "modal"}),
+                cls="modal-footer border-0 pt-0 justify-content-center",
+            ),
+            cls="modal-content border-0 rounded-4 shadow-lg",
+        ),
+        cls="modal-dialog modal-dialog-centered",
+    )
+    manual_notice_modal = Div(
+        manual_notice_modal,
+        id="manualNoticeModal",
+        cls="modal fade",
+        tabindex="-1",
+        **{"aria-hidden": "true"},
+    )
 
     return Div(
         Div(
@@ -6452,6 +6593,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
             cls="htmx-indicator d-flex align-items-center gap-2 mt-3",
         ),
         Div(id="manual-result", cls="mt-3"),
+        manual_notice_modal,
         diagram_modal,
         composer_script,
         cls="py-2",
@@ -6474,17 +6616,17 @@ def register_manual_routes(app):
             params={"class_level": class_level, "board": board},
         )
         ok_subjects, subjects_data = unwrap(subjects_resp)
-        subject_options = [
+        api_subjects = [
             item.get("subject_name") for item in (subjects_data.get("subjects", []) if isinstance(subjects_data, dict) else [])
             if isinstance(item, dict) and item.get("subject_name")
         ] if ok_subjects else []
-        if not subject_options:
-            subject_options = [
-                "Mathematics", "English Language", "Basic Science", "Social Studies",
-                "National Values", "Civic Education", "Agricultural Science", "Computer Studies",
-                "Physical & Health Education", "Home Economics", "Christian Religious Studies",
-                "Islamic Religious Studies", "Hausa", "Igbo", "Yoruba",
-            ]
+        primary_fallback = [
+            "Mathematics", "English Language", "Basic Science", "Social Studies",
+            "National Values", "Civic Education", "Agricultural Science", "Computer Studies",
+            "Physical & Health Education", "Home Economics", "Christian Religious Studies",
+            "Islamic Religious Studies", "Hausa", "Igbo", "Yoruba",
+        ]
+        subject_options = list(dict.fromkeys(api_subjects + primary_fallback + MANUAL_SECONDARY_SUBJECTS))
         body = _manual_exam_composer(req, subject_options)
         return AppShell(
             Title("Manual Exam - SkuPhase"),

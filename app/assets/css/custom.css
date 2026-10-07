@@ -1070,6 +1070,21 @@ body {
     z-index: 1060 !important;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.25);
   }
+  /* Keep the mobile drawer out of document flow even when Bootstrap's
+     offcanvas stylesheet is delayed or unavailable on a low-bandwidth load. */
+  .app-sidebar.offcanvas-start:not(.show) {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-105%);
+    visibility: hidden;
+  }
+  .app-sidebar.offcanvas-start.show {
+    position: fixed !important;
+    transform: translateX(0);
+    visibility: visible;
+  }
 }
 
 /* Wizard Difficulty Preset Cards (1:1 with prototype Screenshot 4) */

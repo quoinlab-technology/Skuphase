@@ -235,6 +235,11 @@ def test_manual_entry_page_renders(client, logged_in):
     assert "manual-copilot-panel" in r.text
     assert "Apply suggestion" in r.text
     assert "nothing is applied automatically" in r.text
+    assert "JSS 1" in r.text
+    assert "SSS 3" in r.text
+    assert "Physics" in r.text
+    assert "manualNoticeModal" in r.text
+    assert "Study Mode (Show Full Labels)" in r.text
 
 
 def test_exams_list_has_direct_ai_and_manual_actions(client, logged_in):
