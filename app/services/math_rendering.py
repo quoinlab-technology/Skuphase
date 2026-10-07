@@ -9,19 +9,17 @@ _CHEM_RE = re.compile(r"\\ce\{([^{}]*)\}")
 
 
 def extract_display_formulas(text: str | None) -> list[str]:
-    """Extract display formulas while preserving their authored order."""
     if not text:
         return []
     return [((m.group(1) or m.group(2) or "").strip().rstrip("\\")) for m in _DISPLAY_RE.finditer(str(text))]
 
 
 def _readable_formula(formula: str) -> str:
-    value = str(formula or "").strip()
-    value = _CHEM_RE.sub(lambda m: m.group(1), value)
+    value = _CHEM_RE.sub(lambda m: m.group(1), str(formula or "").strip())
     replacements = {
-        r"\times": "×", r"\div": "÷", r"\pm": "±", r"\cdot": "·",
-        r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\rightarrow": "→",
-        r"\to": "→", r"\sqrt": "√", r"\infty": "∞",
+        r"\times": "\u00d7", r"\div": "\u00f7", r"\pm": "\u00b1", r"\cdot": "\u00b7",
+        r"\leq": "\u2264", r"\geq": "\u2265", r"\neq": "\u2260", r"\rightarrow": "\u2192",
+        r"\to": "\u2192", r"\sqrt": "\u221a", r"\infty": "\u221e",
     }
     for source, target in replacements.items():
         value = value.replace(source, target)
@@ -35,7 +33,6 @@ def _readable_formula(formula: str) -> str:
 
 
 def formula_to_svg(formula: str, *, width: int = 640) -> str:
-    """Render a safe, self-contained, accessible SVG fallback for a formula."""
     value = _readable_formula(formula)
     escaped = html.escape(value, quote=True)
     estimated = max(180, min(width, 18 + len(value) * 10))

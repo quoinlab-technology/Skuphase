@@ -7,18 +7,19 @@ def test_extract_display_formula_delimiters():
 
 
 def test_formula_svg_is_escaped_and_self_contained():
-    svg = formula_to_svg(r"x \times y < 3")
+    svg = formula_to_svg(chr(120) + " " + chr(92) + "times y < 3")
     assert svg.startswith("<svg")
-    assert "×" in svg
+    assert chr(215) in svg
     assert "&lt;" in svg
     assert "<script" not in svg.lower()
 
 
 def test_formula_svg_normalises_fraction_and_chemistry_without_markup():
-    svg = formula_to_svg(r"\frac{-b}{2a} + \ce{H2O} \rightarrow \ce{H2} + \ce{O2}")
+    formula = chr(92) + "frac{-b}{2a} + " + chr(92) + "ce{H2O} " + chr(92) + "rightarrow " + chr(92) + "ce{H2} + " + chr(92) + "ce{O2}"
+    svg = formula_to_svg(formula)
     assert "(-b)/(2a)" in svg
-    assert "H2O" in svg and "→" in svg
-    assert "\\frac" not in svg and "\\ce" not in svg
+    assert "H2O" in svg and chr(8594) in svg
+    assert chr(92) + "frac" not in svg and chr(92) + "ce" not in svg
 
 
 def test_formula_catalog_has_reviewable_metadata():
