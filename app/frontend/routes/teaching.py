@@ -141,7 +141,14 @@ def _coverage_card(row: dict, user: dict) -> Card:
 
 def teaching_routes(app):
     @app.get("/app/teaching")
-    async def teaching_workspace(req: Request, class_level: str = "Primary 4", subject: str = "", term: str = "First Term"):
+    async def teaching_workspace(
+        req: Request,
+        class_level: str = "Primary 4",
+        subject: str = "",
+        term: str = "First Term",
+        mode: str = "",
+        output: str = "",
+    ):
         guard = ensure_login(req)
         if guard:
             return guard
@@ -207,12 +214,32 @@ def teaching_routes(app):
             cls="border-0 shadow-sm rounded-4",
         )
 
+        guided_output = {"lesson": "Lesson note", "exercise": "Classwork"}.get(output)
+        guided_context = Card(
+            Div(
+                Div(
+                    Icon("compass", cls="bi text-success fs-5 me-2"),
+                    Div(
+                        Strong("Guided workflow", cls="d-block text-dark"),
+                        P(
+                            f"{guided_output or 'Teaching'} for {class_level} · {subject or 'your subject'} · {term}. Change the scope above without losing your place.",
+                            cls="small text-muted mb-0",
+                        ),
+                    ),
+                ),
+                A("Back to start", href="/app/start", cls="btn btn-outline-success rounded-pill px-3 ms-auto flex-shrink-0"),
+                cls="d-flex align-items-center gap-2 flex-wrap p-3",
+            ),
+            cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
+        ) if mode == "guided" else None
+
         content = Container(
             Div(
                 Div(Span("PACKAGE B · CURRICULUM DELIVERY", cls="small fw-bold text-success letter-spacing-1"), H1("Teach from the scheme, week by week.", cls="fs-2 fw-bold text-dark mb-2 mt-2"), P("Turn the national curriculum into a practical lesson plan, an AI-assisted note, a weekly exercise, and verified coverage.", cls="text-muted mb-0"), cls="flex-grow-1"),
                 A(Icon("book-half", cls="bi me-2"), "Browse curriculum", href="/app/curriculum", cls="btn btn-outline-success rounded-pill px-4 align-self-start"),
                 cls="d-flex justify-content-between align-items-start gap-3 mb-4 flex-wrap",
             ),
+            guided_context,
             Card(Div(H2("Choose your teaching scope", cls="fs-5 fw-bold mb-3"), scope_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
             Row(
                 Col(Card(Div(Span("PLANNED WEEKS", cls="small text-muted fw-semibold"), Strong(str(summary.get("total", 0)), cls="d-block fs-2 text-dark"), P("Coverage records", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),

@@ -93,7 +93,7 @@ def _output_href(output: str, class_level: str, subject: str, term: str) -> str:
         return f"/app/teaching?mode=guided&output=exercise&{context}"
     if output == "exam":
         return f"/app/exams/new?mode=guided&{context}"
-    return f"/app/exams?status=teacher_review&{context}"
+    return f"/app/exams?status=under_review&grade={quote(class_level)}&subject={quote(subject)}&mode=guided&output=review"
 
 
 def guided_routes(app):

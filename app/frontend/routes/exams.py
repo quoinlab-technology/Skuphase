@@ -929,6 +929,7 @@ def register_page_routes(app):
         subject = req.query_params.get("subject", "").strip()
         grade = req.query_params.get("grade", "").strip()
         status = req.query_params.get("status", "").strip()
+        guided_mode = req.query_params.get("mode") == "guided"
 
         params = {"limit": "50"}
         if subject:
@@ -1104,7 +1105,26 @@ def register_page_routes(app):
             id="exams-filter",
         )
 
+        guided_context = None
+        if guided_mode:
+            guided_context = Card(
+                Div(
+                    Icon("compass", cls="bi text-success fs-5 me-2"),
+                    Div(
+                        Strong("Guided review", cls="d-block text-dark"),
+                        P(
+                            f"Review and export work for {grade or 'your selected class'} · {subject or 'your selected subject'}. Advanced exam controls remain available below.",
+                            cls="small text-muted mb-0",
+                        ),
+                    ),
+                    A("Back to start", href="/app/start", cls="btn btn-outline-success rounded-pill px-3 ms-auto flex-shrink-0"),
+                    cls="d-flex align-items-center gap-2 flex-wrap p-3",
+                ),
+                cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
+            )
+
         body = Div(
+            guided_context,
             Div(
                 Div(
                     Div(
@@ -3619,7 +3639,26 @@ def _wizard_scope(request: Request) -> Div:
         style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.35rem;",
     )
 
+    guided_context = None
+    if qp.get("mode") == "guided":
+        guided_context = Card(
+            Div(
+                Icon("compass", cls="bi text-success fs-5 me-2"),
+                Div(
+                    Strong("Guided exam setup", cls="d-block text-dark"),
+                    P(
+                        f"Starting with {default_grade} · {default_subject} · {default_term}. Review the curriculum weeks next, then generate or adjust the paper.",
+                        cls="small text-muted mb-0",
+                    ),
+                ),
+                A("Back to start", href="/app/start", cls="btn btn-outline-success rounded-pill px-3 ms-auto flex-shrink-0"),
+                cls="d-flex align-items-center gap-2 flex-wrap p-3",
+            ),
+            cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
+        )
+
     return Div(
+        guided_context,
         # Card header
         Div(
             Icon("record-circle", cls="bi", style="font-size:1.25rem; color:#00412E; margin-right:0.6rem;"),
