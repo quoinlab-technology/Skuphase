@@ -195,6 +195,6 @@ def guided_routes(app):
                 ),
                 cls="mt-4 mb-2",
             ),
-            cls="py-4 pt-lg-5",
+            cls="py-4 pt-lg-5 guided-page",
         )
         return AppShell(content, user=user, active="start", crumbs=[("Start here", None)])

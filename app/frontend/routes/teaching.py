@@ -264,7 +264,7 @@ def teaching_routes(app):
                 Col(Div(H2("Your teaching plans", cls="fs-5 fw-bold mb-3"), plans_view), span=12, lg=7),
                 g=4,
             ),
-            cls="py-4 pt-lg-5",
+            cls="py-4 pt-lg-5 teaching-workspace",
         )
         return AppShell(content, user=user, active="teaching", crumbs=[("Teaching workspace", None)])
 
