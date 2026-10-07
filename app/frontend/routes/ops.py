@@ -14,6 +14,7 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import Flash, pop_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.config.settings import get_settings
 
 
 async def _ops_content(req: Request, htmx: bool = False):
@@ -38,11 +39,19 @@ async def _ops_content(req: Request, htmx: bool = False):
     resp_stats = await call_api(req, "GET", "/ops/stats")
     ok_s, stats_data = unwrap(resp_stats)
     stats = stats_data if ok_s else {}
+    resp_classes = await call_api(req, "GET", "/curriculum/classes", params={"board": "NERDC"})
+    ok_c, classes_data = unwrap(resp_classes)
 
     status_str = health.get("status", "ok").upper()
-    active_workers = stats.get("active_workers", 1)
-    queue_depth = stats.get("queue_depth", 0)
-    jobs_processed = stats.get("jobs_processed_24h", 12)
+    exam_stats = stats.get("exams") if isinstance(stats.get("exams"), dict) else {}
+    generating = exam_stats.get("generating_draft", "—")
+    under_review = exam_stats.get("under_review", "—")
+    approved = exam_stats.get("approved", "—")
+    failed = exam_stats.get("failed_last_24h", "—")
+    settings = get_settings()
+    db_label = (health.get("dependencies") or {}).get("database", "unavailable") if isinstance(health, dict) else "unavailable"
+    curriculum_label = f"Loaded ({len(classes_data.get('classes', []))} levels)" if ok_c and isinstance(classes_data, dict) else "Unavailable"
+    ai_label = "Configured" if settings.groq_api_key or settings.openrouter_api_key else "Not configured"
 
     header = Div(
         Div(
@@ -85,7 +94,7 @@ async def _ops_content(req: Request, htmx: bool = False):
         Col(
             Div(
                 Div(Icon("cpu-fill", cls="bi"), cls="app-metric-icon-wrap icon-blue-light"),
-                Div(Div(str(active_workers), cls="app-metric-value"), Div("Active Workers", cls="app-metric-label")),
+                Div(Div(str(generating), cls="app-metric-value"), Div("Generating drafts", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
             span=6, lg=3,
@@ -93,7 +102,7 @@ async def _ops_content(req: Request, htmx: bool = False):
         Col(
             Div(
                 Div(Icon("hourglass-split", cls="bi"), cls="app-metric-icon-wrap icon-purple-light"),
-                Div(Div(str(queue_depth), cls="app-metric-value"), Div("Queue Depth", cls="app-metric-label")),
+                Div(Div(str(under_review), cls="app-metric-value"), Div("Under review", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
             span=6, lg=3,
@@ -101,7 +110,15 @@ async def _ops_content(req: Request, htmx: bool = False):
         Col(
             Div(
                 Div(Icon("graph-up-arrow", cls="bi"), cls="app-metric-icon-wrap icon-amber-light"),
-                Div(Div(str(jobs_processed), cls="app-metric-value"), Div("Jobs (24h)", cls="app-metric-label")),
+                Div(Div(str(approved), cls="app-metric-value"), Div("Approved exams", cls="app-metric-label")),
+                cls="app-metric-card",
+            ),
+            span=6, lg=3,
+        ),
+        Col(
+            Div(
+                Div(Icon("exclamation-triangle", cls="bi"), cls="app-metric-icon-wrap icon-red-light"),
+                Div(Div(str(failed), cls="app-metric-value"), Div("Failed (24h)", cls="app-metric-label")),
                 cls="app-metric-card",
             ),
             span=6, lg=3,
@@ -114,22 +131,22 @@ async def _ops_content(req: Request, htmx: bool = False):
         Div(
             Div(
                 Span("FastAPI Core Service", cls="small fw-semibold"),
-                Span("Operational", cls="badge bg-success-subtle text-success rounded-pill px-2 py-1 small"),
+                Span("Healthy" if ok_h else "Unavailable", cls=f"badge {'bg-success-subtle text-success' if ok_h else 'bg-danger-subtle text-danger'} rounded-pill px-2 py-1 small"),
                 cls="d-flex justify-content-between align-items-center py-2 border-bottom",
             ),
             Div(
                 Span("PostgreSQL Database", cls="small fw-semibold"),
-                Span("Connected", cls="badge bg-success-subtle text-success rounded-pill px-2 py-1 small"),
+                Span(db_label.title(), cls=f"badge {'bg-success-subtle text-success' if db_label == 'healthy' else 'bg-danger-subtle text-danger'} rounded-pill px-2 py-1 small"),
                 cls="d-flex justify-content-between align-items-center py-2 border-bottom",
             ),
             Div(
                 Span("Curriculum & Scheme Seed Engine", cls="small fw-semibold"),
-                Span("Loaded (Primary 1-6)", cls="badge bg-success-subtle text-success rounded-pill px-2 py-1 small"),
+                Span(curriculum_label, cls=f"badge {'bg-success-subtle text-success' if ok_c else 'bg-warning-subtle text-warning-emphasis'} rounded-pill px-2 py-1 small"),
                 cls="d-flex justify-content-between align-items-center py-2 border-bottom",
             ),
             Div(
-                Span("AI Provider (OpenAI/Gemini)", cls="small fw-semibold"),
-                Span("Ready", cls="badge bg-success-subtle text-success rounded-pill px-2 py-1 small"),
+                Span("AI Providers (Groq/OpenRouter)", cls="small fw-semibold"),
+                Span(ai_label, cls=f"badge {'bg-success-subtle text-success' if ai_label == 'Configured' else 'bg-warning-subtle text-warning-emphasis'} rounded-pill px-2 py-1 small"),
                 cls="d-flex justify-content-between align-items-center py-2 border-bottom",
             ),
             Div(
@@ -150,7 +167,7 @@ async def _ops_content(req: Request, htmx: bool = False):
                 cls="text-muted small mb-3",
             ),
             Div(
-                Div(Span("Curriculum Scope: ", cls="fw-bold small"), Span("Pre-Nursery to Primary 6", cls="small text-muted")),
+                Div(Span("Curriculum Scope: ", cls="fw-bold small"), Span("Pre-Nursery through SSS 3", cls="small text-muted")),
                 Div(Span("Question Generator: ", cls="fw-bold small"), Span("Curriculum-seeded prompt engine", cls="small text-muted")),
                 Div(Span("Quality Gate: ", cls="fw-bold small"), Span("Multi-dimensional automated preflight", cls="small text-muted")),
                 cls="p-3 rounded-3 bg-light border-start border-3 border-success",

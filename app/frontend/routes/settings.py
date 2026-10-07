@@ -295,7 +295,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
             Input("min_pass_mark", input_type="number", label="Minimum Pass Mark (%)", value=min_pass_mark, min="1", max="100"),
             Div(
                 Strong("National Curriculum Scope", cls="small fw-bold d-block mb-1"),
-                P("Active: NERDC Primary School Curriculum (Pre-Nursery to Primary 6). All subjects and scheme of works seeded.", cls="text-muted small mb-0"),
+                P("Active: NERDC curriculum from Pre-Nursery through SSS 3. Primary, JSS, and SSS scheme-of-work data is available.", cls="text-muted small mb-0"),
                 cls="p-3 rounded-3 bg-light border-start border-3 border-success mb-3",
             ),
             Div(

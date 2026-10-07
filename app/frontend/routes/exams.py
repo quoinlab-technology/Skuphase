@@ -83,6 +83,7 @@ from app.frontend.components.exam import (
     render_rich_text,
     render_structured_blocks,
 )
+from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
@@ -1090,37 +1091,8 @@ def register_page_routes(app):
             cls="d-flex gap-2 overflow-x-auto pb-2 flex-nowrap flex-md-wrap mb-3 align-items-center",
         )
 
-        subject_options = [
-            ("All subjects", ""),
-            ("Mathematics", "Mathematics"),
-            ("English Language", "English Language"),
-            ("Basic Science", "Basic Science"),
-            ("Social Studies", "Social Studies"),
-            ("National Values", "National Values"),
-            ("Civic Education", "Civic Education"),
-            ("Agricultural Science", "Agricultural Science"),
-            ("Computer Studies", "Computer Studies"),
-            ("Physical & Health Education", "Physical & Health Education"),
-            ("Home Economics", "Home Economics"),
-            ("Christian Religious Studies", "Christian Religious Studies"),
-            ("Islamic Religious Studies", "Islamic Religious Studies"),
-            ("Hausa", "Hausa"),
-            ("Igbo", "Igbo"),
-            ("Yoruba", "Yoruba"),
-        ]
-
-        grade_options = [
-            ("All grades", ""),
-            ("Pre-Nursery", "Pre-Nursery"),
-            ("Nursery 1", "Nursery 1"),
-            ("Nursery 2", "Nursery 2"),
-            ("Primary 1", "Primary 1"),
-            ("Primary 2", "Primary 2"),
-            ("Primary 3", "Primary 3"),
-            ("Primary 4", "Primary 4"),
-            ("Primary 5", "Primary 5"),
-            ("Primary 6", "Primary 6"),
-        ]
+        subject_options = [("All subjects", ""), *[(label, label) for label in ALL_SUBJECTS]]
+        grade_options = [("All grades", ""), *[(label, label) for label in CLASS_LEVELS]]
 
         search_input_wrap = Div(
             Icon("search", cls="bi text-muted me-2"),
@@ -3570,6 +3542,7 @@ def _load_curriculum_cache() -> dict[tuple[str, str, str], list[dict]]:
 
     files = [
         data_dir / "nerdc_scheme_database.final.json",
+        data_dir / "nerdc_secondary_scheme_database.2025.json",
         data_dir / "primary_reasoning_curriculum.json",
     ]
     for fpath in files:
@@ -3654,14 +3627,10 @@ def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
             if s in subject.strip().lower() or subject.strip().lower() in s:
                 return w_list
 
-    return [
-        {
-            "week_number": i,
-            "topic": f"Week {i} Core Topics & Skills",
-            "subtopics_summary": f"Learning objectives and practice problems for Week {i}",
-        }
-        for i in range(1, 13)
-    ]
+    # Never fabricate curriculum weeks: doing so can produce an exam that is
+    # not grounded in the selected NERDC scheme.  The wizard will require the
+    # teacher to choose another scope or seed the catalogue first.
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -3677,21 +3646,7 @@ def _wizard_scope(request: Request) -> Div:
     default_total_marks = wiz.get("total_marks") or "100"
     default_title = wiz.get("exam_title") or f"{default_grade} {default_subject} — {default_term} Examination"
 
-    SUBJECT_OPTIONS = [
-        ("Mathematics", "Mathematics"),
-        ("English Language", "English Language"),
-        ("Basic Science", "Basic Science"),
-        ("Social & Citizenship Studies", "Social & Citizenship Studies"),
-        ("Cultural & Creative Arts", "Cultural & Creative Arts"),
-        ("Basic Digital Literacy", "Basic Digital Literacy"),
-        ("Nigerian History", "Nigerian History"),
-        ("Prevocational Studies", "Prevocational Studies"),
-        ("Christian Religious Studies", "Christian Religious Studies"),
-        ("Islamic Studies", "Islamic Studies"),
-        ("French Language", "French Language"),
-        ("Physical & Health Education", "Physical & Health Education"),
-        ("Handwriting", "Handwriting"),
-    ]
+    SUBJECT_OPTIONS = [(label, label) for label in ALL_SUBJECTS]
 
     current_preset = wiz.get("difficulty_preset") or "balanced"
 

@@ -16,6 +16,7 @@ from faststrap import Button, Card, Col, Container, Icon, Row, Select
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
 def _task_card(*, icon: str, title: str, description: str, href: str, tone: str = "success") -> Card:
@@ -47,7 +48,7 @@ async def _scope_options(req: Request, class_level: str, subject: str):
     classes_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": "NERDC"})
     ok_classes, classes_data = unwrap(classes_resp)
     classes = classes_data.get("classes", []) if ok_classes and isinstance(classes_data, dict) else []
-    classes = classes or ["Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6"]
+    classes = classes or list(CLASS_LEVELS)
     if class_level not in classes:
         class_level = classes[0]
 
@@ -55,7 +56,7 @@ async def _scope_options(req: Request, class_level: str, subject: str):
     ok_subjects, subjects_data = unwrap(subjects_resp)
     subjects = subjects_data.get("subjects", []) if ok_subjects and isinstance(subjects_data, dict) else []
     subject_names = [item.get("subject_name", "") for item in subjects if item.get("subject_name")]
-    subject_names = subject_names or ["Mathematics", "English Language", "Basic Science"]
+    subject_names = subject_names or list(ALL_SUBJECTS)
     if subject not in subject_names:
         subject = subject_names[0]
     return classes, subject_names, class_level, subject

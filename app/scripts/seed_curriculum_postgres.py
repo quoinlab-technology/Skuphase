@@ -22,9 +22,15 @@ from typing import Any, Dict, List
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.services.curriculum_taxonomy import canonical_class_level, canonical_subject
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_INPUT = Path(__file__).resolve().parents[2] / "data" / "nerdc_scheme_database.final.json"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DEFAULT_INPUTS = (
+    DATA_DIR / "nerdc_scheme_database.final.json",
+    DATA_DIR / "nerdc_secondary_scheme_database.2025.json",
+)
 
 BATCH_SIZE = 500
 
@@ -90,13 +96,25 @@ def _rows(records: List[Dict[str, Any]]):
     return curriculums, schemes
 
 
-async def seed_curriculum_from_json(json_path: Path, check_only: bool = False) -> int:
-    """Load the normalized NERDC dataset into PostgreSQL via bulk upserts."""
-    if not json_path.exists():
-        raise FileNotFoundError(f"Dataset not found at {json_path}")
+def _load_records(paths: list[Path]) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for path in paths:
+        if not path.exists():
+            raise FileNotFoundError(f"Dataset not found at {path}")
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        for record in loaded:
+            normalized = dict(record)
+            normalized["class_level"] = canonical_class_level(normalized.get("class_level", ""))
+            normalized["subject"] = canonical_subject(normalized.get("subject", ""))
+            records.append(normalized)
+    return records
 
-    logger.info("Reading dataset from %s ...", json_path)
-    records: List[Dict[str, Any]] = json.loads(json_path.read_text(encoding="utf-8"))
+
+async def seed_curriculum_from_json(json_path: Path | None = None, check_only: bool = False) -> int:
+    """Load the normalized NERDC dataset into PostgreSQL via bulk upserts."""
+    paths = [json_path] if json_path else list(DEFAULT_INPUTS)
+    logger.info("Reading curriculum datasets from %s ...", ", ".join(str(p) for p in paths))
+    records = _load_records(paths)
     logger.info("Loaded %s rows.", len(records))
 
     await _print_summary(records, "DRY-RUN CHECK" if check_only else "SEED SUMMARY")
@@ -174,7 +192,7 @@ async def seed_curriculum_from_json(json_path: Path, check_only: bool = False) -
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Seed NERDC curriculum into PostgreSQL")
-    parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to normalized JSON")
+    parser.add_argument("--input", default=None, help="Path to one normalized JSON (default: primary + secondary datasets)")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -182,18 +200,14 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    path = Path(args.input)
-
     if args.check:
         # Fully offline check: no DB connection required.
-        if not path.exists():
-            raise FileNotFoundError(f"Dataset not found at {path}")
-        records = json.loads(path.read_text(encoding="utf-8"))
+        records = _load_records([Path(args.input)] if args.input else list(DEFAULT_INPUTS))
         await _print_summary(records, "DRY-RUN CHECK")
         logger.info("Check-only mode — no writes performed, no DB required.")
         return
 
-    inserted = await seed_curriculum_from_json(path, check_only=False)
+    inserted = await seed_curriculum_from_json(Path(args.input) if args.input else None, check_only=False)
     logger.info("Done. Week rows upserted: %s", inserted)
 
 

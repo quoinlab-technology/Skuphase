@@ -42,7 +42,7 @@ def test_about_page_renders(client):
     assert r.status_code == 200
     assert "About SkuPhase" in r.text
     # Honest coverage copy (§6.10)
-    assert "Pre-Nursery to Primary 6" in r.text
+    assert "Pre-Nursery through SSS 3" in r.text
 
 
 def test_how_it_works_page_renders(client):
@@ -62,7 +62,7 @@ def test_contact_page_renders_and_submits(client):
 
     post_r = client.post("/contact", data={"first_name": "Amaka", "email": "a@b.com"}, follow_redirects=True)
     assert post_r.status_code == 200
-    assert "Thank you! Your message has been sent." in post_r.text
+    assert "contact form is not connected yet" in post_r.text
 
 
 def test_privacy_page_renders(client):

@@ -190,7 +190,7 @@ def AuthShell(*content, title: str = "Sign in"):
                     style="font-size: clamp(2.1rem, 3.2vw, 2.75rem); font-weight: 800; line-height: 1.15; letter-spacing: -0.025em; white-space: pre-line;",
                 ),
                 P(
-                    "Join 50+ Nigerian schools using AI to create curriculum-aligned, quality-checked examinations in minutes.",
+                    "Join Nigerian schools using AI to create curriculum-aligned, quality-checked examinations in minutes.",
                     cls="text-white-50 mb-5 fs-6",
                     style="color: rgba(255, 255, 255, 0.78) !important; line-height: 1.65; max-width: 440px;",
                 ),

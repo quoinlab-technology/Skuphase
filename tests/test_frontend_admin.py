@@ -161,7 +161,7 @@ def test_ops_page_renders_for_admin(monkeypatch):
     resp = client.get("/app/ops")
     assert resp.status_code == 200
     assert "System Operations" in resp.text
-    assert "Active Workers" in resp.text
+    assert "Generating drafts" in resp.text
 
 
 def test_settings_tab_htmx_partial(monkeypatch):

@@ -32,20 +32,15 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-_ALL_CLASSES = [
-    "Pre-Nursery", "Nursery 1", "Nursery 2", "Nursery 3",
-    "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6",
-]
-
-_DEFAULT_SUBJECTS = [
-    "Mathematics", "English Language", "Basic Science", "Social Studies", "National Values",
-]
+_ALL_CLASSES = list(CLASS_LEVELS)
+_DEFAULT_SUBJECTS = list(ALL_SUBJECTS)
 
 
 async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, term: str, board: str = "NERDC"):

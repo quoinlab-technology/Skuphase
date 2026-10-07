@@ -31,6 +31,7 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash, set_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
 def _status_pill(status: str) -> Span:
@@ -501,26 +502,8 @@ def register_routes(app):
         default_weeks = qp.get("selected_weeks") or qp.get("weeks") or ""
         default_outcomes = qp.get("desired_outcomes") or ""
 
-        grades = [
-            ("Pre-Nursery", "Pre-Nursery"),
-            ("Nursery 1", "Nursery 1"),
-            ("Nursery 2", "Nursery 2"),
-            ("Primary 1", "Primary 1"),
-            ("Primary 2", "Primary 2"),
-            ("Primary 3", "Primary 3"),
-            ("Primary 4", "Primary 4"),
-            ("Primary 5", "Primary 5"),
-            ("Primary 6", "Primary 6"),
-        ]
-
-        subjects = [
-            ("Mathematics", "Mathematics"),
-            ("English Language", "English Language"),
-            ("Basic Science and Technology", "Basic Science and Technology"),
-            ("National Values Education", "National Values Education"),
-            ("Pre-Vocational Studies", "Pre-Vocational Studies"),
-            ("Cultural and Creative Arts", "Cultural and Creative Arts"),
-        ]
+        grades = [(label, label) for label in CLASS_LEVELS]
+        subjects = [(label, label) for label in ALL_SUBJECTS]
 
         # Parse pre-selected weeks
         preselected_weeks = set()

@@ -40,8 +40,8 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description=(
-        "Curriculum-first AI exam generation for Nigerian primary schools. "
-        "Coverage: Pre-Nursery to Primary 6 (JSS/SSS planned)."
+        "Curriculum-first AI exam generation for Nigerian schools. "
+        "Coverage: Pre-Nursery through SSS 3."
     ),
     lifespan=lifespan,
     docs_url="/docs" if settings.enable_swagger else None,

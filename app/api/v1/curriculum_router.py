@@ -39,7 +39,7 @@ async def list_classes(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Get all available class levels (from Pre-Nursery to Primary 6).
+    Get all available class levels from Pre-Nursery through SSS 3.
     """
     classes = await CurriculumService.get_all_classes(db, board=board)
     return ClassListResponse(classes=classes)

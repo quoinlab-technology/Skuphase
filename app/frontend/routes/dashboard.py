@@ -362,7 +362,7 @@ def register_routes(app):
             # Individual teacher curriculum coverage card
             proposals_body = Div(
                 P("Official NERDC Curriculum & Scheme of Work", cls="fw-bold small text-dark mb-1"),
-                P("Pre-Nursery to Primary 6 active and seeded with standard national learning objectives.", cls="text-muted small mb-3"),
+                P("Pre-Nursery through SSS 3 active and seeded with standard national learning objectives.", cls="text-muted small mb-3"),
                 Div(
                     Div(Span("Mathematics, English, Basic Science", cls="small fw-semibold"), cls="mb-1"),
                     Div(Span("Social Studies, National Values, Languages", cls="small text-muted"), cls="mb-3"),

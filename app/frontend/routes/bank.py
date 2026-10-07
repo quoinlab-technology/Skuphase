@@ -44,6 +44,7 @@ from app.frontend.components.feedback import pop_flash, push_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 from app.frontend.components.bank import BankCard, BankMetricsBar, AddQuestionModal
+from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
 # Backward-compatibility alias
@@ -183,33 +184,8 @@ def register_routes(app):
         )
 
         # Dropdown options matching P07
-        subjects = [
-            ("All", "All"),
-            ("Mathematics", "Mathematics"),
-            ("English Language", "English Language"),
-            ("Chemistry", "Chemistry"),
-            ("Physics", "Physics"),
-            ("Biology", "Biology"),
-            ("Basic Science", "Basic Science"),
-            ("Social Studies", "Social Studies"),
-            ("Economics", "Economics"),
-            ("Civic Education", "Civic Education"),
-        ]
-        grades = [
-            ("All", "All"),
-            ("JSS1", "JSS1"),
-            ("JSS2", "JSS2"),
-            ("JSS3", "JSS3"),
-            ("SS1", "SS1"),
-            ("SS2", "SS2"),
-            ("SS3", "SS3"),
-            ("Primary 1", "Primary 1"),
-            ("Primary 2", "Primary 2"),
-            ("Primary 3", "Primary 3"),
-            ("Primary 4", "Primary 4"),
-            ("Primary 5", "Primary 5"),
-            ("Primary 6", "Primary 6"),
-        ]
+        subjects = [("All", "All"), *[(label, label) for label in ALL_SUBJECTS]]
+        grades = [("All", "All"), *[(label, label) for label in CLASS_LEVELS]]
         types = [
             ("All", "All"),
             ("multiple_choice", "MCQ"),

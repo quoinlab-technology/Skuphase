@@ -349,7 +349,7 @@ def home():
                             ),
                             (
                                 "Which subjects and curriculum classes does SkuPhase support?",
-                                "SkuPhase covers the complete Nigerian NERDC curriculum from Pre-Nursery through Primary 6, with primary core subjects including Mathematics, English, Basic Science, Social Studies, and National Values.",
+                                "SkuPhase covers the Nigerian NERDC curriculum from Pre-Nursery through SSS 3, with structured primary, JSS, and SSS learning outcomes.",
                             ),
                             (
                                 "Who can approve an exam generation?",
@@ -684,7 +684,7 @@ def about():
                     cls="app-body-copy",
                 ),
                 P(
-                    "Coverage is currently Pre-Nursery to Primary 6. Every exam passes a human review step before it "
+                    "Coverage spans Pre-Nursery through SSS 3. Every exam passes a human review step before it "
                     "is final.",
                     cls="app-body-copy",
                 ),
@@ -749,12 +749,14 @@ def register_routes(app):
     @app.get("/contact")
     def contact_page(req: Request):
         sent = req.query_params.get("sent")
-        flash = "Thank you! Your message has been sent. We'll be in touch within 24 hours." if sent else None
+        flash = "The contact form is not connected yet. Please email hello@skuphase.ng directly." if sent == "0" else None
         return contact(flash=flash)
 
     @app.post("/contact")
     async def contact_submit(req: Request):
-        return RedirectResponse("/contact?sent=1", status_code=303)
+        # Do not claim delivery until a support mailbox and durable submission
+        # path are configured. This keeps the public page honest in pilot builds.
+        return RedirectResponse("/contact?sent=0", status_code=303)
 
     @app.get("/about")
     def about_page():

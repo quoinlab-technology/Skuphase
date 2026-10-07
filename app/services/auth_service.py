@@ -302,10 +302,9 @@ class AuthService:
         if not user.is_active:
             raise ValueError("Your account is deactivated. Please contact support or your school administrator.")
 
-        # NOTE (audit F-18): login intentionally does NOT require is_verified;
-        # email verification is reserved for campaigns/mailing later. Invitees
-        # cannot log in because they are is_active=False until they accept
-        # their invitation.
+        if not user.is_verified:
+            raise ValueError("Please verify your email address before signing in. Check your inbox or request a new verification email.")
+
         user.last_login = utc_now()
         await db.commit()
 

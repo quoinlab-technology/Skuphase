@@ -5,7 +5,7 @@ List-valued fields (CORS_*) accept either JSON arrays or
 comma-separated strings.
 """
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         default="development",
         description="development, staging, release, production",
     )
-    debug: bool = True
+    debug: bool = False
     log_level: str = "INFO" 
 
     @field_validator("app_env", mode="before")
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
         return _split_list(v)
 
     # API docs
-    enable_swagger: bool = True
+    enable_swagger: bool = False
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -132,6 +132,19 @@ class Settings(BaseSettings):
             if lowered in {"false", "0", "no", "off", "release", "production"}:
                 return False
         return v
+
+    @model_validator(mode="after")
+    def _validate_production_safety(self):
+        """Fail fast on unsafe release configuration instead of serving it."""
+        if self.app_env in {"production", "release", "staging"}:
+            base = self.app_base_url.strip().lower()
+            if self.debug:
+                raise ValueError("DEBUG must be false in a release environment")
+            if base.startswith("http://localhost") or base.startswith("http://127.0.0.1") or not base.startswith("https://"):
+                raise ValueError("APP_BASE_URL must be the public HTTPS origin in a release environment")
+            if any("localhost" in origin.lower() or "127.0.0.1" in origin for origin in self.cors_origins):
+                raise ValueError("CORS_ORIGINS must not contain localhost in a release environment")
+        return self
 
 
 _settings: Settings | None = None
