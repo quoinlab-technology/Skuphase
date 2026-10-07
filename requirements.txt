@@ -4,7 +4,7 @@
 # =============================================================================
 
 # WEB FRAMEWORK & FRONTEND
-fastapi
+fastapi[standard]
 uvicorn[standard]
 python-fasthtml
 faststrap
@@ -38,6 +38,7 @@ httpx          # Resend HTTP API provider + test client
 # FILE EXPORT
 reportlab            # PDF generation (platypus)
 svglib               # SVG to ReportLab flowable conversion
+python-docx          # DOCX question exchange import/export
 
 # UTILITIES
 python-dotenv          # .env loading for pydantic-settings
