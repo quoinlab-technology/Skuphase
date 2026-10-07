@@ -22,6 +22,7 @@ from app.frontend.routes import auth as auth_routes
 from app.frontend.routes import bank as bank_routes
 from app.frontend.routes import curriculum as curriculum_routes
 from app.frontend.routes import dashboard as dashboard_routes
+from app.frontend.routes import admin as admin_routes
 from app.frontend.routes import exams as exams_routes
 from app.frontend.routes import ops as ops_routes
 from app.frontend.routes import proposals as proposals_routes
@@ -167,6 +168,7 @@ auth_routes.register_routes(frontend_app)
 auth_routes.register_more_routes(frontend_app)
 auth_routes.register_settlement_routes(frontend_app)
 dashboard_routes.register_routes(frontend_app)
+admin_routes.register_routes(frontend_app)
 guided_routes.guided_routes(frontend_app)
 exams_routes.register_routes(frontend_app)
 curriculum_routes.curriculum_routes(frontend_app)

@@ -87,6 +87,40 @@ def test_staff_list_renders_for_admin(monkeypatch):
     assert "Admin Grace" in resp.text
 
 
+def test_admin_control_centre_renders_for_admin(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def fake_admin_call(req, method, path, **kwargs):
+        if path == "/users/":
+            return FakeResp(200, {"users": [
+                {"id": "u1", "full_name": "Admin Grace", "role": "school_admin", "is_active": True, "is_verified": True},
+                {"id": "u2", "full_name": "Invited Teacher", "role": "teacher", "is_active": True, "is_verified": False},
+            ]})
+        if path == "/schools/s1":
+            return FakeResp(200, {"name": "Greenfield Academy"})
+        if path == "/schools/s1/settings":
+            return FakeResp(200, {"active_term": "First Term", "academic_year": "2025/2026"})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.admin.call_api", fake_admin_call)
+    resp = client.get("/app/admin")
+    assert resp.status_code == 200
+    assert "School administration" in resp.text
+    assert "Greenfield Academy" in resp.text
+    assert "Active staff" in resp.text
+    assert "Pending invites" in resp.text
+    assert "Set the defaults once" in resp.text
+    assert "Administration" in resp.text
+    assert "v2.0.0" in resp.text
+
+
+def test_admin_control_centre_redirects_non_admin(monkeypatch):
+    client = _logged_in_client(monkeypatch, _teacher_tokens())
+    resp = client.get("/app/admin", follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    assert resp.headers.get("location") == "/app"
+
+
 def test_staff_list_forbidden_for_teacher(monkeypatch):
     client = _logged_in_client(monkeypatch, _teacher_tokens())
     resp = client.get("/app/staff", follow_redirects=False)
@@ -183,4 +217,3 @@ def test_ops_panel_htmx_partial(monkeypatch):
     assert resp.status_code == 200
     assert "ops-panel" in resp.text
     assert "System Status" in resp.text
-

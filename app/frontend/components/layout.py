@@ -5,6 +5,7 @@ from faststrap import Button, Col, Container, Icon, Row
 
 from app.frontend.theme import FONT_FAMILY
 from app.frontend.components.feedback import app_toast_container, to_toast
+from app.config.settings import get_settings
 
 
 def _brand_mark():
@@ -275,6 +276,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
     is_school_admin = (not is_individual) and role == "school_admin"
     is_school_staff = (not is_individual) and (account_type == "school_staff" or role in {"school_admin", "teacher", "auditor"})
     school_name = user.get("school_name") or ("Personal Workspace" if is_individual else "Your School")
+    app_version = get_settings().app_version
 
     # Role-filtered navigation (FRONTEND_SPEC.md §3.3)
     nav_items = [
@@ -290,6 +292,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
     nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
 
     if is_school_admin:
+        nav_items.append(("Administration", "/app/admin", "admin", "sliders"))
         nav_items.append(("Users", "/app/staff", "staff", "people"))
         nav_items.append(("School Settings", "/app/settings", "settings", "gear"))
         nav_items.append(("Operations", "/app/ops", "ops", "activity"))
@@ -332,6 +335,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         ),
         Div(
             Span((role if role != "school_admin" else "SCHOOL ADMIN").upper(), cls="app-sidebar-role app-sidebar-label"),
+            Span(f"v{app_version}", cls="app-sidebar-version app-sidebar-label", title="Application version"),
             cls="mt-auto px-3 pb-3",
         ),
         cls="app-sidebar offcanvas-lg offcanvas-start d-lg-flex flex-column",

@@ -198,6 +198,14 @@ body {
   letter-spacing: 0.12em;
 }
 
+.app-sidebar-version {
+  display: block;
+  color: rgba(255, 255, 255, 0.38) !important;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  margin-top: 0.28rem;
+}
+
 .app-topbar {
   position: sticky;
   top: 0;
