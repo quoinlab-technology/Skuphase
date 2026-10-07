@@ -411,7 +411,11 @@ def register_routes(app):
             user=user,
             active="settings",
             flash=flash,
-            crumbs=[("School Settings", None)],
+            crumbs=(
+                [("Administration", "/app/admin"), ("School Settings", None)]
+                if role == "school_admin"
+                else [("School Settings", None)]
+            ),
         )
 
     @app.post("/app/settings/change-password")

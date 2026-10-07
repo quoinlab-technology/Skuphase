@@ -198,5 +198,5 @@ def register_routes(app):
             user=user,
             active="ops",
             flash=flash,
-            crumbs=[("Operations", None)],
+            crumbs=[("Administration", "/app/admin"), ("Operations", None)],
         )

@@ -452,7 +452,7 @@ def register_routes(app):
             user=user,
             active="staff",
             flash=flash,
-            crumbs=[("Users & Staff", None)],
+            crumbs=[("Administration", "/app/admin"), ("Users & Staff", None)],
         )
 
     @app.post("/app/staff/invite")
