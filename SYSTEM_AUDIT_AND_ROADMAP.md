@@ -749,6 +749,21 @@ browser/mobile review, real-school lesson-note quality sampling, worksheet
 print sampling, and consuming the warning in any generation wizard surface
 that does not yet read the coverage contract.
 
+## Package B guided-workflow checkpoint (2026-10-07)
+
+The pilot-facing guided entry is now connected end to end. The dashboard offers
+the four task actions (lesson, classwork, examination, and review/export), and
+each action carries class, subject, and term into the existing Teaching, AI
+exam, or under-review exam workspace. Those destinations show a visible guided
+context summary while preserving the Advanced workspace. The AI exam scope now
+also surfaces the school's incomplete-coverage advisory with a direct link back
+to Teaching. Desktop and 280px browser checks passed without horizontal
+overflow, and the full test suite remains green.
+
+Package B remaining work is now limited to real-school lesson-note quality
+sampling, worksheet print sampling, and pilot feedback; no guided-entry or
+coverage-warning implementation remains outstanding.
+
 ## Team operating rule
 
 Every future implementation report must state:

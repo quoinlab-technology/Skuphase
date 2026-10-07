@@ -1178,6 +1178,18 @@ def register_page_routes(app):
             return RedirectResponse("/app/exams/new/manual", status_code=303)
         user = current_user(req) or {}
         flash = pop_flash(req)
+        try:
+            coverage_resp = await call_api(req, "GET", "/lesson-plans/coverage/summary")
+            coverage_ok, coverage_data = unwrap(coverage_resp)
+            req.session["coverage_warning"] = (
+                coverage_data.get("warning")
+                if coverage_ok and isinstance(coverage_data, dict) and coverage_data.get("warning")
+                else ""
+            )
+        except Exception:
+            # Coverage is advisory; a temporary teaching-service failure must
+            # never block the exam wizard.
+            req.session["coverage_warning"] = ""
         wiz = _wizard_state(req)
         if step == "2" and not wiz.get("curriculum_weeks"):
             try:
@@ -3657,8 +3669,20 @@ def _wizard_scope(request: Request) -> Div:
             cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
         )
 
+    coverage_warning = request.session.get("coverage_warning")
+    coverage_advisory = Div(
+        Icon("exclamation-triangle", cls="bi text-warning-emphasis me-2"),
+        Div(
+            Strong("Curriculum coverage needs attention", cls="d-block text-dark"),
+            P(str(coverage_warning), cls="small text-muted mb-0"),
+        ),
+        A("Open Teaching", href="/app/teaching", cls="btn btn-outline-warning rounded-pill px-3 ms-auto flex-shrink-0"),
+        cls="alert alert-warning border-0 rounded-4 d-flex align-items-center gap-2 flex-wrap mb-4",
+    ) if coverage_warning else None
+
     return Div(
         guided_context,
+        coverage_advisory,
         # Card header
         Div(
             Icon("record-circle", cls="bi", style="font-size:1.25rem; color:#00412E; margin-right:0.6rem;"),
