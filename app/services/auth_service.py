@@ -43,6 +43,24 @@ class AuthService:
     """Authentication and identity service."""
 
     @staticmethod
+    async def _send_registration_verification(email: str, token: str) -> bool:
+        """Send the post-registration verification link without failing signup."""
+        base_url = get_settings().app_base_url.rstrip("/")
+        verify_url = f"{base_url}/verify-email?token={token}"
+        try:
+            delivered = await send_email(
+                to=email,
+                subject="Verify your SkuPhase email",
+                html=build_verify_email(verify_url),
+            )
+            if not delivered:
+                logger.warning("Registration verification email unavailable for %s", email)
+            return delivered
+        except Exception:
+            logger.exception("Registration verification email failed for %s", email)
+            return False
+
+    @staticmethod
     async def get_user_by_id(user_id: UUID, db: AsyncSession) -> Optional[User]:
         """Fetch an active user by ID (used by auth dependencies).
 
@@ -136,6 +154,7 @@ class AuthService:
 
             await db.commit()
             logger.info(f"School '{request.school_name}' registered successfully")
+            await AuthService._send_registration_verification(user.email, verification_token)
 
             return SchoolRegistrationResponse(
                 school_id=school.id,
@@ -244,6 +263,7 @@ class AuthService:
 
             await db.commit()
             logger.info(f"Individual teacher '{request.email}' registered with personal workspace '{workspace_name}'")
+            await AuthService._send_registration_verification(user.email, verification_token)
 
             return IndividualRegistrationResponse(
                 user_id=user.id,

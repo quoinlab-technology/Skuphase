@@ -85,7 +85,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MAIL_FROM", "EMAILS_FROM_EMAIL"),
         description="Sender address; EMAILS_FROM_EMAIL remains supported for existing deployments.",
     )
-    app_base_url: str = "http://localhost:3000"
+    # FastHTML is served by the same FastAPI process on port 8000 by default.
+    # Deployments must override APP_BASE_URL with their public HTTPS origin so
+    # verification, reset, and invitation links point back to the live app.
+    app_base_url: str = "http://localhost:8000"
 
     # LLM providers ("Groq" primary, OpenRouter fallback)
     groq_api_key: str

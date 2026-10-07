@@ -79,7 +79,7 @@ python -m app.scripts.seed_curriculum_postgres --check   # offline dry-run
 python -m app.scripts.seed_curriculum_postgres           # bulk upsert
 
 # Platform few-shot corpus (owner-curated ONLY — see CP4 policy in
-# AUDIT_REMEDIATION_PLAN.md §1; do NOT ingest verbatim WAEC/NECO papers)
+# docs/archive/AUDIT_REMEDIATION_PLAN.md §1; do NOT ingest verbatim WAEC/NECO papers)
 python -m app.scripts.ingest_platform_questions --input my_items.json --dry-run
 python -m app.scripts.ingest_platform_questions --input my_items.json
 ```
@@ -105,5 +105,5 @@ ruff check app tests
 Integration tests against real Postgres: set `TEST_DATABASE_URL`, run a
 scratch DB, `pytest -m integration`.
 
-See `AUDIT_REMEDIATION_PLAN.md` for the security/completeness audit this code
+See `docs/archive/AUDIT_REMEDIATION_PLAN.md` for the historical security/completeness audit this code
 line implements and the decisions behind it.
