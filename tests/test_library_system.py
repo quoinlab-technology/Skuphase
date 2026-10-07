@@ -12,6 +12,7 @@ from app.services.diagram_catalog import (
     get_diagrams_by_subject,
     search_diagrams,
     get_diagram_by_id,
+    validate_diagram_catalog,
 )
 from app.services.diagram_templates import render_archetype
 from app.services.library_service import LibraryService
@@ -72,6 +73,7 @@ def test_diagram_catalog_structure():
         assert d.title, f"Diagram {d.id} missing title"
         assert d.renderer, f"Diagram {d.id} missing renderer key"
         assert d.topics, f"Diagram {d.id} missing curriculum topics"
+    assert validate_diagram_catalog() == []
 
 
 def test_callout_masking_behavior():

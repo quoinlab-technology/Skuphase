@@ -808,6 +808,23 @@ def get_all_diagrams() -> List[DiagramMetadata]:
     return list(_CATALOG.values())
 
 
+def validate_diagram_catalog() -> list[str]:
+    """Return deterministic editorial issues in the seeded diagram inventory."""
+    issues: list[str] = []
+    seen: set[str] = set()
+    for item in _CATALOG.values():
+        if item.id in seen:
+            issues.append(f"duplicate diagram id: {item.id}")
+        seen.add(item.id)
+        if not item.title.strip() or not item.renderer.strip():
+            issues.append(f"missing title or renderer: {item.id}")
+        if not item.subject.strip() or not item.topics:
+            issues.append(f"missing subject or topics: {item.id}")
+        if not item.accessibility_desc.strip():
+            issues.append(f"missing accessibility description: {item.id}")
+    return issues
+
+
 def get_diagram_by_id(diagram_id: str) -> Optional[DiagramMetadata]:
     """Find a registered diagram by its unique ID."""
     return _CATALOG.get(diagram_id)
