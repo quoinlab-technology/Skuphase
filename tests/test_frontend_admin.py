@@ -112,6 +112,8 @@ def test_admin_control_centre_renders_for_admin(monkeypatch):
     assert "Set the defaults once" in resp.text
     assert "Administration" in resp.text
     assert "v2.0.0" in resp.text
+    assert "mutationForm" in resp.text
+    assert "spinner-border spinner-border-sm" in resp.text
 
 
 def test_admin_control_centre_redirects_non_admin(monkeypatch):

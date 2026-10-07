@@ -154,6 +154,71 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 """))
 
+# Consistent feedback for every mutation form.  Most SkuPhase workflows use a
+# normal POST form (rather than an HTMX endpoint), so Faststrap's HTMX-only
+# LoadingButton cannot cover login, invitations, registration, settings, and
+# exam actions by itself.  This keeps the interaction lightweight and works on
+# low-bandwidth mobile connections: disable only the submitted control, show a
+# small inline spinner, and prevent accidental double submissions.
+frontend_app.hdrs.append(Script("""
+document.addEventListener('DOMContentLoaded', function () {
+    function mutationForm(form) {
+        var method = (form.getAttribute('method') || 'get').toLowerCase();
+        return method !== 'get' || form.hasAttribute('hx-post') || form.hasAttribute('hx-put') || form.hasAttribute('hx-delete');
+    }
+
+    function pendingLabel(button) {
+        var explicit = button.getAttribute('data-loading-label');
+        if (explicit) return explicit;
+        var label = (button.textContent || '').trim().toLowerCase();
+        if (label.indexOf('invite') >= 0 || label.indexOf('send') >= 0) return 'Sending…';
+        if (label.indexOf('login') >= 0 || label.indexOf('sign in') >= 0) return 'Signing in…';
+        if (label.indexOf('create') >= 0 || label.indexOf('register') >= 0) return 'Creating…';
+        if (label.indexOf('save') >= 0 || label.indexOf('update') >= 0) return 'Saving…';
+        if (label.indexOf('delete') >= 0 || label.indexOf('remove') >= 0) return 'Removing…';
+        return 'Working…';
+    }
+
+    function start(button, form) {
+        if (!button || button.disabled || button.dataset.loadingActive === 'true') return;
+        button.dataset.loadingActive = 'true';
+        button.dataset.loadingOriginalHtml = button.innerHTML;
+        button.setAttribute('aria-busy', 'true');
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + pendingLabel(button);
+        form.dataset.loadingButton = 'true';
+    }
+
+    function restore(form) {
+        if (!form) return;
+        var button = form.querySelector('[data-loading-active="true"]');
+        if (!button) return;
+        if (button.dataset.loadingOriginalHtml) button.innerHTML = button.dataset.loadingOriginalHtml;
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        delete button.dataset.loadingActive;
+        delete button.dataset.loadingOriginalHtml;
+        delete form.dataset.loadingButton;
+    }
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!(form instanceof HTMLFormElement) || form.dataset.noLoading === 'true' || !mutationForm(form)) return;
+        var button = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+        start(button, form);
+    }, true);
+
+    document.body.addEventListener('htmx:afterRequest', function (event) {
+        var form = event.detail && event.detail.elt instanceof HTMLFormElement ? event.detail.elt : null;
+        restore(form);
+    });
+    document.body.addEventListener('htmx:sendError', function (event) {
+        var form = event.detail && event.detail.elt instanceof HTMLFormElement ? event.detail.elt : null;
+        restore(form);
+    });
+});
+"""))
+
 # App-owned static assets (css/img) served from /assets (never /static).
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 mount_assets(frontend_app, str(_ASSETS_DIR))
