@@ -422,6 +422,28 @@ def get_all_formulas() -> List[FormulaItem]:
     return list(_FORMULAS)
 
 
+def validate_formula_catalog() -> list[str]:
+    """Return editorial issues found in the seeded formula bank.
+
+    This is intentionally deterministic so CI and a future subject-review
+    command can catch duplicate IDs, missing provenance metadata, or formulas
+    that cannot be assigned to a Nigerian class level.
+    """
+    issues: list[str] = []
+    seen: set[str] = set()
+    for item in _FORMULAS:
+        if item.id in seen:
+            issues.append(f"duplicate formula id: {item.id}")
+        seen.add(item.id)
+        if not item.name.strip() or not item.latex.strip():
+            issues.append(f"missing name or LaTeX: {item.id}")
+        if not item.subject.strip():
+            issues.append(f"missing subject: {item.id}")
+        if not item.class_levels:
+            issues.append(f"missing class applicability: {item.id}")
+    return issues
+
+
 def get_formulas_by_subject(subject: str) -> List[FormulaItem]:
     """Return formulas filtered by subject (case-insensitive)."""
     sub = subject.lower().strip()
