@@ -5,8 +5,11 @@ driver for migrations. Keep two Supabase URLs in deployment secrets:
 
 ## Runtime URL
 
-Use the **Transaction Pooler** URL from Supabase Connect (port `6543`) for the
-FastAPI Cloud application when instances may scale or restart frequently:
+Use the **Shared Transaction Pooler** URL from Supabase Connect (port `6543`)
+for the FastAPI Cloud application when instances may scale or restart
+frequently. Select the shared `aws-...pooler.supabase.com` host, not the
+paid-plan Dedicated Pooler host (`db....supabase.co`). The shared pooler is
+IPv4-only and is available on every plan:
 
 ```text
 postgresql+asyncpg://postgres.<PROJECT_REF>:<PASSWORD>@<POOLER_HOST>:6543/postgres
@@ -56,6 +59,8 @@ password. Rotate any password that has appeared in a local file, terminal
 output, or chat, and keep `.env` out of commits. Resend can be enabled later by
 switching `MAIL_PROVIDER=resend` and supplying `RESEND_API_KEY`.
 
-Supabase connection mode guidance: transaction pooling is for application
-runtime/serverless-style connections; session pooling or a direct connection is
-for migrations and other operations that need a stable session.
+Supabase connection mode guidance: shared transaction pooling is for
+application runtime/serverless-style connections; shared session pooling or a
+direct connection is for migrations and other operations that need a stable
+session. The paid IPv4 add-on is only relevant to the direct connection and
+Dedicated Pooler; it is not required for the shared pooler.
