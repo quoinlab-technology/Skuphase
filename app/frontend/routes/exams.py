@@ -5798,6 +5798,16 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       <div class="mb-3">
         <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text… (supports LaTeX: $x^2+5=0$)" style="background:#F4F6F4;font-size:0.92rem;" required>${{text}}</textarea>
       </div>
+      <div class="manual-subparts mb-3 p-3 rounded-3" style="background:#F8FAF8;border:1px solid #DDE9DF;">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <span class="form-label text-muted small fw-semibold mb-0 d-block"><i class="bi bi-list-ol me-1 text-success"></i>Multipart parts</span>
+            <span class="text-muted" style="font-size:0.74rem;">Add (a), (b), (c) parts with independent marks and marking points.</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-success rounded-pill manual-add-subpart">+ Add part</button>
+        </div>
+        <div class="manual-subparts-list"></div>
+      </div>
       <div class="row g-3 mb-3">
         <div class="col-12 col-md-5">
           <label class="form-label text-muted small fw-medium mb-1">Type</label>
@@ -5899,6 +5909,29 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     }}
   }};
 
+  const subpartRow = (part = '', question = '', marks = 1, scheme = []) => `
+    <div class="manual-subpart-row row g-2 align-items-start mb-2" data-subpart-row>
+      <div class="col-2 col-sm-1"><input class="form-control manual-subpart-part border-0 text-center" value="${{esc(part)}}" placeholder="a" aria-label="Part label" style="background:#fff;"></div>
+      <div class="col-10 col-sm-7"><textarea class="form-control manual-subpart-question border-0" rows="2" placeholder="Part question (supports LaTeX)" aria-label="Part question" style="background:#fff;">${{esc(question)}}</textarea></div>
+      <div class="col-5 col-sm-2"><input class="form-control manual-subpart-marks border-0" type="number" min="1" max="100" value="${{Number(marks)||1}}" aria-label="Part marks" style="background:#fff;"></div>
+      <div class="col-7 col-sm-2 d-flex gap-2"><input class="form-control manual-subpart-scheme border-0" placeholder="Marking point" value="${{esc((scheme||[]).join('; '))}}" aria-label="Part marking point" style="background:#fff;"><button type="button" class="btn btn-sm btn-link text-danger manual-remove-subpart" aria-label="Remove part"><i class="bi bi-trash3"></i></button></div>
+    </div>`;
+
+  const renderSubparts = (item, initial = []) => {{
+    const list = item.querySelector('.manual-subparts-list');
+    if (!list) return;
+    list.innerHTML = (Array.isArray(initial) ? initial : []).map((part, index) =>
+      subpartRow(part.part || String.fromCharCode(97 + index), part.question || '', part.marks || 1, part.marking_scheme || [])
+    ).join('');
+  }};
+
+  const serializeSubparts = (item) => [...item.querySelectorAll('[data-subpart-row]')].map((row, index) => ({{
+    part: row.querySelector('.manual-subpart-part')?.value.trim() || String.fromCharCode(97 + index),
+    question: row.querySelector('.manual-subpart-question')?.value.trim() || '',
+    marks: Number(row.querySelector('.manual-subpart-marks')?.value) || 1,
+    marking_scheme: (row.querySelector('.manual-subpart-scheme')?.value || '').split(';').map(s => s.trim()).filter(Boolean),
+  }})).filter(part => part.question);
+
   const renumber = () => cards().forEach((item, i) => {{
     item.querySelector('strong').textContent = `Question ${{i + 1}}`;
     item.querySelector('.manual-remove-question').disabled = cards().length === 1;
@@ -5919,6 +5952,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     explanation: item.querySelector('.manual-explanation')?.value.trim() || null,
     given_data: item.querySelector('.manual-given-data')?.value.trim() || null,
     diagram_svg: item.querySelector('.manual-diagram-svg')?.value.trim() || null,
+    sub_parts: serializeSubparts(item),
   }});
 
   let saveTimer = null;
@@ -5949,6 +5983,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       given: item.querySelector('.manual-given-data')?.value.trim() || '',
       options: [...item.querySelectorAll('.manual-option')].map(x => x.value.trim()).filter(Boolean),
       diag: item.querySelector('.manual-diagram-svg')?.value.trim() || '',
+      parts: serializeSubparts(item),
     }}));
     const total = data.reduce((sum, q) => sum + q.marks, 0);
 
@@ -5962,6 +5997,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
          <div class="text-muted small fw-semibold mb-1">${{esc(q.section)}}</div>
          ${{q.given ? `<div class="small text-primary mb-1"><strong>Given:</strong> ${{esc(q.given)}}</div>` : ''}}
          <div><strong>${{q.n}}.</strong> <span>${{esc(q.text || '(empty question)')}}</span> <span class="text-muted small">(${{q.marks}} marks)</span></div>
+         ${{q.parts.length ? `<ol type="a" class="small mt-2 mb-1 ps-4">${{q.parts.map(part => `<li class="mb-1">${{esc(part.question)}} <span class="text-muted">(${{part.marks}} marks)</span></li>`).join('')}}</ol>` : ''}}
          ${{q.diag ? `<div class="my-2 text-center" style="max-width:280px;margin:0 auto;">${{q.diag}}</div>` : ''}}
         ${{q.options.length ? `<ol type="A" class="mb-0 mt-2 ps-3 small text-muted">${{q.options.map(x => `<li class="mb-1">${{esc(x)}}</li>`).join('')}}</ol>` : ''}}
       </div>
@@ -5984,6 +6020,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
   const add = (qData = null) => {{
     editor.insertAdjacentHTML('beforeend', card(cards().length + 1, qData));
     options(cards().at(-1), qData?.options);
+    renderSubparts(cards().at(-1), qData?.sub_parts || []);
     renumber();
     update();
   }};
@@ -6033,6 +6070,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       const data = _serializeCard(source, index);
       source.insertAdjacentHTML('afterend', card(index + 2, data));
       options(source.nextElementSibling, data.options);
+      renderSubparts(source.nextElementSibling, data.sub_parts || []);
       renumber(); update(); return;
     }}
     const move = e.target.closest('.manual-move-question');
@@ -6050,6 +6088,23 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     if (b && cards().length > 1) {{
       b.closest('[data-question-card]').remove();
       renumber();
+      update();
+      return;
+    }}
+
+    const addPart = e.target.closest('.manual-add-subpart');
+    if (addPart) {{
+      const cardEl = addPart.closest('[data-question-card]');
+      const list = cardEl.querySelector('.manual-subparts-list');
+      const index = list.querySelectorAll('[data-subpart-row]').length;
+      list.insertAdjacentHTML('beforeend', subpartRow(String.fromCharCode(97 + index), '', 1, []));
+      update();
+      return;
+    }}
+
+    const removePart = e.target.closest('.manual-remove-subpart');
+    if (removePart) {{
+      removePart.closest('[data-subpart-row]')?.remove();
       update();
       return;
     }}
@@ -6406,6 +6461,25 @@ def register_manual_routes(app):
                 if question_type == "multiple_choice" and len(options) < 2:
                     return show_toast("Each MCQ needs at least two answer options.", "danger")
 
+                raw_parts = raw.get("sub_parts") if isinstance(raw.get("sub_parts"), list) else []
+                sub_parts = []
+                for part_index, part in enumerate(raw_parts):
+                    if not isinstance(part, dict):
+                        continue
+                    part_question = str(part.get("question") or "").strip()
+                    if not part_question:
+                        continue
+                    sub_parts.append({
+                        "part": str(part.get("part") or chr(97 + part_index)).strip()[:10],
+                        "question": part_question,
+                        "marks": max(1, min(100, _safe_int(part.get("marks"), 1))),
+                        "marking_scheme": [
+                            str(point).strip()
+                            for point in (part.get("marking_scheme") or [])
+                            if str(point).strip()
+                        ],
+                    })
+
                 given_data = str(raw.get("given_data") or "").strip()
                 if given_data:
                     question_text = f"Given data / constants: {given_data}\n\n{question_text}"
@@ -6445,6 +6519,8 @@ def register_manual_routes(app):
                     "diagram_svg": safe_svg,
                 }
                 question_payload.update({key: value for key, value in optional_fields.items() if value is not None})
+                if sub_parts:
+                    question_payload["sub_parts"] = sub_parts
                 questions.append(question_payload)
         else:
             questions = _parse_paste_questions((form.get("questions_text") or "").strip())

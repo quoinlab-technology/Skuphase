@@ -252,6 +252,9 @@ def test_manual_composer_submits_structured_questions(client, logged_in):
         "question_text": "What is 2 + 2?",
         "marks": 2,
         "options": ["3", "4", "5", "6"],
+        "sub_parts": [
+            {"part": "a", "question": "Show your working.", "marks": 1, "marking_scheme": ["Correct method"]},
+        ],
     }]
     r = client.post("/ui/exams/manual-submit", data={
         "subject": "Mathematics",
