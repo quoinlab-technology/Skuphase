@@ -7,6 +7,10 @@
 # User data on disk
 uploads/
 exports/
+/new_design/
+/UI_design/
+/samples/
+/docs/archive/
 
 # Python
 __pycache__/
