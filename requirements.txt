@@ -5,6 +5,7 @@
 
 # WEB FRAMEWORK & FRONTEND
 fastapi[standard]
+python-multipart
 uvicorn[standard]
 python-fasthtml
 faststrap

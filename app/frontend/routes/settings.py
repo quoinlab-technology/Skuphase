@@ -4,6 +4,9 @@ Allows school administrators to configure school profile, academic sessions,
 curriculum levels, and exam generation policies.
 """
 
+import secrets
+from pathlib import Path
+
 from fasthtml.common import (
     A,
     Div,
@@ -181,11 +184,24 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
                     md=6,
                 ),
                 Col(
-                    Input("logo_url", label="School Logo URL / Asset Path", value=logo_url, placeholder="e.g. https://... or /static/logo.png"),
+                    Div(
+                        Input("logo_url", label="School Logo URL / Asset Path (advanced)", value=logo_url, placeholder="Optional: https://... or /assets/..."),
+                        P("Prefer the upload button below if you have the logo file on your computer.", cls="text-muted small mt-1 mb-0"),
+                    ),
                     span=12,
                     md=6,
                 ),
                 cls="g-3 mb-3",
+            ),
+            Div(
+                Strong("Upload school logo", cls="small fw-semibold text-dark d-block mb-2"),
+                P("PNG, JPG, or WebP · maximum 5 MB", cls="text-muted small mb-2"),
+                Input("logo_file", input_type="file", accept="image/png,image/jpeg,image/webp", cls="form-control rounded-3", required=False),
+                Button("Upload logo", type="submit", variant="outline-success", cls="rounded-pill px-3 mt-2"),
+                action="/app/settings/logo-upload",
+                method="post",
+                enctype="multipart/form-data",
+                cls="border rounded-3 p-3 bg-light-subtle mb-3",
             ),
             Div(
                 Button("Save School Profile", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold w-100 w-md-auto"),
@@ -519,3 +535,41 @@ def register_routes(app):
 
         push_flash(req, "School settings saved successfully.", "success")
         return RedirectResponse("/app/settings", status_code=303)
+
+    @app.post("/app/settings/logo-upload")
+    async def upload_school_logo(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        if user.get("role") != "school_admin":
+            push_flash(req, "Only administrators can update school settings.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        school_id = user.get("school_id")
+        form = await req.form()
+        upload = form.get("logo_file")
+        allowed_types = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+        if not upload or not getattr(upload, "filename", None):
+            push_flash(req, "Choose a logo file before uploading.", "warning")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        extension = allowed_types.get(getattr(upload, "content_type", ""))
+        if not extension:
+            push_flash(req, "Logo must be a PNG, JPG, or WebP image.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        content = await upload.read()
+        if len(content) > 5 * 1024 * 1024:
+            push_flash(req, "Logo must be 5 MB or smaller.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        upload_dir = Path(__file__).resolve().parents[2] / "assets" / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"school-logo-{secrets.token_urlsafe(12)}{extension}"
+        (upload_dir / filename).write_bytes(content)
+        logo_url = f"/assets/uploads/{filename}"
+        response = await call_api(req, "PUT", f"/schools/{school_id}/settings", json={"logo_url": logo_url})
+        ok, data = unwrap(response)
+        if not ok:
+            (upload_dir / filename).unlink(missing_ok=True)
+            push_flash(req, data.get("message", "Could not save the uploaded logo."), "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        push_flash(req, "School logo uploaded successfully.", "success")
+        return RedirectResponse("/app/settings?tab=profile", status_code=303)

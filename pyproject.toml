@@ -9,6 +9,7 @@ description = "AI-powered exam generation backend for Nigerian schools (FastAPI 
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]",
+    "python-multipart",
     "uvicorn[standard]",
     "python-fasthtml",
     "faststrap",
