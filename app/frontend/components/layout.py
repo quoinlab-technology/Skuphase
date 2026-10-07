@@ -293,9 +293,6 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
 
     if is_school_admin:
         nav_items.append(("Administration", "/app/admin", "admin", "sliders"))
-        nav_items.append(("Users", "/app/staff", "staff", "people"))
-        nav_items.append(("School Settings", "/app/settings", "settings", "gear"))
-        nav_items.append(("Operations", "/app/ops", "ops", "activity"))
 
     def _nav_link(label, href, key, icon):
         return A(
@@ -374,12 +371,18 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
                 cls="app-topbar-chip d-none d-md-inline-flex me-2",
                 title="Account settings",
             ),
-            A(
-                school_name,
-                Icon("chevron-down", cls="bi ms-1 small text-muted"),
-                href="/app/settings",
-                cls="app-topbar-chip d-none d-lg-inline-flex me-3",
-                title="School settings",
+            *(
+                [
+                    A(
+                        school_name,
+                        Icon("chevron-down", cls="bi ms-1 small text-muted"),
+                        href="/app/admin",
+                        cls="app-topbar-chip d-none d-lg-inline-flex me-3",
+                        title="School administration",
+                    )
+                ]
+                if is_school_admin
+                else []
             ),
             A(
                 Icon("bell", cls="bi fs-5"),
