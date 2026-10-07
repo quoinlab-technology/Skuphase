@@ -232,6 +232,9 @@ def test_manual_entry_page_renders(client, logged_in):
     assert r.status_code == 200
     assert "Manual Exam" in r.text
     assert "manual-question-editor" in r.text
+    assert "manual-copilot-panel" in r.text
+    assert "Apply suggestion" in r.text
+    assert "nothing is applied automatically" in r.text
 
 
 def test_exams_list_has_direct_ai_and_manual_actions(client, logged_in):

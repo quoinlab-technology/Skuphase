@@ -5798,6 +5798,38 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       <div class="mb-3">
         <textarea class="form-control manual-question-text rounded-3 p-3 border-0" rows="3" placeholder="Enter question text… (supports LaTeX: $x^2+5=0$)" style="background:#F4F6F4;font-size:0.92rem;" required>${{text}}</textarea>
       </div>
+      <div class="manual-copilot-panel d-none mb-3 p-3 rounded-3" data-copilot-panel style="background:#F4F8FF;border:1px solid #C9DBFF;">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div class="small fw-semibold text-primary"><i class="bi bi-stars me-1"></i>AI assistant</div>
+            <div class="text-muted" style="font-size:0.74rem;">Review the suggestion before applying it. Your question is never replaced automatically.</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-link text-muted p-0 manual-copilot-close" aria-label="Close AI assistant"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-7">
+            <label class="form-label small fw-semibold mb-1">What should AI help with?</label>
+            <select class="form-select form-select-sm manual-copilot-action">
+              <option value="rewrite">Improve wording</option>
+              <option value="options">Generate MCQ options</option>
+              <option value="marking_guide">Draft marking guide</option>
+              <option value="diagram_prompt">Suggest a diagram</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-5 d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-primary rounded-pill flex-grow-1 manual-copilot-run"><i class="bi bi-stars me-1"></i>Get suggestion</button>
+          </div>
+        </div>
+        <div class="manual-copilot-status text-muted small mt-2" aria-live="polite"></div>
+        <div class="manual-copilot-result-wrap d-none mt-2">
+          <label class="form-label small fw-semibold mb-1">Suggestion</label>
+          <textarea class="form-control form-control-sm manual-copilot-result" rows="4" style="background:#fff;"></textarea>
+          <div class="d-flex justify-content-end gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill manual-copilot-discard">Discard</button>
+            <button type="button" class="btn btn-sm btn-success rounded-pill manual-copilot-apply" disabled><i class="bi bi-check2 me-1"></i>Apply suggestion</button>
+          </div>
+        </div>
+      </div>
       <div class="manual-subparts mb-3 p-3 rounded-3" style="background:#F8FAF8;border:1px solid #DDE9DF;">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <div>
@@ -6030,11 +6062,33 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     const copilot = e.target.closest('.manual-copilot-btn');
     if (copilot) {{
       const cardEl = copilot.closest('[data-question-card]');
+      const panel = cardEl.querySelector('[data-copilot-panel]');
       const question = cardEl.querySelector('.manual-question-text')?.value.trim() || '';
       if (!question) {{ window.alert('Enter a question before requesting AI assistance.'); return; }}
-      const action = window.prompt('AI assist type: rewrite, options, marking_guide, or diagram_prompt', 'rewrite');
-      if (!['rewrite','options','marking_guide','diagram_prompt'].includes(action)) return;
-      copilot.disabled = true;
+      panel?.classList.remove('d-none');
+      panel?.querySelector('.manual-copilot-action')?.focus();
+      return;
+    }}
+    const copilotClose = e.target.closest('.manual-copilot-close');
+    if (copilotClose) {{ copilotClose.closest('[data-copilot-panel]')?.classList.add('d-none'); return; }}
+    const copilotDiscard = e.target.closest('.manual-copilot-discard');
+    if (copilotDiscard) {{
+      const panel = copilotDiscard.closest('[data-copilot-panel]');
+      panel.querySelector('.manual-copilot-result-wrap')?.classList.add('d-none');
+      panel.querySelector('.manual-copilot-result').value = '';
+      panel.__copilotData = null;
+      return;
+    }}
+    const copilotRun = e.target.closest('.manual-copilot-run');
+    if (copilotRun) {{
+      const panel = copilotRun.closest('[data-copilot-panel]');
+      const cardEl = copilotRun.closest('[data-question-card]');
+      const question = cardEl.querySelector('.manual-question-text')?.value.trim() || '';
+      if (!question) {{ window.alert('Enter a question before requesting AI assistance.'); return; }}
+      const action = panel.querySelector('.manual-copilot-action').value;
+      const status = panel.querySelector('.manual-copilot-status');
+      copilotRun.disabled = true;
+      status.textContent = 'Preparing a suggestion…';
       const body = new URLSearchParams({{
         action,
         subject: document.getElementById('manual-subject')?.value || 'General',
@@ -6046,21 +6100,43 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       fetch('/ui/exams/manual-copilot', {{method:'POST', headers:{{'Content-Type':'application/x-www-form-urlencoded'}}, body}})
         .then(r => r.json().then(data => ({{ok:r.ok, data}})))
         .then(result => {{
-          if (!result.ok) {{ window.alert(result.data.detail || 'Copilot request failed.'); return; }}
+          if (!result.ok) {{ status.textContent = result.data.detail || 'Copilot request failed.'; return; }}
           const data = result.data || {{}};
-          const suggestion = data.content || (data.options || []).join('\\n');
-          if (!suggestion) {{ window.alert('The copilot returned no suggestion.'); return; }}
-          if (!window.confirm('AI suggestion (nothing has been changed yet):\\n\\n' + suggestion + '\\n\\nApply this suggestion?')) return;
-          if (action === 'rewrite') cardEl.querySelector('.manual-question-text').value = data.content || question;
-          if (action === 'marking_guide' && data.marking_points) cardEl.querySelector('.manual-marking-scheme').value = data.marking_points.join(String.fromCharCode(10));
-          if (action === 'options' && data.options) {{
-            options(cardEl, data.options);
-            [...cardEl.querySelectorAll('.manual-option')].forEach((input, i) => input.value = data.options[i] || '');
-          }}
-          update();
+          const suggestion = data.content || (data.options || []).join('\\n') || (data.marking_points || []).join('\\n') || data.diagram_prompt || '';
+          if (!suggestion) {{ status.textContent = 'The copilot returned no usable suggestion.'; return; }}
+          panel.__copilotData = {{...data, action}};
+          panel.querySelector('.manual-copilot-result').value = suggestion;
+          panel.querySelector('.manual-copilot-result-wrap').classList.remove('d-none');
+          panel.querySelector('.manual-copilot-apply').disabled = false;
+          status.textContent = 'Suggestion ready. Edit it if needed, then apply it.';
         }})
-        .catch(() => window.alert('Could not contact the AI copilot.'))
-        .finally(() => {{ copilot.disabled = false; }});
+        .catch(() => {{ status.textContent = 'Could not contact the AI copilot. Try again.'; }})
+        .finally(() => {{ copilotRun.disabled = false; }});
+      return;
+    }}
+    const copilotApply = e.target.closest('.manual-copilot-apply');
+    if (copilotApply) {{
+      const panel = copilotApply.closest('[data-copilot-panel]');
+      const cardEl = copilotApply.closest('[data-question-card]');
+      const data = panel.__copilotData || {{}};
+      const action = data.action || panel.querySelector('.manual-copilot-action').value;
+      const edited = panel.querySelector('.manual-copilot-result')?.value.trim() || '';
+      if (!edited) return;
+      if (action === 'rewrite') cardEl.querySelector('.manual-question-text').value = edited;
+      if (action === 'marking_guide') cardEl.querySelector('.manual-marking-scheme').value = edited;
+      if (action === 'options') {{
+        const generated = edited.split(String.fromCharCode(10)).map(x => x.replace(/^[-*A-D.)\\s]+/, '').trim()).filter(Boolean);
+        options(cardEl, generated);
+        [...cardEl.querySelectorAll('.manual-option')].forEach((input, i) => input.value = generated[i] || '');
+      }}
+      if (action === 'diagram_prompt') {{
+        const given = cardEl.querySelector('.manual-given-data');
+        given.value = (given.value ? given.value + String.fromCharCode(10) : '') + 'AI diagram brief: ' + edited;
+      }}
+      panel.querySelector('.manual-copilot-status').textContent = 'Applied to this question. You can continue editing before saving.';
+      panel.querySelector('.manual-copilot-result-wrap').classList.add('d-none');
+      panel.__copilotData = null;
+      update();
       return;
     }}
     const duplicate = e.target.closest('.manual-duplicate-question');
