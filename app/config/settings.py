@@ -5,7 +5,7 @@ List-valued fields (CORS_*) accept either JSON arrays or
 comma-separated strings.
 """
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,7 +80,11 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     resend_api_key: str = ""
-    mail_from: str = ""  # falls back to smtp_user for SMTP
+    mail_from: str = Field(
+        default="",
+        validation_alias=AliasChoices("MAIL_FROM", "EMAILS_FROM_EMAIL"),
+        description="Sender address; EMAILS_FROM_EMAIL remains supported for existing deployments.",
+    )
     app_base_url: str = "http://localhost:3000"
 
     # LLM providers ("Groq" primary, OpenRouter fallback)
