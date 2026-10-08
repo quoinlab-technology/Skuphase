@@ -1264,7 +1264,7 @@ def register_page_routes(app):
         # Parse step parameter from query or default
         next_step = req.query_params.get("step") or step or "2"
 
-        if next_step == "2" or "subject" in form or "grade_level" in form:
+        if next_step == "2":
             previous_context = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
             previous_title = wiz.get("exam_title") or ""
             wiz["grade_level"] = (form.get("grade_level") or wiz.get("grade_level") or "Primary 4").strip()
@@ -1325,6 +1325,13 @@ def register_page_routes(app):
                 selected_docs = form.getlist("selected_documents")
                 if selected_docs:
                     wiz["selected_documents"] = selected_docs
+                for scope_key in ("subject", "grade_level", "term"):
+                    scope_value = (form.get(scope_key) or "").strip()
+                    if scope_value:
+                        wiz[scope_key] = scope_value
+                posted_title = (form.get("exam_title") or "").strip()
+                if posted_title:
+                    wiz["exam_title"] = posted_title
                 posted_total = (form.get("total_marks") or "").strip()
                 if posted_total.isdigit():
                     wiz["total_marks"] = posted_total
@@ -1336,6 +1343,13 @@ def register_page_routes(app):
             sections = _build_sections_from_form(form)
             if sections:
                 wiz["sections"] = sections
+            for scope_key in ("subject", "grade_level", "term"):
+                scope_value = (form.get(scope_key) or "").strip()
+                if scope_value:
+                    wiz[scope_key] = scope_value
+            posted_title = (form.get("exam_title") or "").strip()
+            if posted_title:
+                wiz["exam_title"] = posted_title
             posted_total = (form.get("total_marks") or "").strip()
             if posted_total.isdigit():
                 wiz["total_marks"] = posted_total
@@ -4158,6 +4172,10 @@ def _wizard_sources(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="subject", type="hidden", value=str(wiz.get("subject") or "")),
+            Input(name="grade_level", type="hidden", value=str(wiz.get("grade_level") or "")),
+            Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
+            Input(name="exam_title", type="hidden", value=str(wiz.get("exam_title") or "")),
             Input(name="total_marks", type="hidden", value=str(wiz.get("total_marks") or "100")),
             # Checkable curriculum weeks
             Div(*week_items, id="weeks-list-container"),
@@ -4486,6 +4504,10 @@ def _wizard_structure(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="subject", type="hidden", value=str(wiz.get("subject") or "")),
+            Input(name="grade_level", type="hidden", value=str(wiz.get("grade_level") or "")),
+            Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
+            Input(name="exam_title", type="hidden", value=str(wiz.get("exam_title") or "")),
             # Carry the selected target forward explicitly so a Step 3
             # submission cannot fall back to the historical 100-mark default.
             Input(name="total_marks", type="hidden", value=str(target_total_marks)),
@@ -5128,9 +5150,6 @@ def register_action_routes(app):
 
         weeks = await _get_curriculum_weeks(req, grade, subject, term)
         wiz = _wizard_state(req)
-        previous_generated_title = f"{wiz.get('grade_level', grade)} {wiz.get('subject', subject)} — {wiz.get('term', term)} Examination"
-        if not wiz.get("exam_title") or wiz.get("exam_title") == previous_generated_title:
-            wiz["exam_title"] = f"{grade} {subject} — {term} Examination"
         wiz["subject"] = subject
         wiz["grade_level"] = grade
         wiz["term"] = term
