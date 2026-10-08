@@ -1,4 +1,4 @@
-from fasthtml.common import A, Div, Form, H1, H2, H3, Img, Input, Label, Li, Option, P, Select, Span, Strong, Style, Textarea, Title, Ul
+from fasthtml.common import A, Div, Form, H1, H2, H3, Img, Input, Label, Li, Option, P, Script, Select, Span, Strong, Style, Textarea, Title, Ul
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -48,7 +48,11 @@ def hero_section() -> Div:
         for index, slide in enumerate(HERO_SLIDES)
     ]
     highlight_card = Card(
-        Badge("Pilot workflow", cls="hero-side-badge mb-3"),
+        Div(
+            Img(src="/assets/img/hero/skuphase_logo.png", alt="SkuPhase", cls="hero-logo-mark"),
+            Span("Pilot workflow", cls="hero-side-badge"),
+            cls="hero-side-kicker mb-3",
+        ),
         H3("A clear path from scheme to paper.", cls="hero-side-title"),
         P(
             "Choose a class and subject, ground the draft in the scheme of work, "
@@ -89,28 +93,43 @@ def hero_section() -> Div:
             ),
             cls="hero-carousel-layer",
         ),
+        Script("""
+          (function () {
+            var root = document.getElementById('skuHero');
+            if (!root) return;
+            var slides = Array.prototype.slice.call(root.querySelectorAll('.carousel-item'));
+            if (slides.length < 2) return;
+            var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (reduceMotion) return;
+            var index = 0;
+            var timer;
+            function show(next) {
+              slides[index].classList.remove('active');
+              index = next % slides.length;
+              slides[index].classList.add('active');
+            }
+            function start() {
+              window.clearInterval(timer);
+              timer = window.setInterval(function () { show(index + 1); }, 7000);
+            }
+            root.addEventListener('mouseenter', function () { window.clearInterval(timer); });
+            root.addEventListener('mouseleave', start);
+            start();
+          })();
+        """),
         Div(Div(cls="hero-overlay"), cls="hero-overlay-layer"),
         Div(
             Container(
                 Row(
                     Col(
                         Div(
-                            Div(
-                                Badge(
-                                    "For Nigerian primary, JSS and SSS classrooms",
-                                    variant="light",
-                                    cls="hero-badge mb-3",
-                                ),
-                            ),
                             H1(
                                 "Generate curriculum-aligned papers with ",
                                 Span("confidence.", cls="text-accent"),
                                 cls="hero-title",
                             ),
                             P(
-                                "Build from the scheme of work, review every question, and export a classroom-ready "
-                                "document. SkuPhase supports structured exams, diagrams and print-ready outputs without "
-                                "taking the final decision away from the teacher.",
+                                "Start with the scheme of work, review the questions, and export a paper your teachers can use.",
                                 cls="hero-copy",
                             ),
                             Div(
@@ -128,21 +147,6 @@ def hero_section() -> Div:
                                     cls="hero-outline-btn text-decoration-none",
                                 ),
                                 cls="d-flex flex-column flex-sm-row gap-3 mt-4 w-100",
-                            ),
-                            Div(
-                                Span(
-                                    Icon("check-circle-fill", cls="bi me-2"),
-                                    "Teacher-reviewed output",
-                                ),
-                                Span(
-                                    Icon("check-circle-fill", cls="bi me-2"),
-                                    "Primary, JSS and SSS coverage",
-                                ),
-                                Span(
-                                    Icon("check-circle-fill", cls="bi me-2"),
-                                    "PDF and Word export",
-                                ),
-                                cls="hero-trust-row",
                             ),
                             cls="hero-copy-wrap",
                         ),

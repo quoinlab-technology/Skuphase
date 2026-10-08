@@ -1887,7 +1887,7 @@ body {
   width: 100%;
   display: flex;
   align-items: center;
-  padding: 3rem 0 3.25rem;
+  padding: 2.5rem 0 2.75rem;
 }
 
 .hero-content-row {
@@ -1909,6 +1909,21 @@ body {
   align-items: center;
   font-size: 0.84rem;
   letter-spacing: 0.01em;
+}
+
+.hero-side-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hero-logo-mark {
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  border-radius: 0.45rem;
+  background: #ffffff;
+  padding: 0.2rem;
 }
 
 .hero-title {
@@ -2075,7 +2090,7 @@ body {
   .hero-slide-image,
   .hero-content-row {
     height: auto;
-    min-height: 50rem;
+    min-height: 43rem;
   }
   .hero-overlay {
     background: linear-gradient(180deg, rgba(0, 28, 19, 0.96) 0%, rgba(0, 48, 33, 0.9) 60%, rgba(0, 65, 46, 0.82) 100%);
@@ -2094,7 +2109,7 @@ body {
   .hero-carousel .carousel-item,
   .hero-slide-image,
   .hero-content-row {
-    min-height: 44rem;
+    min-height: 39rem;
   }
   .hero-title {
     font-size: 2.3rem;
