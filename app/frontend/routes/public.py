@@ -1,22 +1,174 @@
-from fasthtml.common import A, Div, Form, H1, H2, H3, Input, Label, Li, Option, P, Select, Span, Strong, Style, Textarea, Title, Ul
+from fasthtml.common import A, Div, Form, H1, H2, H3, Img, Input, Label, Li, Option, P, Select, Span, Strong, Style, Textarea, Title, Ul
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from faststrap import Alert, Button, Card, Col, Container, Icon, Row
+from faststrap import Alert, Badge, Button, Card, Carousel, CarouselItem, Col, Container, Icon, Row
 
 from app.frontend.components.layout import PublicShell
 
 
-def home():
-    """Landing page matching prototype screenshot:
+HERO_SLIDES = [
+    {
+        "image": "/assets/img/hero/hero_1.jpg",
+        "alt": "Nigerian and African students engaged in classroom examinations",
+    },
+    {
+        "image": "/assets/img/hero/hero_2.jpg",
+        "alt": "Teacher delivering NERDC curriculum lesson in modern classroom",
+    },
+    {
+        "image": "/assets/img/hero/hero_3.jpg",
+        "alt": "Primary and secondary school students engaged in learning",
+    },
+    {
+        "image": "/assets/img/hero/hero_4.jpg",
+        "alt": "Students collaborating and solving academic examination questions",
+    },
+    {
+        "image": "/assets/img/hero/hero_5.jpg",
+        "alt": "Curriculum books, past questions, and academic exam materials",
+    },
+]
 
-    - Hero: "Generate Better Exams, Faster", badge "Built for Nigerian Primary Education",
-      subtitle, "Start Free >" and "Book Demo" CTAs, 3 trust indicators.
-    - Features: the real curriculum-first capabilities of the platform.
-    - Workflow: from curriculum scope to an exam-ready paper.
-    - Pricing: "Simple, transparent pricing", 3 tier cards: Starter (Free), Academy (₦25,000/mo, featured dark green), Enterprise (Custom).
-    - FAQ: "Frequently asked questions", 5 clean cards.
-    - CTA Banner: "Ready to transform your exam workflow?", graduation cap icon, dark green background.
+
+def hero_section() -> Div:
+    """Landing hero: a restrained, curriculum-first pilot introduction."""
+    # Keep the image treatment, but avoid turning the first impression into an
+    # attention-grabbing slideshow. A calm, stable hero reads as more credible
+    # for school administrators and also reduces motion on slower connections.
+    slides = [
+        CarouselItem(
+            Img(
+                src=slide["image"],
+                alt=slide["alt"],
+                cls="d-block w-100 hero-slide-image",
+                loading="eager" if index == 0 else "lazy",
+            ),
+            active=index == 0,
+        )
+        for index, slide in enumerate(HERO_SLIDES[:1])
+    ]
+    highlight_card = Card(
+        Badge("Pilot workflow", cls="hero-side-badge mb-3"),
+        H3("A clear path from scheme to paper.", cls="hero-side-title"),
+        P(
+            "Choose a class and subject, ground the draft in the scheme of work, "
+            "then review and export a paper your teachers can stand behind.",
+            cls="hero-side-copy mb-3",
+        ),
+        Div(
+            Div(Span("01", cls="hero-step-index"), Div(Strong("Set the scope"), P("Class, subject, term and week.", cls="mb-0")), cls="hero-step"),
+            Div(Span("02", cls="hero-step-index"), Div(Strong("Ground the paper"), P("Use the selected curriculum context.", cls="mb-0")), cls="hero-step"),
+            Div(Span("03", cls="hero-step-index"), Div(Strong("Review and export"), P("Keep teacher judgement in control.", cls="mb-0")), cls="hero-step"),
+            cls="hero-step-list mt-4",
+        ),
+        Div(
+            Div(
+                Span("●", cls="text-success me-2 skuphase-live-dot"),
+                Strong("Pilot workspace", cls="small text-dark me-2"),
+                Span("Teacher review stays in control", cls="small text-muted"),
+                cls="d-flex align-items-center flex-wrap",
+            ),
+            cls="mt-4 pt-3 border-top",
+        ),
+        cls="hero-side-card border-0",
+        body_cls="p-4 p-lg-5",
+    )
+    return Div(
+        Div(
+            Carousel(
+                *slides,
+                carousel_id="skuHero",
+                controls=False,
+                indicators=False,
+                interval=False,
+                ride=False,
+                pause=True,
+                wrap=True,
+                fade=True,
+                cls="hero-carousel",
+            ),
+            cls="hero-carousel-layer",
+        ),
+        Div(Div(cls="hero-overlay"), cls="hero-overlay-layer"),
+        Div(
+            Container(
+                Row(
+                    Col(
+                        Div(
+                            Div(
+                                Badge(
+                                    "For Nigerian primary, JSS and SSS classrooms",
+                                    variant="light",
+                                    cls="hero-badge mb-3",
+                                ),
+                            ),
+                            H1(
+                                "Generate curriculum-aligned papers with ",
+                                Span("confidence.", cls="text-accent"),
+                                cls="hero-title",
+                            ),
+                            P(
+                                "Build from the scheme of work, review every question, and export a classroom-ready "
+                                "document. SkuPhase supports structured exams, diagrams and print-ready outputs without "
+                                "taking the final decision away from the teacher.",
+                                cls="hero-copy",
+                            ),
+                            Div(
+                                Button(
+                                    "Join the pilot",
+                                    Span(" →", cls="ms-1 fw-bold"),
+                                    as_="a",
+                                    href="/register",
+                                    cls="hero-primary-btn text-decoration-none",
+                                ),
+                                Button(
+                                    "See how it works",
+                                    as_="a",
+                                    href="/contact",
+                                    cls="hero-outline-btn text-decoration-none",
+                                ),
+                                cls="d-flex flex-column flex-sm-row gap-3 mt-4 w-100",
+                            ),
+                            Div(
+                                Span(
+                                    Icon("check-circle-fill", cls="bi me-2"),
+                                    "Teacher-reviewed output",
+                                ),
+                                Span(
+                                    Icon("check-circle-fill", cls="bi me-2"),
+                                    "Primary, JSS and SSS coverage",
+                                ),
+                                Span(
+                                    Icon("check-circle-fill", cls="bi me-2"),
+                                    "PDF and Word export",
+                                ),
+                                cls="hero-trust-row",
+                            ),
+                            cls="hero-copy-wrap",
+                        ),
+                        lg=7,
+                        cols=12,
+                    ),
+                    Col(highlight_card, lg=5, cols=12, cls="mt-4 mt-lg-0"),
+                    cls="align-items-center hero-content-row",
+                    cols=1,
+                    cols_lg=2,
+                ),
+                cls="hero-content position-relative",
+            ),
+            cls="hero-content-layer",
+        ),
+        cls="hero-shell position-relative overflow-hidden",
+    )
+
+
+def home():
+    """Public landing page for the current pilot programme.
+
+    The hero deliberately leads with the classroom workflow and truthful pilot
+    language; the sections below explain the curriculum, review and export
+    capabilities without presenting unverified adoption or performance claims.
     """
     return PublicShell(
         Title("SkuPhase — Curriculum-Aligned Nigerian Primary School Exam Generator"),
@@ -27,101 +179,8 @@ def home():
             .skuphase-live-dot { animation: skuphase-pulse 2s ease-out infinite; }
             @media (prefers-reduced-motion: reduce) { .skuphase-hero-preview, .skuphase-live-dot { animation: none; } }
         """),
-        # 1. Hero Section (Full-width pale sage background #E6ECE5)
-        Div(
-            Container(
-                Div(
-                    # Pill Tag matching prototype: outline star + exact copy
-                    Div(
-                        Span(
-                            Icon("star", cls="bi me-2 small"),
-                            "Built for Nigerian schools",
-                            cls="badge rounded-pill px-3 py-2 fw-medium ",
-                            style="background-color: rgba(0, 65, 46, 0.08); color: #00412E; border: 1px solid rgba(0, 65, 46, 0.18); font-size: 0.82rem; letter-spacing: 0.01em;",
-                        ),
-                        cls="mb-4 text-center",
-                    ),
-                    # H1 Headline matching prototype
-                    H1(
-                        "Generate Better Exams, Faster",
-                        cls="fw-bold text-center mb-4",
-                        style="font-size: clamp(2.6rem, 5.5vw, 4.2rem); color: #00412E; letter-spacing: -0.03em; line-height: 1.1; font-weight: 800;",
-                    ),
-                    # Subtitle: 3-line centered block
-                    P(
-                        "SkuPhase uses AI to generate high-quality, curriculum-aligned ",
-                        "examinations from the official NERDC curriculum — with human review, ",
-                        "quality checks, and clean print-ready exports.",
-                        cls="text-center mb-4 pb-2",
-                        style="font-size: 1.15rem; color: #475569; max-width: 680px; margin: 0 auto; line-height: 1.65;",
-                    ),
-                    # CTAs: Pill Start Free -> + Rounded Rectangle Book Demo
-                    Div(
-                        Button(
-                            "Start Free",
-                            Span(" →", cls="ms-1 fw-bold"),
-                            as_="a",
-                            href="/register",
-                            variant="success",
-                            size="md",
-                            cls="btn-brand rounded-pill px-4 py-3 fw-semibold text-white shadow-sm text-decoration-none",
-                            style="background-color: #00412E !important; border-color: #00412E !important; padding: 12px 28px !important;",
-                        ),
-                        Button(
-                            "Book Demo",
-                            as_="a",
-                            href="/contact",
-                            size="md",
-                            cls="btn bg-white text-dark fw-semibold shadow-sm text-decoration-none",
-                            style="padding: 12px 28px !important; border: 1px solid rgba(0, 0, 0, 0.14) !important; border-radius: 10px !important;",
-                        ),
-                        cls="d-flex justify-content-center align-items-center flex-wrap gap-3 mb-5",
-                    ),
-                    # 3 Trust Indicators matching prototype
-                    Div(
-                        Span(
-                            Icon("check-circle", cls="bi me-2 text-dark opacity-75"),
-                            "No credit card required",
-                            cls="small fw-medium",
-                            style="color: #475569;",
-                        ),
-                        Span(
-                            Icon("check-circle", cls="bi me-2 text-dark opacity-75"),
-                            "NERDC-aligned output",
-                            cls="small fw-medium",
-                            style="color: #475569;",
-                        ),
-                        Span(
-                            Icon("check-circle", cls="bi me-2 text-dark opacity-75"),
-                            "Setup in 30 minutes",
-                            cls="small fw-medium",
-                            style="color: #475569;",
-                        ),
-                        cls="d-flex justify-content-center align-items-center flex-wrap gap-4 gap-md-5",
-                    ),
-                    Div(
-                        Div(
-                            Div(Span("●", cls="text-success me-2 skuphase-live-dot"), Strong("Live pilot workspace", cls="small text-dark"), cls="d-flex align-items-center mb-3"),
-                            Div(Span("NERDC curriculum", cls="badge rounded-pill bg-white text-success border me-2"), Span("AI draft", cls="badge rounded-pill bg-white text-primary border me-2"), Span("Print-ready", cls="badge rounded-pill bg-white text-dark border"), cls="mb-3"),
-                            P("From scheme of work to a classroom-ready paper in one guided flow.", cls="small text-muted mb-0"),
-                            cls="p-4 text-start bg-white rounded-4 shadow-sm border",
-                        ),
-                        Div(Icon("arrow-right", cls="bi text-success"), cls="d-none d-md-flex align-items-center px-2"),
-                        Div(
-                            Div(Icon("file-earmark-check", cls="bi text-success fs-4"), cls="rounded-3 bg-success-subtle p-2 me-3"),
-                            Div(Strong("Ready for review", cls="small d-block text-dark"), Span("Questions, marking guide and export", cls="small text-muted")),
-                            cls="p-3 text-start bg-white rounded-4 shadow-sm border d-flex align-items-center",
-                        ),
-                        cls="skuphase-hero-preview d-flex flex-column flex-md-row align-items-center justify-content-center gap-3 mx-auto mt-4",
-                        style="max-width: 760px;",
-                    ),
-                    cls="py-5 my-2",
-                ),
-                style="max-width: 1080px;",
-            ),
-            style="background-color: #E6ECE5; padding-top: 3.5rem; padding-bottom: 4.5rem;",
-            cls="w-100 border-bottom",
-        ),
+        # 1. Stable image-led hero with a clear pilot workflow
+        hero_section(),
 
         # 2. Features: "Everything your school needs for exam excellence"
         Container(
