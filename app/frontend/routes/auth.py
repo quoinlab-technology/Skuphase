@@ -146,7 +146,10 @@ def register_session_routes(app):
             clear_auth(req.session)
             flash = Flash("Your session expired — please sign in again.", "info")
         elif registered:
-            flash = Flash("Account created — sign in below.", "success")
+            flash = Flash(
+                "Account created. We sent a verification link to your email. Open that link first, then return here to sign in. Check your spam folder if you do not see it.",
+                "success",
+            )
         return AuthShell(flash, _login_form(), title="Sign in to SkuPhase")
 
     @app.post("/login")
@@ -635,11 +638,6 @@ def register_routes(app):
                 title="Create your SkuPhase account — Individual Teacher",
             )
 
-        # Auto-login with the credentials just entered (§6.1 step 5).
-        if await _auto_login(req, values["email"], payload["password"]):
-            set_flash(req.session, "success", "Welcome to SkuPhase! Your workspace is ready.")
-            return RedirectResponse("/app", status_code=303)
-        set_flash(req.session, "success", "Account created — sign in below.")
         return RedirectResponse("/login?registered=1", status_code=303)
 
     @app.post("/register/school")
@@ -698,10 +696,6 @@ def register_routes(app):
                 title="Create your SkuPhase account — School",
             )
 
-        if await _auto_login(req, values["admin_email"], payload["admin_user"]["password"]):
-            set_flash(req.session, "success", "School registered. You are signed in as administrator.")
-            return RedirectResponse("/app", status_code=303)
-        set_flash(req.session, "success", "School registered — sign in below.")
         return RedirectResponse("/login?registered=1", status_code=303)
 
 
@@ -819,8 +813,14 @@ def register_settlement_routes(app):
         resp = await call_api(req, "POST", "/auth/verify-email", json={"token": token})
         ok, data = unwrap(resp)
         if ok:
-            set_flash(req.session, "success", "Email verified. Thank you!")
-            return RedirectResponse("/app", status_code=303)
+            return AuthShell(
+                Flash("Your email has been verified successfully.", "success"),
+                Div(
+                    P("Your account is ready. Continue to sign in and start using SkuPhase.", cls="text-muted text-center mb-3"),
+                    Button("Continue to sign in", as_="a", href="/login", variant="success", cls="btn-brand w-100"),
+                ),
+                title="Email verified",
+            )
         return AuthShell(
             Flash("That verification link is invalid or has expired.", "warning"),
             P(A("Request a new link", href="/login"), cls="small text-center mb-0"),

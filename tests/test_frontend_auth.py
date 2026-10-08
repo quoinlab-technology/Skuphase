@@ -212,11 +212,10 @@ def test_login_rate_limited(client, mock_api):
 # ------------------------------------------------------------ registration
 
 
-def test_individual_registration_auto_logs_in(client, mock_api):
+def test_individual_registration_requires_email_verification(client, mock_api):
     mock_api(
         [
             FakeResp(201, {"user_id": "u1", "school_id": "s1", "workspace_name": "w", "user": {}}),
-            FakeResp(200, _tokens()),
         ]
     )
     r = client.post(
@@ -225,15 +224,14 @@ def test_individual_registration_auto_logs_in(client, mock_api):
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers.get("location") == "/app"
-    assert _session_json(client).get("access_token") == "access-token-123"
+    assert r.headers.get("location") == "/login?registered=1"
+    assert _session_json(client).get("access_token") is None
 
 
-def test_school_registration_auto_logs_in(client, mock_api):
+def test_school_registration_requires_email_verification(client, mock_api):
     mock_api(
         [
             FakeResp(201, {"school_id": "s1", "school_name": "Primary", "admin_user": {}, "message": "ok"}),
-            FakeResp(200, _tokens()),
         ]
     )
     r = client.post(
@@ -248,14 +246,13 @@ def test_school_registration_auto_logs_in(client, mock_api):
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers.get("location") == "/app"
+    assert r.headers.get("location") == "/login?registered=1"
 
 
 def test_school_registration_with_first_and_last_name_and_state(client, mock_api):
     calls = mock_api(
         [
             FakeResp(201, {"school_id": "s1", "school_name": "Greenfield Academy", "admin_user": {}, "message": "ok"}),
-            FakeResp(200, _tokens()),
         ]
     )
     r = client.post(
@@ -278,12 +275,8 @@ def test_school_registration_with_first_and_last_name_and_state(client, mock_api
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers.get("location") == "/app"
-    # Registration succeeded, followed by auto-login with admin credentials
-    assert calls["n"] == 2
-    assert calls["last"][1] == "/auth/login"
-    assert calls["last"][2]["email"] == "adaeze@greenfield.edu.ng"
-    assert calls["last"][2]["password"] == "Password123!"
+    assert r.headers.get("location") == "/login?registered=1"
+    assert calls["n"] == 1
 
 
 

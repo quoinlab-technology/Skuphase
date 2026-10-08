@@ -1,4 +1,4 @@
-from fasthtml.common import A, Div, Form, H1, H2, H3, Input, Label, Li, Option, P, Select, Span, Strong, Textarea, Title, Ul
+from fasthtml.common import A, Div, Form, H1, H2, H3, Input, Label, Li, Option, P, Select, Span, Strong, Style, Textarea, Title, Ul
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -20,6 +20,13 @@ def home():
     """
     return PublicShell(
         Title("SkuPhase — Curriculum-Aligned Nigerian Primary School Exam Generator"),
+        Style("""
+            @keyframes skuphase-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+            @keyframes skuphase-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(33, 150, 83, .25); } 50% { box-shadow: 0 0 0 9px rgba(33, 150, 83, 0); } }
+            .skuphase-hero-preview { animation: skuphase-float 5s ease-in-out infinite; }
+            .skuphase-live-dot { animation: skuphase-pulse 2s ease-out infinite; }
+            @media (prefers-reduced-motion: reduce) { .skuphase-hero-preview, .skuphase-live-dot { animation: none; } }
+        """),
         # 1. Hero Section (Full-width pale sage background #E6ECE5)
         Div(
             Container(
@@ -91,6 +98,22 @@ def home():
                             style="color: #475569;",
                         ),
                         cls="d-flex justify-content-center align-items-center flex-wrap gap-4 gap-md-5",
+                    ),
+                    Div(
+                        Div(
+                            Div(Span("●", cls="text-success me-2 skuphase-live-dot"), Strong("Live pilot workspace", cls="small text-dark"), cls="d-flex align-items-center mb-3"),
+                            Div(Span("NERDC curriculum", cls="badge rounded-pill bg-white text-success border me-2"), Span("AI draft", cls="badge rounded-pill bg-white text-primary border me-2"), Span("Print-ready", cls="badge rounded-pill bg-white text-dark border"), cls="mb-3"),
+                            P("From scheme of work to a classroom-ready paper in one guided flow.", cls="small text-muted mb-0"),
+                            cls="p-4 text-start bg-white rounded-4 shadow-sm border",
+                        ),
+                        Div(Icon("arrow-right", cls="bi text-success"), cls="d-none d-md-flex align-items-center px-2"),
+                        Div(
+                            Div(Icon("file-earmark-check", cls="bi text-success fs-4"), cls="rounded-3 bg-success-subtle p-2 me-3"),
+                            Div(Strong("Ready for review", cls="small d-block text-dark"), Span("Questions, marking guide and export", cls="small text-muted")),
+                            cls="p-3 text-start bg-white rounded-4 shadow-sm border d-flex align-items-center",
+                        ),
+                        cls="skuphase-hero-preview d-flex flex-column flex-md-row align-items-center justify-content-center gap-3 mx-auto mt-4",
+                        style="max-width: 760px;",
                     ),
                     cls="py-5 my-2",
                 ),
@@ -247,29 +270,29 @@ def home():
             cls="w-100 my-5",
         ),
 
-        # 4. Pricing Section
+        # 4. Pilot programme section (pricing is intentionally deferred during testing)
         Container(
             Div(
                 Div(
-                    H2("Simple, transparent pricing", cls="fw-bold text-center text-dark mb-2", style="letter-spacing: -0.02em;"),
-                    P("Start free, upgrade as your school grows", cls="text-muted text-center mb-5"),
+                    H2("Join the SkuPhase pilot", cls="fw-bold text-center text-dark mb-2", style="letter-spacing: -0.02em;"),
+                    P("Selected schools and teachers can use the full pilot experience while we learn, improve, and prepare for wider release.", cls="text-muted text-center mb-5"),
                 ),
                 Row(
                     # Starter Plan
                     Col(
                         Card(
-                            Span("Starter", cls="text-muted small fw-bold text-uppercase d-block mb-2"),
-                            Div(Span("Free", cls="fs-1 fw-bold text-dark"), cls="mb-2"),
-                            P("For individual teachers & small tutorial centers", cls="text-muted small mb-4"),
+                            Span("Individual pilot", cls="text-muted small fw-bold text-uppercase d-block mb-2"),
+                            Div(Span("Included", cls="fs-1 fw-bold text-dark"), cls="mb-2"),
+                            P("For individual teachers and small tutorial centres taking part in testing.", cls="text-muted small mb-4"),
                             Ul(
-                                Li(Icon("check-circle-fill", cls="bi text-success me-2"), "3 exams per month", cls="mb-2 small d-flex align-items-center"),
+                                Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Pilot access to exam generation", cls="mb-2 small d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Single teacher account", cls="mb-2 small d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "NERDC curriculum scheme", cls="mb-2 small d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Word (.docx) export format", cls="mb-2 small d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Community support", cls="mb-2 small d-flex align-items-center"),
                                 cls="list-unstyled mb-4",
                             ),
-                            Button("Start Free", as_="a", href="/register?mode=individual", variant="success", cls="btn-brand w-100 rounded-pill py-2 text-white fw-semibold mt-auto"),
+                            Button("Join the pilot", as_="a", href="/register?mode=individual", variant="success", cls="btn-brand w-100 rounded-pill py-2 text-white fw-semibold mt-auto"),
                             cls="p-4 h-100 border-0 shadow-sm rounded-4 bg-white d-flex flex-column",
                             style="border: 1px solid #E2E8DF !important;",
                         ),
@@ -278,9 +301,9 @@ def home():
                     # Academy Plan (FEATURED - Dark Green #00412E)
                     Col(
                         Card(
-                            Span("Academy", cls="text-white-50 small fw-bold text-uppercase d-block mb-2"),
-                            Div(Span("₦25,000", cls="fs-1 fw-bold text-white"), Span("/mo", cls="text-white-50 small"), cls="mb-2"),
-                            P("For growing primary schools with up to 20 teachers", cls="text-white-50 small mb-4"),
+                            Span("Pilot school", cls="text-white-50 small fw-bold text-uppercase d-block mb-2"),
+                            Div(Span("Included", cls="fs-1 fw-bold text-white"), cls="mb-2"),
+                            P("For schools helping us validate workflows with teachers and administrators.", cls="text-white-50 small mb-4"),
                             Ul(
                                 Li(Icon("check-circle-fill", cls="bi text-white me-2"), "Unlimited exams", cls="mb-2 small text-white d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-white me-2"), "Up to 20 teacher accounts", cls="mb-2 small text-white d-flex align-items-center"),
@@ -290,7 +313,7 @@ def home():
                                 Li(Icon("check-circle-fill", cls="bi text-white me-2"), "Dedicated school branding", cls="mb-2 small text-white d-flex align-items-center"),
                                 cls="list-unstyled mb-4",
                             ),
-                            Button("Get Started", as_="a", href="/register?mode=school", variant="light", cls="w-100 rounded-pill py-2 text-success fw-bold mt-auto shadow-sm"),
+                            Button("Start school pilot", as_="a", href="/register?mode=school", variant="light", cls="w-100 rounded-pill py-2 text-success fw-bold mt-auto shadow-sm"),
                             cls="p-4 h-100 border-0 shadow-lg rounded-4 text-white d-flex flex-column",
                             style="background-color: #00412E !important; transform: scale(1.02);",
                         ),
@@ -299,9 +322,9 @@ def home():
                     # Enterprise Plan
                     Col(
                         Card(
-                            Span("Enterprise", cls="text-muted small fw-bold text-uppercase d-block mb-2"),
-                            Div(Span("Custom", cls="fs-1 fw-bold text-dark"), cls="mb-2"),
-                            P("For school networks & education boards", cls="text-muted small mb-4"),
+                            Span("Feedback partner", cls="text-muted small fw-bold text-uppercase d-block mb-2"),
+                            Div(Span("Let’s talk", cls="fs-1 fw-bold text-dark"), cls="mb-2"),
+                            P("For school networks and education partners interested in shaping the next release.", cls="text-muted small mb-4"),
                             Ul(
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Unlimited teachers", cls="mb-2 small d-flex align-items-center"),
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "Multi-school manage", cls="mb-2 small d-flex align-items-center"),
@@ -311,7 +334,7 @@ def home():
                                 Li(Icon("check-circle-fill", cls="bi text-success me-2"), "On-site training", cls="mb-2 small d-flex align-items-center"),
                                 cls="list-unstyled mb-4",
                             ),
-                            Button("Contact Sales", as_="a", href="/about", variant="success", cls="btn-brand w-100 rounded-pill py-2 text-white fw-semibold mt-auto"),
+                            Button("Become a partner", as_="a", href="/contact", variant="success", cls="btn-brand w-100 rounded-pill py-2 text-white fw-semibold mt-auto"),
                             cls="p-4 h-100 border-0 shadow-sm rounded-4 bg-white d-flex flex-column",
                             style="border: 1px solid #E2E8DF !important;",
                         ),
