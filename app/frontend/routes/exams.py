@@ -1289,12 +1289,10 @@ def register_page_routes(app):
             elif "bloom_levels" not in wiz:
                 wiz["bloom_levels"] = ["Remember", "Understand", "Apply", "Analyse"]
             submitted_title = (form.get("exam_title") or "").strip()
-            if submitted_title and submitted_title != previous_title:
+            if submitted_title:
                 wiz["exam_title"] = submitted_title
-            elif not previous_title or previous_title == generated_previous_title:
-                wiz["exam_title"] = f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination"
             else:
-                wiz["exam_title"] = previous_title
+                wiz.pop("exam_title", None)
             wiz["total_marks"] = (form.get("total_marks") or wiz.get("total_marks") or "100").strip()
 
             # Preload curriculum weeks for Step 2
@@ -3179,7 +3177,6 @@ def register_wizard_routes(app):
         wiz = _wizard_state(req)
         previous_context = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
         previous_title = wiz.get("exam_title") or ""
-        previous_generated_title = f"{wiz.get('grade_level', '')} {wiz.get('subject', '')} — {wiz.get('term', '')} Examination"
         wiz["grade_level"] = (form.get("grade_level") or "Primary 4").strip()
         wiz["subject"] = (form.get("subject") or "Mathematics").strip()
         wiz["term"] = (form.get("term") or "First Term").strip()
@@ -3192,10 +3189,10 @@ def register_wizard_routes(app):
         wiz["difficulty_preset"] = (form.get("difficulty_preset") or "balanced").strip()
         wiz["bloom_levels"] = [b for b in form.getlist("bloom_levels") if b] or ["Remember", "Understand", "Apply", "Analyse"]
         submitted_title = (form.get("exam_title") or "").strip()
-        wiz["exam_title"] = (
-            submitted_title if submitted_title and submitted_title != previous_generated_title
-            else f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination"
-        )
+        if submitted_title:
+            wiz["exam_title"] = submitted_title
+        else:
+            wiz.pop("exam_title", None)
         wiz["total_marks"] = (form.get("total_marks") or "100").strip()
 
         # If user/test provided explicit comma-separated weeks in step 1, honor it:
@@ -3746,12 +3743,10 @@ def _wizard_scope(request: Request) -> Div:
     default_subject = qp.get("subject") or wiz.get("subject") or "Mathematics"
     default_term = qp.get("term") or wiz.get("term") or "First Term"
     default_total_marks = wiz.get("total_marks") or "100"
-    generated_title = f"{default_grade} {default_subject} — {default_term} Examination"
     stored_title = (wiz.get("exam_title") or "").strip()
-    previous_generated_title = f"{wiz.get('grade_level', default_grade)} {wiz.get('subject', default_subject)} — {wiz.get('term', default_term)} Examination"
-    # Auto-generated titles follow the current selectors; preserve a stored
-    # title only when it differs from the previous generated value.
-    default_title = generated_title if not stored_title or stored_title == previous_generated_title else stored_title
+    # Leave the title genuinely optional. A generated title used to look
+    # convenient, but it made stale class/subject values appear authoritative.
+    default_title = stored_title
 
     SUBJECT_OPTIONS = [(label, label) for label in ALL_SUBJECTS]
 
@@ -3854,7 +3849,7 @@ def _wizard_scope(request: Request) -> Div:
             Div(
                 Label("Exam Title", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
                 Input(name="exam_title", value=default_title,
-                      placeholder="e.g. SS2 Mathematics — Third Term Examination",
+                      placeholder="e.g. Primary 6 Mathematics Examination",
                       cls="form-control",
                       style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;"),
                 style="margin-bottom:1.15rem;",
@@ -4588,9 +4583,9 @@ def _wizard_structure(request: Request) -> Div:
 
 def _wizard_confirm(request: Request) -> Div:
     wiz = _wizard_state(request)
-    exam_title = wiz.get("exam_title") or "Primary 4 Mathematics — First Term Examination"
-    subject = wiz.get("subject") or "Mathematics"
-    grade = wiz.get("grade_level") or "Primary 4"
+    exam_title = wiz.get("exam_title") or "Untitled exam"
+    subject = wiz.get("subject") or "Not selected"
+    grade = wiz.get("grade_level") or "Not selected"
     total_marks = wiz.get("total_marks") or "100"
     preset_raw = wiz.get("difficulty_preset") or "balanced"
     preset_label = "Balanced" if preset_raw == "balanced" else ("Exam Prep" if preset_raw == "exam_prep" else "CA Test")

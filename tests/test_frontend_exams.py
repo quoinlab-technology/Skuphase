@@ -212,6 +212,44 @@ def test_wizard_all_steps_render(client, logged_in):
     assert "AI Instructions" in r4.text
 
 
+def test_modern_wizard_preserves_scope_title_and_target_marks(client, logged_in):
+    logged_in(FakeResp(404, {"detail": "no curriculum yet"}))
+    r = client.post("/app/exams/new?step=2", data={
+        "exam_title": "Primary 6 Mathematics Examination",
+        "grade_level": "Primary 6",
+        "subject": "Mathematics",
+        "term": "First Term",
+        "total_marks": "60",
+        "difficulty_preset": "balanced",
+        "bloom_levels": ["Remember"],
+    })
+    assert r.status_code == 200
+    r = client.post("/app/exams/new?step=3", data={
+        "selected_weeks": ["1"],
+        "focus_topics": "",
+        "total_marks": "60",
+    })
+    assert r.status_code == 200
+    r = client.post("/app/exams/new?step=4", data={
+        "total_marks": "60",
+        "section_1_title": "Section A",
+        "section_1_qtype": "multiple_choice",
+        "section_1_num": "20",
+        "section_1_marks_per_q": "2",
+        "section_1_marks": "40",
+        "section_2_title": "Section B",
+        "section_2_qtype": "short_answer",
+        "section_2_num": "5",
+        "section_2_marks_per_q": "4",
+        "section_2_marks": "20",
+        "custom_instructions": "",
+    })
+    assert r.status_code == 200
+    assert "Primary 6 Mathematics Examination" in r.text
+    assert "Mathematics · Primary 6" in r.text
+    assert "60 marks" in r.text
+
+
 def test_wizard_step1_navigation(client, logged_in):
     logged_in(FakeResp(404, {"detail": "no curriculum yet"}))
     r = client.post("/ui/exams/wizard/step1", data={
