@@ -3513,6 +3513,11 @@ def _marks_mismatch_modal():
                         onclick=(
                             "const modal = bootstrap.Modal.getInstance(document.getElementById('marksMismatchModal')); "
                             "if (modal) modal.hide(); "
+                            "const form = document.querySelector('#wizard-step-3 form'); "
+                            "const submit = form && form.querySelector('button[type=submit]'); "
+                            "if (submit) { if (submit.dataset.loadingOriginalHtml) submit.innerHTML = submit.dataset.loadingOriginalHtml; "
+                            "submit.disabled = false; submit.removeAttribute('aria-busy'); delete submit.dataset.loadingActive; "
+                            "delete submit.dataset.loadingOriginalHtml; if (form) delete form.dataset.loadingButton; } "
                             "setTimeout(() => { const first = document.querySelector('.sec-marks-input'); "
                             "if (first) { first.focus(); first.select(); } }, 150);"
                         ),
@@ -4569,7 +4574,7 @@ def _wizard_structure(request: Request) -> Div:
             hx_swap="outerHTML",
             hx_push_url="/app/exams/new?step=4",
             **{"data-target-marks": str(target_total_marks)},
-            onsubmit="if (typeof updateTotals === 'function') updateTotals(); const mDisplay = document.getElementById('marks-ratio-display'); const target = this.dataset.targetMarks; if (mDisplay && target) { const text = mDisplay.textContent || ''; const parts = text.split('/'); if (parts.length >= 2 && parts[0].trim() !== target.trim()) { const cur = parts[0].trim(); showMarksMismatchModal('Marks Allocation Needed', 'Your section marks currently sum to ' + cur + ' marks, but your target exam total is set to ' + target + ' marks. Please balance the marks across your sections before continuing.'); event.preventDefault(); event.stopImmediatePropagation(); return false; } } return true;",
+            onsubmit="if (typeof updateTotals === 'function') updateTotals(); const mDisplay = document.getElementById('marks-ratio-display'); const target = this.dataset.targetMarks; if (mDisplay && target) { const text = mDisplay.textContent || ''; const parts = text.split('/'); if (parts.length >= 2 && parts[0].trim() !== target.trim()) { const cur = parts[0].trim(); showMarksMismatchModal('Marks Allocation Needed', 'Your section marks currently sum to ' + cur + ' marks, but your target exam total is set to ' + target + ' marks. Please balance the marks across your sections before continuing.'); const submit = event.submitter || this.querySelector('button[type=submit]'); if (submit) { if (submit.dataset.loadingOriginalHtml) submit.innerHTML = submit.dataset.loadingOriginalHtml; submit.disabled = false; submit.removeAttribute('aria-busy'); delete submit.dataset.loadingActive; delete submit.dataset.loadingOriginalHtml; } delete this.dataset.loadingButton; event.preventDefault(); event.stopImmediatePropagation(); return false; } } return true;",
         ),
         _marks_mismatch_modal(),
         id="wizard-step-3",
