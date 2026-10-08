@@ -69,7 +69,11 @@ class Settings(BaseSettings):
 
     # Supabase Storage (server-side uploads; never expose the service key)
     supabase_url: str = ""
-    supabase_service_role_key: str = ""
+    supabase_service_role_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"),
+        description="Server-only Supabase service-role/secret key for Storage uploads.",
+    )
     supabase_storage_bucket: str = "school-assets"
 
     # Authentication
