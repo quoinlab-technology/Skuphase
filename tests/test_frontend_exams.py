@@ -200,11 +200,14 @@ def test_wizard_all_steps_render(client, logged_in):
     assert "SECTION 1" in r3.text
     assert "Section A: Objectives" in r3.text
     assert "Add Section" in r3.text
+    assert "Additional instructions for AI (optional)" in r3.text
+    assert 'name="custom_instructions"' in r3.text
 
     # Step 4: Confirm & Review verification
     r4 = client.get("/app/exams/new?step=4")
     assert "Review" in r4.text
     assert "Generate Exam" in r4.text
+    assert "AI Instructions" in r4.text
 
 
 def test_wizard_step1_navigation(client, logged_in):

@@ -1334,6 +1334,11 @@ def register_page_routes(app):
             sections = _build_sections_from_form(form)
             if sections:
                 wiz["sections"] = sections
+            instructions = (form.get("custom_instructions") or "").strip()
+            if instructions:
+                wiz["custom_instructions"] = instructions[:1000]
+            else:
+                wiz.pop("custom_instructions", None)
             _wizard_save(req, wiz)
             target_step = "4"
         else:
@@ -4486,6 +4491,35 @@ def _wizard_structure(request: Request) -> Div:
                 ),
                 style="display:flex; justify-content:space-between; align-items:center; margin-top:1.25rem;",
             ),
+            # Optional generation guidance is intentionally separate from
+            # curriculum focus topics: scope says *what* to cover, while this
+            # field says *how* the AI should shape the paper.
+            Div(
+                Label(
+                    "Additional instructions for AI (optional)",
+                    style="font-size:0.84rem; font-weight:600; color:#334155; margin-bottom:0.4rem; display:block;",
+                ),
+                Textarea(
+                    (wiz.get("custom_instructions") or ""),
+                    name="custom_instructions",
+                    rows="4",
+                    maxlength="1000",
+                    placeholder=(
+                        "e.g. Use Nigerian classroom examples, avoid repeated patterns, "
+                        "and include a labelled diagram where appropriate."
+                    ),
+                    cls="form-control",
+                    style=(
+                        "background:#EDF2EC; border:none; border-radius:0.5rem; "
+                        "font-size:0.88rem; padding:0.75rem 1rem; color:#1e293b; resize:vertical;"
+                    ),
+                ),
+                P(
+                    "Tell the AI how to shape the paper. Curriculum scope, marks, and section rules remain authoritative.",
+                    style="font-size:0.76rem; color:#64748b; margin:0.4rem 0 0;",
+                ),
+                style="margin-top:1.25rem;",
+            ),
             # Footer nav
             Div(
                 A(
@@ -4557,6 +4591,10 @@ def _wizard_confirm(request: Request) -> Div:
     total_q = sum(int(s.get("num_questions", 10)) for s in sections)
     bloom_list = wiz.get("bloom_levels") or ["Remember", "Understand", "Apply", "Analyse"]
     bloom_summary = ", ".join(bloom_list)
+    custom_instructions = (wiz.get("custom_instructions") or "").strip()
+    instructions_summary = (
+        f"{custom_instructions[:100]}..." if len(custom_instructions) > 100 else custom_instructions
+    ) or "None"
 
     def _review_row(label: str, val: str):
         return Div(
@@ -4583,8 +4621,10 @@ def _wizard_confirm(request: Request) -> Div:
                 _review_row("Bloom's Focus", bloom_summary),
                 _review_row("Curriculum Scope", sources_summary),
                 _review_row("Sections", sec_summary),
+                _review_row("AI Instructions", instructions_summary),
                 style="margin-bottom:1.5rem;",
             ),
+            Input(name="custom_instructions", type="hidden", value=custom_instructions),
             # Notice Box matching media_1788788440994.png flow
             Div(
                 Icon("stars", cls="bi", style="font-size:1.35rem; color:#00412E; flex-shrink:0;"),
@@ -4952,10 +4992,14 @@ def register_action_routes(app):
         # of the teacher's custom instructions for the generator.
         bloom_levels = form.getlist("bloom_levels") or wiz.get("bloom_levels") or []
         bloom_levels = [b for b in bloom_levels if b]
+        existing_instructions = (
+            form.get("custom_instructions") or wiz.get("custom_instructions") or ""
+        ).strip()
         if bloom_levels:
             note = f"Emphasize Bloom's taxonomy levels: {', '.join(bloom_levels)}."
-            existing = (form.get("custom_instructions") or "").strip()
-            payload["custom_instructions"] = f"{existing} {note}".strip()[:1000]
+            payload["custom_instructions"] = f"{existing_instructions} {note}".strip()[:1000]
+        elif existing_instructions:
+            payload["custom_instructions"] = existing_instructions[:1000]
         if not payload["subject"] or not payload["grade_level"]:
             return _wizard_error("Subject and class are required.")
 
