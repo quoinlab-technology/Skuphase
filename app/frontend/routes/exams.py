@@ -1327,13 +1327,17 @@ def register_page_routes(app):
                 selected_docs = form.getlist("selected_documents")
                 if selected_docs:
                     wiz["selected_documents"] = selected_docs
-                wiz["focus_topics"] = (form.get("focus_topics") or wiz.get("focus_topics") or "").strip()
+                if "focus_topics" in form:
+                    wiz["focus_topics"] = (form.get("focus_topics") or "").strip()
                 _wizard_save(req, wiz)
                 target_step = "3"
         elif next_step == "4" or any(k.startswith("section_") for k in form.keys()):
             sections = _build_sections_from_form(form)
             if sections:
                 wiz["sections"] = sections
+            posted_total = (form.get("total_marks") or "").strip()
+            if posted_total.isdigit():
+                wiz["total_marks"] = posted_total
             instructions = (form.get("custom_instructions") or "").strip()
             if instructions:
                 wiz["custom_instructions"] = instructions[:1000]
@@ -3981,7 +3985,9 @@ def _wizard_scope(request: Request) -> Div:
 
 def _wizard_sources(request: Request) -> Div:
     wiz = _wizard_state(request)
-    default_topics = wiz.get("focus_topics") or "Whole Numbers, Place Value, Fractions, Basic Operations"
+    # Focus Topics is deliberately optional. Never seed it with guessed topics:
+    # an untouched field must not silently constrain the generated paper.
+    default_topics = wiz.get("focus_topics") or ""
     subject = wiz.get("subject", "Mathematics")
     grade = wiz.get("grade_level", "Primary 4")
     term = wiz.get("term", "First Term")
@@ -4463,6 +4469,9 @@ def _wizard_structure(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            # Carry the selected target forward explicitly so a Step 3
+            # submission cannot fall back to the historical 100-mark default.
+            Input(name="total_marks", type="hidden", value=str(target_total_marks)),
             # Container for dynamic sections
             Div(*rendered_cards, id="sections-container"),
             # Dashed + Add Section button

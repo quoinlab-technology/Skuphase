@@ -193,6 +193,7 @@ def test_wizard_all_steps_render(client, logged_in):
     assert "Curriculum Coverage" in r2.text
     assert "NERDC Curriculum Scope" in r2.text
     assert "Focus Topics" in r2.text
+    assert 'value="Whole Numbers, Place Value, Fractions, Basic Operations"' not in r2.text
 
     # Step 3: Exam Structure verification
     r3 = client.get("/app/exams/new?step=3")
@@ -202,6 +203,7 @@ def test_wizard_all_steps_render(client, logged_in):
     assert "Add Section" in r3.text
     assert "Additional instructions for AI (optional)" in r3.text
     assert 'name="custom_instructions"' in r3.text
+    assert 'name="total_marks" type="hidden"' in r3.text
 
     # Step 4: Confirm & Review verification
     r4 = client.get("/app/exams/new?step=4")
