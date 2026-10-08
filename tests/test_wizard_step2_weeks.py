@@ -31,7 +31,10 @@ def test_curriculum_cache_returns_real_topics():
         "term": "First Term",
     }
     weeks = _get_curriculum_weeks_sync(wiz)
-    assert len(weeks) >= 10
+    # The wizard intentionally exposes teaching weeks only; revision, exam,
+    # and break rows are excluded from the selectable scope.
+    assert len(weeks) >= 8
+    assert all(not week.get("is_exam_or_break") for week in weeks)
     topics = [w["topic"] for w in weeks]
     # Must NOT contain the old generic text
     assert not any("Core Topics & Skills" in t for t in topics)

@@ -1206,6 +1206,12 @@ def register_page_routes(app):
             return guard
         if mode == "manual":
             return RedirectResponse("/app/exams/new/manual", status_code=303)
+        # A bare link from the Exams page starts a new run. Do not let a
+        # previous class, subject, marks target, or week selection leak into it.
+        if "step" not in req.query_params and not any(
+            req.query_params.get(key) for key in ("class_level", "grade_level", "grade", "subject", "term", "weeks")
+        ):
+            req.session.pop("wizard", None)
         user = current_user(req) or {}
         flash = pop_flash(req)
         try:
@@ -1226,9 +1232,10 @@ def register_page_routes(app):
                 weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"))
                 if weeks:
                     wiz["curriculum_weeks"] = [
-                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
                         for w in weeks
                     ]
+                    wiz["curriculum_scope"] = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
                     if not wiz.get("selected_weeks"):
                         wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
                     _wizard_save(req, wiz)
@@ -1258,9 +1265,22 @@ def register_page_routes(app):
         next_step = req.query_params.get("step") or step or "2"
 
         if next_step == "2" or "subject" in form or "grade_level" in form:
+            previous_context = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+            previous_title = wiz.get("exam_title") or ""
             wiz["grade_level"] = (form.get("grade_level") or wiz.get("grade_level") or "Primary 4").strip()
             wiz["subject"] = (form.get("subject") or wiz.get("subject") or "Mathematics").strip()
             wiz["term"] = (form.get("term") or wiz.get("term") or "First Term").strip()
+            current_context = _wizard_scope_key(wiz["grade_level"], wiz["subject"], wiz["term"])
+            if previous_context and previous_context != current_context:
+                # Curriculum and selected weeks belong to the old scope.
+                wiz["curriculum_weeks"] = []
+                wiz["selected_weeks"] = []
+                wiz.pop("curriculum_scope", None)
+                wiz.pop("selected_documents", None)
+            generated_previous_title = ""
+            if previous_context:
+                old_grade, old_subject, old_term = previous_context.split("|", 2)
+                generated_previous_title = f"{old_grade.title()} {old_subject.title()} — {old_term.title()} Examination"
             wiz["weeks"] = (form.get("weeks") or wiz.get("weeks") or "").strip()
             wiz["difficulty_preset"] = (form.get("difficulty_preset") or wiz.get("difficulty_preset") or "balanced").strip()
             bloom_list = form.getlist("bloom_levels")
@@ -1268,7 +1288,13 @@ def register_page_routes(app):
                 wiz["bloom_levels"] = bloom_list
             elif "bloom_levels" not in wiz:
                 wiz["bloom_levels"] = ["Remember", "Understand", "Apply", "Analyse"]
-            wiz["exam_title"] = (form.get("exam_title") or wiz.get("exam_title") or f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination").strip()
+            submitted_title = (form.get("exam_title") or "").strip()
+            if submitted_title and submitted_title != previous_title:
+                wiz["exam_title"] = submitted_title
+            elif not previous_title or previous_title == generated_previous_title:
+                wiz["exam_title"] = f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination"
+            else:
+                wiz["exam_title"] = previous_title
             wiz["total_marks"] = (form.get("total_marks") or wiz.get("total_marks") or "100").strip()
 
             # Preload curriculum weeks for Step 2
@@ -1276,9 +1302,10 @@ def register_page_routes(app):
                 weeks = await _get_curriculum_weeks(req, wiz["grade_level"], wiz["subject"], wiz["term"])
                 if weeks:
                     wiz["curriculum_weeks"] = [
-                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
                         for w in weeks
                     ]
+                    wiz["curriculum_scope"] = _wizard_scope_key(wiz["grade_level"], wiz["subject"], wiz["term"])
                     if not wiz.get("selected_weeks"):
                         wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
             except Exception:
@@ -1337,14 +1364,16 @@ def register_page_routes(app):
         is_generating = state in ("generation_requested", "refinement_requested")
 
         if is_generating:
-            total_q = exam.get("total_questions") or len(exam.get("questions") or []) or 37
-            num_sec = len(exam.get("sections") or []) or 3
+            generation = _generation_context(req, exam, exam_id)
             inner = Div(
                 _render_generating_screen(
                     exam_id,
-                    total_q=total_q,
-                    num_sections=num_sec,
-                    num_docs=3,
+                    total_q=generation["total_questions"],
+                    num_sections=generation["num_sections"],
+                    num_weeks=generation["num_weeks"],
+                    subject=generation["subject"],
+                    grade_level=generation["grade_level"],
+                    term=generation["term"],
                     poll_endpoint=f"/ui/exams/{exam_id}/poll",
                     poll_target="#exam-detail-view",
                     poll_count=0,
@@ -3136,13 +3165,25 @@ def register_wizard_routes(app):
             return guard
         form = await req.form()
         wiz = _wizard_state(req)
+        previous_context = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+        previous_title = wiz.get("exam_title") or ""
+        previous_generated_title = f"{wiz.get('grade_level', '')} {wiz.get('subject', '')} — {wiz.get('term', '')} Examination"
         wiz["grade_level"] = (form.get("grade_level") or "Primary 4").strip()
         wiz["subject"] = (form.get("subject") or "Mathematics").strip()
         wiz["term"] = (form.get("term") or "First Term").strip()
+        current_context = _wizard_scope_key(wiz["grade_level"], wiz["subject"], wiz["term"])
+        if previous_context and previous_context != current_context:
+            wiz["curriculum_weeks"] = []
+            wiz["selected_weeks"] = []
+            wiz.pop("curriculum_scope", None)
         wiz["weeks"] = (form.get("weeks") or "").strip()
         wiz["difficulty_preset"] = (form.get("difficulty_preset") or "balanced").strip()
         wiz["bloom_levels"] = [b for b in form.getlist("bloom_levels") if b] or ["Remember", "Understand", "Apply", "Analyse"]
-        wiz["exam_title"] = (form.get("exam_title") or f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination").strip()
+        submitted_title = (form.get("exam_title") or "").strip()
+        wiz["exam_title"] = (
+            submitted_title if submitted_title and submitted_title != previous_generated_title
+            else f"{wiz['grade_level']} {wiz['subject']} — {wiz['term']} Examination"
+        )
         wiz["total_marks"] = (form.get("total_marks") or "100").strip()
 
         # If user/test provided explicit comma-separated weeks in step 1, honor it:
@@ -3154,9 +3195,10 @@ def register_wizard_routes(app):
             weeks = await _get_curriculum_weeks(req, wiz["grade_level"], wiz["subject"], wiz["term"])
             if weeks:
                 wiz["curriculum_weeks"] = [
-                    {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                    {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
                     for w in weeks
                 ]
+                wiz["curriculum_scope"] = current_context
                 if not wiz.get("selected_weeks"):
                     wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
         except Exception:
@@ -3480,6 +3522,31 @@ def _wizard_save(request: Request, wiz: dict) -> None:
     request.session["wizard"] = wiz
 
 
+def _wizard_scope_key(class_level: str, subject: str, term: str) -> str:
+    """Stable identity for the curriculum currently loaded into the wizard."""
+    return "|".join(str(value or "").strip().casefold() for value in (class_level, subject, term))
+
+
+def _generation_context(request: Request, exam: dict, exam_id: str) -> dict:
+    """Return request metadata for a queued exam without inventing defaults."""
+    contexts = request.session.get("generation_contexts") or {}
+    context = contexts.get(str(exam_id), {}) if isinstance(contexts, dict) else {}
+    sections = exam.get("sections") or context.get("sections") or []
+    total_q = exam.get("total_questions") or context.get("total_questions") or sum(
+        _safe_int(section.get("num_questions"), 0) for section in sections
+    )
+    num_sections = len(exam.get("sections") or []) or context.get("num_sections") or len(sections)
+    selected_weeks = exam.get("selected_weeks") or context.get("selected_weeks") or []
+    return {
+        "total_questions": total_q,
+        "num_sections": num_sections,
+        "num_weeks": len(selected_weeks),
+        "subject": exam.get("subject") or context.get("subject") or "",
+        "grade_level": exam.get("grade_level") or context.get("grade_level") or "",
+        "term": exam.get("term") or context.get("term") or "",
+    }
+
+
 def _wizard_panel(step: str, request: Request) -> Div:
     if step == "1":
         inner = _wizard_scope(request)
@@ -3569,6 +3636,7 @@ def _load_curriculum_cache() -> dict[tuple[str, str, str], list[dict]]:
                     "week_number": int(wnum),
                     "topic": _clean_topic_title(item.get("topic") or f"Week {wnum}"),
                     "subtopics_summary": f"{len(sub_list)} subtopics · {sub_str[:65]}" if sub_list else "",
+                    "is_exam_or_break": bool(item.get("is_exam_or_break", False)),
                 })
         except Exception:
             pass
@@ -3590,12 +3658,15 @@ async def _get_curriculum_weeks(request: Request, class_level: str, subject: str
             if raw_weeks:
                 results = []
                 for w in raw_weeks:
+                    if bool(w.get("is_exam_or_break", False)):
+                        continue
                     sub_list = w.get("subtopics") or []
                     sub_str = ", ".join(sub_list[:3]) if sub_list else (w.get("topic") or "")
                     results.append({
                         "week_number": w.get("week_number", 1),
                         "topic": _clean_topic_title(w.get("topic", f"Week {w.get('week_number', 1)} Topic")),
                         "subtopics_summary": f"{len(sub_list)} subtopics · {sub_str[:65]}" if sub_list else f"Term {term}",
+                        "is_exam_or_break": False,
                     })
                 return results
     except Exception:
@@ -3610,7 +3681,8 @@ def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
     Returns cached/stored weeks from wizard dict if present, or resolves from
     the canonical indexed NERDC dataset.
     """
-    if wiz.get("curriculum_weeks"):
+    scope_key = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+    if wiz.get("curriculum_weeks") and wiz.get("curriculum_scope") == scope_key:
         return wiz["curriculum_weeks"]
 
     subject = wiz.get("subject", "Mathematics")
@@ -3620,12 +3692,12 @@ def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
     cache = _load_curriculum_cache()
     key = (grade.strip().lower(), subject.strip().lower(), term.strip().lower())
     if key in cache and cache[key]:
-        return cache[key]
+        return [week for week in cache[key] if not week.get("is_exam_or_break")]
 
     for (c, s, t), w_list in cache.items():
         if c == grade.strip().lower() and t == term.strip().lower():
             if s in subject.strip().lower() or subject.strip().lower() in s:
-                return w_list
+                return [week for week in w_list if not week.get("is_exam_or_break")]
 
     # Never fabricate curriculum weeks: doing so can produce an exam that is
     # not grounded in the selected NERDC scheme.  The wizard will require the
@@ -3644,7 +3716,12 @@ def _wizard_scope(request: Request) -> Div:
     default_subject = qp.get("subject") or wiz.get("subject") or "Mathematics"
     default_term = qp.get("term") or wiz.get("term") or "First Term"
     default_total_marks = wiz.get("total_marks") or "100"
-    default_title = wiz.get("exam_title") or f"{default_grade} {default_subject} — {default_term} Examination"
+    generated_title = f"{default_grade} {default_subject} — {default_term} Examination"
+    stored_title = (wiz.get("exam_title") or "").strip()
+    previous_generated_title = f"{wiz.get('grade_level', default_grade)} {wiz.get('subject', default_subject)} — {wiz.get('term', default_term)} Examination"
+    # Auto-generated titles follow the current selectors; preserve a stored
+    # title only when it differs from the previous generated value.
+    default_title = generated_title if not stored_title or stored_title == previous_generated_title else stored_title
 
     SUBJECT_OPTIONS = [(label, label) for label in ALL_SUBJECTS]
 
@@ -4558,9 +4635,12 @@ def _wizard_confirm(request: Request) -> Div:
 
 def _render_generating_screen(
     exam_id: str,
-    total_q: int = 37,
-    num_sections: int = 3,
-    num_docs: int = 3,
+    total_q: int = 0,
+    num_sections: int = 0,
+    num_weeks: int = 0,
+    subject: str = "",
+    grade_level: str = "",
+    term: str = "",
     poll_endpoint: str | None = None,
     poll_target: str = "#wizard-container",
     poll_count: int = 0,
@@ -4640,18 +4720,21 @@ def _render_generating_screen(
             style="position:relative; display:inline-flex; align-items:center; justify-content:center; margin-bottom:1.5rem;",
         ),
         H2("Generating your exam...", style="font-weight:700; font-size:1.45rem; color:#0f172a; margin-bottom:0.4rem;"),
-        P("Embedding search \u2192 Question drafting \u2192 Quality check", style="font-size:0.85rem; color:#64748b; margin-bottom:0.6rem;"),
+        P(
+            f"{grade_level} · {subject} · {term}" if subject or grade_level or term else "Preparing your curriculum-grounded paper",
+            style="font-size:0.85rem; color:#64748b; margin-bottom:0.6rem;",
+        ),
         P("This usually takes under 2 minutes. Please keep this tab open.", style="font-size:0.82rem; color:#94a3b8; margin-bottom:1.75rem;"),
         # Step checklist
         Div(
             Div(
                 Span(cls="checklist-spin me-3"),
-                Span(f"Retrieving relevant chunks from {num_docs} documents", style="font-size:0.88rem; color:#334155; font-weight:500;"),
+                Span(f"Grounding the paper in {num_weeks} teaching weeks" if num_weeks else "Grounding the paper in the selected teaching weeks", style="font-size:0.88rem; color:#334155; font-weight:500;"),
                 style="display:flex; align-items:center; margin-bottom:0.85rem;",
             ),
             Div(
                 Span(cls="checklist-spin me-3"),
-                Span(f"Drafting {total_q} questions across {num_sections} sections", style="font-size:0.88rem; color:#334155; font-weight:500;"),
+                Span(f"Drafting {total_q} questions across {num_sections} sections" if total_q and num_sections else "Drafting the configured questions", style="font-size:0.88rem; color:#334155; font-weight:500;"),
                 style="display:flex; align-items:center; margin-bottom:0.85rem;",
             ),
             Div(
@@ -4695,9 +4778,9 @@ def _render_generating_screen(
 
 def _render_generated_screen(exam_id: str, exam: dict) -> Div:
     """Centered confirmation card matching media_1788788326252.png."""
-    total_q = exam.get("total_questions") or len(exam.get("questions") or []) or 37
-    raw_score = exam.get("quality_score") or 88
-    score = int(raw_score) if raw_score else 88
+    total_q = exam.get("total_questions") or len(exam.get("questions") or [])
+    raw_score = exam.get("quality_score")
+    score = int(raw_score) if raw_score is not None else None
 
     stepper = Div(
         # 1 Scope (done)
@@ -4730,8 +4813,8 @@ def _render_generated_screen(exam_id: str, exam: dict) -> Div:
         ),
         H2("Exam Generated!", style="font-weight:700; font-size:1.5rem; color:#0f172a; margin-bottom:0.45rem;"),
         P(
-            f"{total_q} questions created · Quality score: ",
-            Strong(f"{score}%", style="color:#00412E; font-weight:700;"),
+            f"{total_q} questions created" if total_q else "Questions created",
+            *([Span(" · Quality score: ", cls="ms-1"), Strong(f"{score}%", style="color:#00412E; font-weight:700;")] if score is not None else [Span(" · Quality review pending", cls="ms-1")]),
             style="font-size:0.9rem; color:#64748b; margin-bottom:1.75rem;",
         ),
         # View Exam button
@@ -4893,14 +4976,35 @@ def register_action_routes(app):
 
         total_q = sum(int(s.get("num_questions", 1)) for s in sections)
         num_sec = len(sections)
-        num_docs = len(weeks_list) if weeks_list else 3
+        contexts = req.session.get("generation_contexts") or {}
+        if not isinstance(contexts, dict):
+            contexts = {}
+        contexts[exam_id] = {
+            "total_questions": total_q,
+            "num_sections": num_sec,
+            "num_weeks": len(weeks_list),
+            "selected_weeks": weeks_list,
+            "subject": payload["subject"],
+            "grade_level": payload["grade_level"],
+            "term": payload.get("term") or "",
+            "sections": sections,
+        }
+        req.session["generation_contexts"] = contexts
 
         if req.headers.get("hx-request") == "true":
             # If immediately completed (e.g. in test environment or quick mock):
             ok_exam, exam = await _fetch_exam(req, exam_id)
             if ok_exam and _state_of(exam) not in ("generation_requested", "refinement_requested", "pending"):
                 return _render_generated_screen(exam_id, exam)
-            return _render_generating_screen(exam_id, total_q=total_q, num_sections=num_sec, num_docs=num_docs)
+            return _render_generating_screen(
+                exam_id,
+                total_q=total_q,
+                num_sections=num_sec,
+                num_weeks=len(weeks_list),
+                subject=payload["subject"],
+                grade_level=payload["grade_level"],
+                term=payload.get("term") or "",
+            )
 
         return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
 
@@ -4916,9 +5020,17 @@ def register_action_routes(app):
             return _wizard_error(exam.get("message", "Could not check exam generation status."))
         state = _state_of(exam)
         if state in ("generation_requested", "refinement_requested", "pending"):
-            total_q = exam.get("total_questions") or len(exam.get("questions") or []) or 37
-            num_sec = len(exam.get("sections") or []) or 3
-            return _render_generating_screen(exam_id, total_q=total_q, num_sections=num_sec, num_docs=3, poll_count=poll_count)
+            generation = _generation_context(req, exam, exam_id)
+            return _render_generating_screen(
+                exam_id,
+                total_q=generation["total_questions"],
+                num_sections=generation["num_sections"],
+                num_weeks=generation["num_weeks"],
+                subject=generation["subject"],
+                grade_level=generation["grade_level"],
+                term=generation["term"],
+                poll_count=poll_count,
+            )
         # Reset poll count when done
         return _render_generated_screen(exam_id, exam)
 
@@ -4946,15 +5058,19 @@ def register_action_routes(app):
 
         weeks = await _get_curriculum_weeks(req, grade, subject, term)
         wiz = _wizard_state(req)
+        previous_generated_title = f"{wiz.get('grade_level', grade)} {wiz.get('subject', subject)} — {wiz.get('term', term)} Examination"
+        if not wiz.get("exam_title") or wiz.get("exam_title") == previous_generated_title:
+            wiz["exam_title"] = f"{grade} {subject} — {term} Examination"
         wiz["subject"] = subject
         wiz["grade_level"] = grade
         wiz["term"] = term
 
         if weeks:
             wiz["curriculum_weeks"] = [
-                {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", "")}
+                {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
                 for w in weeks
             ]
+            wiz["curriculum_scope"] = _wizard_scope_key(grade, subject, term)
             wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
             _wizard_save(req, wiz)
             return Div(
@@ -5003,14 +5119,16 @@ def register_action_routes(app):
 
         state = _state_of(exam)
         if state in ("generation_requested", "refinement_requested"):
-            total_q = exam.get("total_questions") or len(exam.get("questions") or []) or 37
-            num_sec = len(exam.get("sections") or []) or 3
+            generation = _generation_context(req, exam, exam_id)
             return Div(
                 _render_generating_screen(
                     exam_id,
-                    total_q=total_q,
-                    num_sections=num_sec,
-                    num_docs=3,
+                    total_q=generation["total_questions"],
+                    num_sections=generation["num_sections"],
+                    num_weeks=generation["num_weeks"],
+                    subject=generation["subject"],
+                    grade_level=generation["grade_level"],
+                    term=generation["term"],
                     poll_endpoint=f"/ui/exams/{exam_id}/poll",
                     poll_target="#exam-detail-view",
                     poll_count=poll_count,
@@ -5045,14 +5163,16 @@ def register_action_routes(app):
         if ok2:
             state = _state_of(exam)
             if state in ("generation_requested", "refinement_requested", "pending"):
-                total_q = exam.get("total_questions") or len(exam.get("questions") or []) or 37
-                num_sec = len(exam.get("sections") or []) or 3
+                generation = _generation_context(req, exam, exam_id)
                 return Div(
                     _render_generating_screen(
                         exam_id,
-                        total_q=total_q,
-                        num_sections=num_sec,
-                        num_docs=3,
+                        total_q=generation["total_questions"],
+                        num_sections=generation["num_sections"],
+                        num_weeks=generation["num_weeks"],
+                        subject=generation["subject"],
+                        grade_level=generation["grade_level"],
+                        term=generation["term"],
                         poll_endpoint=f"/ui/exams/{exam_id}/poll",
                         poll_target="#exam-detail-view",
                         poll_count=0,
