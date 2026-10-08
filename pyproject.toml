@@ -35,6 +35,14 @@ dependencies = [
     "python-docx",
 ]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["tests*", "scripts*", "data*", "assets*"]
+
 [tool.fastapi]
 entrypoint = "app.main:app"
 
