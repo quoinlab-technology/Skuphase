@@ -1327,6 +1327,9 @@ def register_page_routes(app):
                 selected_docs = form.getlist("selected_documents")
                 if selected_docs:
                     wiz["selected_documents"] = selected_docs
+                posted_total = (form.get("total_marks") or "").strip()
+                if posted_total.isdigit():
+                    wiz["total_marks"] = posted_total
                 if "focus_topics" in form:
                     wiz["focus_topics"] = (form.get("focus_topics") or "").strip()
                 _wizard_save(req, wiz)
@@ -3250,6 +3253,9 @@ def register_wizard_routes(app):
         selected_docs = form.getlist("selected_documents")
         curriculum_doc = f"{wiz.get('grade_level', 'Primary 4')} {wiz.get('subject', 'Mathematics')} Curriculum.pdf"
         wiz["selected_documents"] = selected_docs or [curriculum_doc]
+        posted_total = (form.get("total_marks") or "").strip()
+        if posted_total.isdigit():
+            wiz["total_marks"] = posted_total
         wiz["focus_topics"] = (form.get("focus_topics") or "").strip()
         _wizard_save(req, wiz)
         if req.headers.get("hx-target") == "wizard-panel":
@@ -3500,7 +3506,17 @@ def _marks_mismatch_modal():
                     cls="modal-body p-4",
                 ),
                 Div(
-                    Button("Adjust Section Marks", type="button", cls="btn btn-brand rounded-pill px-4", **{"data-bs-dismiss": "modal"}),
+                    Button(
+                        "Adjust Section Marks",
+                        type="button",
+                        cls="btn btn-brand rounded-pill px-4",
+                        onclick=(
+                            "const modal = bootstrap.Modal.getInstance(document.getElementById('marksMismatchModal')); "
+                            "if (modal) modal.hide(); "
+                            "setTimeout(() => { const first = document.querySelector('.sec-marks-input'); "
+                            "if (first) { first.focus(); first.select(); } }, 150);"
+                        ),
+                    ),
                     cls="modal-footer border-0 pt-0 justify-content-center",
                 ),
                 cls="modal-content border-0 rounded-4 shadow-lg",
@@ -4142,6 +4158,7 @@ def _wizard_sources(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="total_marks", type="hidden", value=str(wiz.get("total_marks") or "100")),
             # Checkable curriculum weeks
             Div(*week_items, id="weeks-list-container"),
             # Focus Topics input
@@ -4552,7 +4569,7 @@ def _wizard_structure(request: Request) -> Div:
             hx_swap="outerHTML",
             hx_push_url="/app/exams/new?step=4",
             **{"data-target-marks": str(target_total_marks)},
-            onsubmit="if (typeof updateTotals === 'function') updateTotals(); const mDisplay = document.getElementById('marks-ratio-display'); const target = this.dataset.targetMarks; if (mDisplay && target) { const text = mDisplay.textContent || ''; const parts = text.split('/'); if (parts.length >= 2 && parts[0].trim() !== target.trim()) { const cur = parts[0].trim(); showMarksMismatchModal('Marks Allocation Needed', 'Your section marks currently sum to ' + cur + ' marks, but your target exam total is set to ' + target + ' marks. Please balance the marks across your sections before continuing.'); return false; } } return true;",
+            onsubmit="if (typeof updateTotals === 'function') updateTotals(); const mDisplay = document.getElementById('marks-ratio-display'); const target = this.dataset.targetMarks; if (mDisplay && target) { const text = mDisplay.textContent || ''; const parts = text.split('/'); if (parts.length >= 2 && parts[0].trim() !== target.trim()) { const cur = parts[0].trim(); showMarksMismatchModal('Marks Allocation Needed', 'Your section marks currently sum to ' + cur + ' marks, but your target exam total is set to ' + target + ' marks. Please balance the marks across your sections before continuing.'); event.preventDefault(); event.stopImmediatePropagation(); return false; } } return true;",
         ),
         _marks_mismatch_modal(),
         id="wizard-step-3",
