@@ -33,9 +33,8 @@ HERO_SLIDES = [
 
 def hero_section() -> Div:
     """Landing hero: a restrained, curriculum-first pilot introduction."""
-    # Keep the image treatment, but avoid turning the first impression into an
-    # attention-grabbing slideshow. A calm, stable hero reads as more credible
-    # for school administrators and also reduces motion on slower connections.
+    # Keep the image treatment as a quiet background transition. The content
+    # remains stable while the photography changes slowly and unobtrusively.
     slides = [
         CarouselItem(
             Img(
@@ -46,7 +45,7 @@ def hero_section() -> Div:
             ),
             active=index == 0,
         )
-        for index, slide in enumerate(HERO_SLIDES[:1])
+        for index, slide in enumerate(HERO_SLIDES)
     ]
     highlight_card = Card(
         Badge("Pilot workflow", cls="hero-side-badge mb-3"),
@@ -81,8 +80,8 @@ def hero_section() -> Div:
                 carousel_id="skuHero",
                 controls=False,
                 indicators=False,
-                interval=False,
-                ride=False,
+                interval=7000,
+                ride="carousel",
                 pause=True,
                 wrap=True,
                 fade=True,

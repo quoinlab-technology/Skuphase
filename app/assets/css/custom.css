@@ -1868,6 +1868,13 @@ body {
   transform: scale(1.08);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide-image {
+    transition: none;
+    transform: none !important;
+  }
+}
+
 .hero-overlay {
   position: absolute;
   inset: 0;
