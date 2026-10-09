@@ -445,6 +445,56 @@ def test_render_structured_blocks_skips_malicious_mermaid():
 
 
 @pytest.mark.asyncio
+async def test_normalize_choice_answers_maps_shapes_to_letters():
+    """Cosmetic correct_answer shapes must normalize before validation."""
+    from app.services.exam_generator import _normalize_choice_answers
+
+    parsed = {
+        "sections": [
+            {
+                "questions": [
+                    {"type": "multiple_choice", "correct_answer": "b", "options": ["A. 1", "B. 2"]},
+                    {"type": "multiple_choice", "correct_answer": "C. Three", "options": ["A. 1", "B. 2", "C. Three", "D. 4"]},
+                    {"type": "multiple_choice", "correct_answer": "$46,000", "options": ["A. $42,000", "B. $46,000", "C. $40,000", "D. $44,000"]},
+                    {"type": "true_false", "correct_answer": "True", "options": ["A. True", "B. False"]},
+                    {"type": "multiple_choice", "correct_answer": "Z", "options": ["A. 1", "B. 2", "C. 3", "D. 4"]},
+                    {"type": "essay", "correct_answer": "free text stays"},
+                ]
+            }
+        ]
+    }
+    _normalize_choice_answers(parsed, [])
+    got = [q["correct_answer"] for q in parsed["sections"][0]["questions"]]
+    assert got == ["B", "C", "B", "A", "Z", "free text stays"]
+
+
+def test_prompt_declares_answer_key_discipline():
+    from unittest.mock import patch
+
+    from app.schemas.exam import ExamGenerationRequest, SectionConfig
+    from app.services.exam_generator import ExamGenerator
+
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    request = ExamGenerationRequest(
+        subject="Mathematics",
+        grade_level="JSS 3",
+        sections=[
+            SectionConfig(
+                section_number=1,
+                section_title="SECTION A",
+                question_type="multiple_choice",
+                num_questions=1,
+            )
+        ],
+    )
+    prompt = generator.build_prompt(request, {"combined_context": "ctx"})
+    assert "ANSWER-KEY DISCIPLINE" in prompt
+    assert "bare letter" in prompt
+
+
+@pytest.mark.asyncio
 async def test_store_exam_persists_sanitized_content_blocks():
     """AI-generated content_blocks must survive store_exam (cleaned)."""
     import uuid

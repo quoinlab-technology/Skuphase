@@ -56,6 +56,65 @@ def _normalize_exam_bloom_levels(parsed):
                 q["bloom_level"] = normalized
 
 
+def _normalize_choice_answers(parsed, sections):
+    """Canonicalize choice-type correct_answers after LLM parsing.
+
+    LLMs know the right answer but format it inconsistently: a bare letter
+    ("b"), a labelled option ("B. Amplify"), or the full option text. The
+    frontend, PDF export and marking logic all tolerate these shapes, but
+    the quality validator requires a bare A-E (or A/B for true/false).
+    Normalizing here turns a cosmetic disagreement into the canonical
+    letter, so a correct paper is not rejected after a 3-minute generation.
+    """
+    letter_re = re.compile(r"^[\(\[]?\s*([A-Ea-e])\s*[\)\].:)]?\s*$")
+    for sec in parsed.get("sections", []):
+        for q in sec.get("questions", []):
+            q_type = str(q.get("type") or "").lower()
+            if q_type not in ("multiple_choice", "true_false"):
+                continue
+            answer = q.get("correct_answer")
+            if not isinstance(answer, str):
+                continue
+            text = answer.strip()
+            if not text:
+                continue
+
+            canonical: str | None = None
+            allowed = ("A", "B") if q_type == "true_false" else ("A", "B", "C", "D", "E")
+            upper = text.upper()
+            if upper in allowed:
+                canonical = upper
+            else:
+                bare = letter_re.match(text)
+                if bare and bare.group(1).upper() in allowed:
+                    canonical = bare.group(1).upper()
+                else:
+                    # "$46,000" in options ["A. $42,000", "B. $46,000"]: match
+                    # the option text back to its letter.
+                    matched = False
+                    for idx, opt in enumerate(q.get("options") or []):
+                        if idx >= len(allowed):
+                            break
+                        opt_text = str(opt).strip()
+                        candidate = opt_text
+                        if len(candidate) >= 2 and candidate[0] in allowed and candidate[1] in ".):":
+                            candidate = candidate[2:].strip()
+                        if candidate and (candidate == text or text in candidate or candidate in text):
+                            canonical = allowed[idx]
+                            matched = True
+                            break
+                    if not matched:
+                        # Common true/false words map straight to A/B.
+                        if q_type == "true_false":
+                            if upper in ("TRUE", "T", "YES"):
+                                canonical = "A"
+                            elif upper in ("FALSE", "F", "NO"):
+                                canonical = "B"
+
+            if canonical:
+                q["correct_answer"] = canonical
+
+
 # Characters that may legally follow a closing string quote in JSON.
 _JSON_STRUCTURAL_CHARS = (",", ":", "}", "]")
 
@@ -805,8 +864,15 @@ TEACHER'S CUSTOM INSTRUCTIONS
                 "     never 'sqrt(9)', '1/2' for a fraction, or 'x2' for x-squared.",
             ]
         lines += [
+            "   - ANSWER-KEY DISCIPLINE (CRITICAL - enforced mechanically, no exceptions):",
+            "     'correct_answer' for multiple_choice MUST be exactly one bare letter:",
+            "     A, B, C, D or E (matching the right option). Never 'B. Amplify',",
+            "     never 'Option B', never the option text - the letter alone.",
+            "     True/false questions: 'correct_answer' MUST be exactly A (True) or B (False).",
             "   - Chemistry: ALWAYS mhchem inside dollars: $\\ce{H2SO4}$, $\\ce{NaOH}$,",
             "     $\\ce{2H2 + O2 -> 2H2O}$. The frontend renders these as true chemistry.",
+            "   - Delivery and payment terms: keep units and currency in plain text",
+            "     (5 kg, ₦250, 3.5 cm) - KaTeX only for true formulas and equations.",
             "   - Explanations of calculation questions: show each working step on its",
             "     own line using display math where the key formula appears.",
             "2. FIGURES ('diagram_svg' field) - first-class exam content, any subject:",
@@ -971,6 +1037,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
 
             _attach_authoritative_passages(data, sections)
             _normalize_exam_bloom_levels(data)
+            _normalize_choice_answers(data, sections)
 
             self._validate_markdown_blocks(data)
 
