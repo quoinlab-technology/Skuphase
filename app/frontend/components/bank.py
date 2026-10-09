@@ -133,29 +133,32 @@ def BankCard(item: dict, is_editor: bool, editable_exams: list[dict] = None) -> 
     )
 
     card_header = Div(
-        Div(Icon("book", cls="bi fs-5 text-muted"), cls="bank-card-icon me-3"),
+        Div(Icon("book", cls="bi fs-5 text-muted"), cls="bank-card-icon me-2 me-sm-3 flex-shrink-0"),
         Div(
             Div(
-                Span(type_label, cls="bank-badge-type me-2"),
-                Span(diff.capitalize(), cls=f"bank-badge-diff-{diff} me-2"),
-                Span(f"{subject} · {grade}" + (f" · {topic}" if topic else ""), cls="text-muted small"),
-                cls="d-flex align-items-center flex-wrap mb-1",
+                Span(type_label, cls="bank-badge-type me-2 flex-shrink-0"),
+                Span(diff.capitalize(), cls=f"bank-badge-diff-{diff} me-2 flex-shrink-0"),
+                Span(f"{subject} · {grade}" + (f" · {topic}" if topic else ""), cls="text-muted small text-truncate", style="max-width: 180px;"),
+                cls="d-flex align-items-center flex-wrap mb-1 min-w-0",
+                style="min-width: 0;",
             ),
-            P(render_rich_text(text), cls="fw-semibold text-dark mb-0 fs-6"),
-            cls="flex-grow-1",
+            P(render_rich_text(text), cls="fw-semibold text-dark mb-0 fs-6 text-break", style="word-break:break-word; overflow-wrap:anywhere; min-width: 0;"),
+            cls="flex-grow-1 min-w-0 me-2",
+            style="min-width: 0;",
         ),
         Div(
-            Span(f"Used {usage_count}x", cls="bank-usage-badge me-2"),
+            Span(f"Used {usage_count}x", cls="bank-usage-badge me-2 d-none d-sm-inline-flex flex-shrink-0"),
             kebab_menu,
             HtmlButton(
                 Icon("chevron-down", cls="bi text-muted"),
                 type="button",
-                cls="btn btn-sm btn-link text-muted p-1 text-decoration-none shadow-none ms-1",
+                cls="btn btn-sm btn-link text-muted p-1 text-decoration-none shadow-none ms-1 flex-shrink-0",
                 **{"data-bs-toggle": "collapse", "data-bs-target": f"#{collapse_id}"},
             ),
-            cls="d-flex align-items-center ms-3 flex-shrink-0",
+            cls="d-flex align-items-center ms-auto flex-shrink-0",
         ),
-        cls="d-flex align-items-start",
+        cls="d-flex align-items-start w-100",
+        style="min-width: 0;",
     )
 
     card_collapsible = Div(
@@ -190,6 +193,7 @@ def BankCard(item: dict, is_editor: bool, editable_exams: list[dict] = None) -> 
         ),
         id=collapse_id,
         cls="collapse",
+        style="min-width: 0;",
     )
 
     card = Div(
@@ -197,6 +201,7 @@ def BankCard(item: dict, is_editor: bool, editable_exams: list[dict] = None) -> 
         card_collapsible,
         cls="bank-card",
         id=f"bank-card-{item_id}",
+        style="min-width: 0; max-width: 100%; box-sizing: border-box;",
     )
 
     modals = []

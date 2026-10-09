@@ -324,8 +324,8 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
     # Question text: Persistent and always readable!
     q_text_display = Div(
         render_rich_text(q.get("question_text", "")),
-        cls="my-2 text-dark fw-medium fs-6 cursor-pointer",
-        style="line-height:1.55; cursor:pointer;",
+        cls="my-2 text-dark fw-medium fs-6 cursor-pointer text-break",
+        style="line-height:1.55; cursor:pointer; word-break:break-word; overflow-wrap:anywhere; min-width:0; max-width:100%;",
         **{
             "data-bs-toggle": "collapse",
             "data-bs-target": f"#{collapse_id}",
@@ -567,18 +567,19 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
     # Question Card Container
     header_toggle = Div(
         Div(
-            Span(str(number), cls="app-q-num-pill me-2"),
-            Span(type_label, cls="app-q-type-badge me-2"),
-            Span(section_label, cls="app-q-section-label"),
-            cls="d-flex align-items-center flex-wrap gap-1",
+            Span(str(number), cls="app-q-num-pill me-2 flex-shrink-0"),
+            Span(type_label, cls="app-q-type-badge me-2 flex-shrink-0"),
+            Span(section_label, cls="app-q-section-label text-truncate", style="max-width: 180px;"),
+            cls="d-flex align-items-center flex-wrap gap-1 min-w-0 flex-grow-1 me-2",
+            style="min-width: 0;",
         ),
         Div(
-            Span(marks_str, cls="app-q-marks-pill me-2"),
-            Icon("chevron-down", cls="bi text-muted collapse-chevron", style="transition:transform 0.2s ease; font-size:0.85rem;"),
-            cls="d-flex align-items-center",
+            Span(marks_str, cls="app-q-marks-pill me-2 flex-shrink-0"),
+            Icon("chevron-down", cls="bi text-muted collapse-chevron flex-shrink-0", style="transition:transform 0.2s ease; font-size:0.85rem;"),
+            cls="d-flex align-items-center flex-shrink-0 ms-auto",
         ),
-        cls="d-flex justify-content-between align-items-center cursor-pointer",
-        style="cursor:pointer; user-select:none;",
+        cls="d-flex justify-content-between align-items-center cursor-pointer w-100",
+        style="cursor:pointer; user-select:none; min-width: 0;",
         **{
             "data-bs-toggle": "collapse",
             "data-bs-target": f"#{collapse_id}",
@@ -591,12 +592,14 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
         header_toggle,
         q_text_display,
         Div(
-            Div(*body_parts, cls="pt-3 border-top mt-2"),
+            Div(*body_parts, cls="pt-3 border-top mt-2", style="min-width:0;"),
             id=collapse_id,
             cls="collapse show",
+            style="min-width:0;",
         ),
         id=card_id,
         cls="app-question-card mb-3",
+        style="min-width:0; max-width:100%; box-sizing:border-box;",
     )
 
     elements = [card]
@@ -648,14 +651,17 @@ def SectionHeader(title: str, count: int = 0, total_marks: int = 0, can_edit: bo
     return Div(
         Div(
             Div(
-                H4(title, cls="fs-6 fw-bold text-dark mb-0"),
+                H4(title, cls="fs-6 fw-bold text-dark mb-0 text-break"),
                 add_btn,
-                cls="d-flex align-items-center",
+                cls="d-flex align-items-center flex-wrap gap-2 min-w-0",
+                style="min-width: 0;",
             ),
-            Span(meta, cls="badge bg-light text-secondary border fw-medium px-2 py-1 rounded-pill", style="font-size:0.75rem;"),
-            cls="d-flex justify-content-between align-items-center",
+            Span(meta, cls="badge bg-light text-secondary border fw-medium px-2 py-1 rounded-pill flex-shrink-0 mt-2 mt-sm-0", style="font-size:0.75rem;"),
+            cls="d-flex flex-wrap justify-content-between align-items-center gap-2",
+            style="min-width: 0;",
         ),
         cls="app-exam-section-header bg-white border rounded-3 p-3 mb-3 shadow-xs mt-4",
+        style="min-width: 0; max-width: 100%;",
     )
 
 

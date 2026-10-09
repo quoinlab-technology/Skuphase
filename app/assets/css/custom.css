@@ -384,6 +384,17 @@ body {
 }
 
 /* Detail tab strip: flat text tabs, sharp edges, active = green underline */
+.app-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.app-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .app-tabs .nav-link {
   color: #64748b !important;
   border: none !important;
@@ -392,6 +403,7 @@ body {
   font-size: 0.92rem;
   padding: 0.6rem 0.5rem;
   margin-right: 1.5rem;
+  white-space: nowrap;
   background: transparent !important;
   box-shadow: none !important;
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -1450,7 +1462,50 @@ body {
   border-radius: 1rem;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+@media (max-width: 767.98px) {
+  .app-question-card {
+    padding: 1rem 0.85rem;
+    border-radius: 0.75rem;
+  }
+  .app-q-section-label {
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+  }
+  .mcq-option-box {
+    border-radius: 0.75rem !important;
+    padding: 0.55rem 0.85rem;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}
+
+.math-content {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.math-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+
+.math-content .katex {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .app-question-card:hover {
@@ -1742,8 +1797,19 @@ body {
   border-radius: 1.25rem;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+@media (max-width: 767.98px) {
+  .bank-card {
+    padding: 1rem 0.85rem;
+    border-radius: 0.75rem;
+  }
 }
 
 .bank-card:hover {

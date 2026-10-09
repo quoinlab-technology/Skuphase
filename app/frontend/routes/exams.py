@@ -2745,7 +2745,8 @@ def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
             ),
             cls="form-check form-switch mb-0",
         ),
-        cls="d-flex justify-content-between align-items-center bg-white border rounded-3 p-3 mb-3 shadow-xs",
+        cls="d-flex flex-wrap justify-content-between align-items-center gap-2 bg-white border rounded-3 p-3 mb-3 shadow-xs",
+        style="min-width: 0; max-width: 100%;",
     )
 
     return Div(
