@@ -85,6 +85,7 @@ add_pwa(
         "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css",
         "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
         "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
+        "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js",
         "https://fonts.googleapis.com/css2?family=Nunito%20Sans:wght@400;500;700&display=swap",
     ],
     route_cache_policies={
@@ -105,6 +106,11 @@ add_pwa(
 frontend_app.hdrs.append(Link(rel="preload", href="/assets/css/custom.css", **{"as": "style"}))
 frontend_app.hdrs.append(Link(rel="stylesheet", href="/assets/css/custom.css"))
 
+# Mermaid for model-generated flow/process diagrams (water cycle, food
+# chains, industrial processes). Loaded from CDN; service worker caches
+# after first load for offline rendering. Faststrap's init script renders
+# [data-fs-mermaid] containers whenever window.mermaid is present.
+frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js", defer=True))
 # KaTeX for LaTeX scientific math, physics & chemistry formulas.
 # Loaded from CDN; service worker caches after first load for offline rendering.
 frontend_app.hdrs.append(Link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"))
@@ -128,13 +134,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     renderMath(document.body);
+    // Faststrap's own init() also renders [data-fs-mermaid] containers
+    // whenever window.mermaid exists. This explicit fallback guarantees the
+    // diagrams render even when mermaid.min.js (deferred, larger bundle)
+    // finishes loading after the Faststrap init pass.
+    function renderMermaid(el) {
+        var target = el || document.body;
+        if (typeof mermaid === 'undefined') {
+            return;
+        }
+        var nodes = target.querySelectorAll
+            ? Array.prototype.filter.call(
+                target.querySelectorAll('[data-fs-mermaid="true"]'),
+                function (node) { return node.dataset.fsMermaidInit !== 'true'; }
+              )
+            : [];
+        if (!nodes.length) {
+            return;
+        }
+        try {
+            mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+        } catch (e) { /* already initialised */ }
+        try {
+            if (typeof mermaid.run === 'function') {
+                mermaid.run({ nodes: nodes });
+                nodes.forEach(function (node) { node.dataset.fsMermaidInit = 'true'; });
+            }
+        } catch (e) { /* malformed diagram: leave source text visible */ }
+    }
+    renderMermaid(document.body);
     // Re-render after HTMX content swap — scoped directly to the swapped subtree
     // to avoid full-page DOM traversals on low-end mobile hardware.
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         renderMath(evt.detail && evt.detail.target ? evt.detail.target : document.body);
+        renderMermaid(evt.detail && evt.detail.target ? evt.detail.target : document.body);
     });
     document.body.addEventListener('htmx:oobAfterSwap', function(evt) {
         renderMath(evt.detail && evt.detail.target ? evt.detail.target : document.body);
+        renderMermaid(evt.detail && evt.detail.target ? evt.detail.target : document.body);
     });
 
     // Remove orphaned Bootstrap modal backdrops.  When a modal lives inside

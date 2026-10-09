@@ -19,6 +19,7 @@ from app.services.exam_quality_validator import (
 )
 from app.services.curriculum_service import CurriculumService
 from app.services.few_shot_selector import FewShotSelector
+from app.services.svg_safety import sanitize_content_blocks
 from app.core.llm import get_llm_service
 from app.config.settings import get_settings
 
@@ -59,6 +60,35 @@ def _normalize_exam_bloom_levels(parsed):
 _JSON_STRUCTURAL_CHARS = (",", ":", "}", "]")
 
 
+# Single backslash + letters inside a JSON string that json would read as a
+# *valid* escape (\f form feed, \t tab, \n newline, \r CR, \b backspace)
+# followed by more letters. Only exact known LaTeX-command words trigger
+# repair so genuine \n / \t escapes in prose survive untouched.
+_LATEX_CMD_WORD = re.compile(r"[A-Za-z]+")
+
+# Whitelist of LaTeX commands whose first letter collides with a JSON
+# escape: f(orm feed), t(ab), n(ewline), r(et), b(ackspace). \"neq\", not
+# \"\\n then eq\". Longer first-word matching prevents short prefixes
+# (e.g. "ne") from swallowing longer commands (e.g. "neq").
+_KNOWN_LATEX_EATEN_COMMANDS = frozenset(
+    {
+        # \f*: form feed collisions
+        "frac",
+        # \t*: tab collisions
+        "times", "theta", "tau", "tilde", "text", "tan", "tanh", "therefore",
+        "triangleright", "triangle", "top",
+        # \n*: newline collisions
+        "neq", "nabla", "nu", "ne", "notin", "nexists",
+        # \r*: carriage-return collisions
+        "rho", "rightarrow", "right", "rm", "rfloor", "rceil", "rangle",
+        "real", "Re",
+        # \b*: backspace collisions
+        "beta", "binom", "bar", "begin", "big", "Big", "bigg", "Bigg", "bot",
+        "bullet", "backslash", "boxed", "brace",
+    }
+)
+
+
 def _repair_json_text(text: str) -> str:
     """Best-effort repair of common LLM JSON defects (string-aware).
 
@@ -66,6 +96,12 @@ def _repair_json_text(text: str) -> str:
     * Invalid backslash escapes inside strings — e.g. LaTeX ``\\ce{...}`` or
       ``\\frac{...}`` emitted with a single backslash, which ``json.loads``
       rejects with "Invalid \\escape".
+    * LaTeX commands json would *silently* eat as valid escapes — e.g.
+      ``\\frac`` (form feed + "rac"), ``\\times`` (tab + "imes"),
+      ``\\neq`` (newline + "eq"). These parse without error but corrupt
+      the formula, so the backslash is doubled to preserve the literal
+      command. Only exact known-command words trigger this, so genuine
+      ``\\n`` / ``\\t`` escapes in prose are left untouched.
     * Unescaped quote characters embedded inside string values, which
       otherwise close the string early and produce "Expecting ',' delimiter".
     * Trailing commas before ``]`` / ``}``.
@@ -84,6 +120,15 @@ def _repair_json_text(text: str) -> str:
             if ch == "\\":
                 nxt = text[i + 1] if i + 1 < n else ""
                 if nxt in ('"', "\\", "/", "b", "f", "n", "r", "t"):
+                    if nxt in "fbnrt":
+                        word_match = _LATEX_CMD_WORD.match(text, i + 1)
+                        if word_match and word_match.group(0) in _KNOWN_LATEX_EATEN_COMMANDS:
+                            # Lone-backslash LaTeX command: double the
+                            # backslash so json keeps the literal text.
+                            out.append("\\\\")
+                            changed = True
+                            i += 1
+                            continue
                     out.append(ch)
                     out.append(nxt)
                     i += 2
@@ -327,7 +372,9 @@ class ExamGenerator:
                     + "\n\nIMPORTANT RECOVERY INSTRUCTION: Your previous response was not valid JSON. "
                     "Return ONLY one complete JSON object matching the requested schema. "
                     "Do not use markdown fences, comments, ellipses, or trailing text. "
-                    "Complete every requested question before closing the JSON object."
+                    "Complete every requested question before closing the JSON object. "
+                    "Keep every $...$ KaTeX formula, diagram_svg figure and "
+                    "content_blocks entry from the RENDERING CONTRACT."
                 )
                 llm_response = await self.llm_service.generate(
                     prompt=retry_prompt,
@@ -485,6 +532,7 @@ class ExamGenerator:
 
         difficulty_block = self._build_difficulty_instructions(request.difficulty_distribution)
         primary_layout_block = self._build_primary_layout_instructions(request)
+        rich_content_block = self._build_rich_content_instructions(request)
         language_block = self._build_language_instructions(request.language)
         blueprint_block = ""
         if request.blueprint:
@@ -545,6 +593,8 @@ Duration: {request.duration_minutes} minutes
 {language_block}
 
 {primary_layout_block}
+
+{rich_content_block}
 
 {blueprint_block}
 
@@ -722,6 +772,82 @@ TEACHER'S CUSTOM INSTRUCTIONS
         ]
         return "\n" + "\n".join(instructions) + "\n"
 
+    def _build_rich_content_instructions(self, request: ExamGenerationRequest) -> str:
+        """Rendering contract so formulas, figures and diagrams display natively.
+
+        The exam paper renders text with KaTeX (math), inline SVG (figures)
+        and Mermaid (flow/process diagrams). Plain-text approximations such
+        as x2, sqrt(9), 3/4 or 'H2SO4' NEVER render as mathematics, so the
+        model must emit native markup in every student-facing field
+        (question, options, correct_answer, explanation, marking_scheme,
+        sub_parts).
+        """
+        subj_text = (request.subject or "").lower()
+        stem_markers = (
+            "math", "further", "physics", "chemistry", "biology", "science",
+            "economics", "technical", "quantitative", "arithmetic",
+        )
+        is_stem = any(m in subj_text for m in stem_markers)
+
+        lines = [
+            "RENDERING CONTRACT (FORMULAS, FIGURES, STRUCTURED BLOCKS):",
+            "1. FORMULAS & EQUATIONS - always KaTeX, never plain-text approximations:",
+            "   - Inline math: $2x + 3 = 11$, $\\frac{3}{4}$, $\\sqrt{49}$, $\\pi r^2$, $6^2$, $x = 9$.",
+            "   - Display (standalone) equations: wrap in $$...$$:",
+            "     $$x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a}$$",
+            "   - Powers/subscripts: $x^2$, $SO_4^{2-}$. Fractions: $\\frac{a}{b}$. Roots: $\\sqrt{x}$.",
+        ]
+        if is_stem:
+            lines += [
+                "   - This subject REQUIRES formulas in most questions: every equation,",
+                "     calculation step and unit-bearing value belongs in $...$ or $$...$$.",
+                "   - NEVER write formulas bare: never typed 'x^2 + 5x + 6 = 0',",
+                "     never 'sqrt(9)', '1/2' for a fraction, or 'x2' for x-squared.",
+            ]
+        lines += [
+            "   - Chemistry: ALWAYS mhchem inside dollars: $\\ce{H2SO4}$, $\\ce{NaOH}$,",
+            "     $\\ce{2H2 + O2 -> 2H2O}$. The frontend renders these as true chemistry.",
+            "   - Explanations of calculation questions: show each working step on its",
+            "     own line using display math where the key formula appears.",
+            "2. FIGURES ('diagram_svg' field) - first-class exam content, any subject:",
+            "   - Maths/further maths: geometry figures, number lines, angle markings,",
+            "     graphs of functions, bar/line/pie CHARTS for data questions, solids.",
+            "   - Physics: circuit diagrams, ray diagrams, levers/pulleys, waveforms.",
+            "   - Chemistry: apparatus set-ups, energy-profile graphs, particle boxes.",
+            "   - Biology: labelled cells, food chains/webs, body systems, flower parts.",
+            "   - Geography/economics: maps, compass roses, construction wheels, charts.",
+            "   - Any question that says 'the diagram/figure/circuit/graph below', or",
+            "     whose picture carries marks, MUST set a non-null 'diagram_svg'.",
+            "   - SVG rules: viewBox='0 0 W H' (W 240-460, H 150-320), stroke='#222'",
+            "     stroke-width='2', fill='#ffffff'; labels font-family='Arial,",
+            "     sans-serif' font-size='13' font-weight='bold' text-anchor='middle';",
+            "     mark the unknown/target '?' slot with fill='#fff9db'; no <script>,",
+            "     no external images, no style attributes, under ~25 elements.",
+            "   - Purely textual questions: set 'diagram_svg': null.",
+            "3. STRUCTURED BLOCKS ('content_blocks' field, optional):",
+            "   - For multi-step workings, data tables or mixed prose+math, you MAY set",
+            "     a 'content_blocks' array that renders directly above the explanation:",
+            '     [{"type": "text", "text": "Step 1: factorise $x^2 - 9$:"},',
+            '      {"type": "math", "latex": "x^2 - 9 = (x-3)(x+3)"},',
+            '      {"type": "table", "rows": [["x", "y"], ["1", "3"], ["2", "6"]]}]',
+            "   - Allowed block types: text, math (latex WITHOUT $ delimiters),",
+            "     table (rows of strings), svg (complete <svg> document).",
+        ]
+        if bool(getattr(request, "include_diagrams", False)):
+            lines += [
+                "   - Mermaid: for process/flow questions (life cycles, water cycle,",
+                "     food chains, industrial process flows), you may also use:",
+                '     {"type": "mermaid", "diagram": "graph TD\\n A-->B\\n B-->C"}',
+                "     Start the diagram with graph / flowchart / sequenceDiagram.",
+                "     Keep to simple flow syntax only.",
+            ]
+        lines += [
+            "4. CHARTS/DATA QUESTIONS: draw the bar/line/pie chart as SVG (labelled",
+            "   axes, few bars, legible values) in 'diagram_svg' or an svg block -",
+            "   never describe a chart in words instead of drawing it.",
+        ]
+        return "\n" + "\n".join(lines) + "\n"
+
     def _build_language_instructions(self, language):
         """Return prompt guidance for non-English language-of-instruction papers."""
         if not language or language.strip().lower() == "english":
@@ -754,7 +880,8 @@ TEACHER'S CUSTOM INSTRUCTIONS
           "correct_answer": "B",
           "explanation": "Parent circle equals sum of the two boxes: 130 = ? + 38, so ? = 130 - 38 = 92.",
           "asset_ref": null,
-          "diagram_svg": "<svg width='220' height='120' viewBox='0 0 220 120' xmlns='http://www.w3.org/2000/svg'><line x1='72' y1='60' x2='135' y2='35' stroke='#222' stroke-width='2.5'/><line x1='72' y1='60' x2='135' y2='85' stroke='#222' stroke-width='2.5'/><circle cx='48' cy='60' r='26' stroke='#222' stroke-width='2.5' fill='#ffffff'/><text x='48' y='65' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>130</text><rect x='135' y='18' width='56' height='34' rx='4' stroke='#222' stroke-width='2.5' fill='#fff9db'/><text x='163' y='40' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>?</text><rect x='135' y='68' width='56' height='34' rx='4' stroke='#222' stroke-width='2.5' fill='#ffffff'/><text x='163' y='90' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>38</text></svg>",
+          "diagram_svg": "<svg width='220' height='120' viewBox='0 0 220 120' xmlns='http://www.w3.org/2000/svg'><circle cx='48' cy='60' r='26' stroke='#222' stroke-width='2.5' fill='#ffffff'/><text x='48' y='65' text-anchor='middle' font-size='14' font-weight='bold' font-family='Arial, sans-serif' fill='#111'>130</text></svg>",
+          "content_blocks": null,
           "marks": 2,
           "difficulty": "medium",
           "bloom_level": "apply",
@@ -1114,6 +1241,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
                         marking_scheme=q_data.get("marking_scheme"),
                         sub_parts=q_data.get("sub_parts"),
                         diagram_svg=q_data.get("diagram_svg"),
+                        content_blocks=sanitize_content_blocks(q_data.get("content_blocks")),
                         passage_id=passage_ids_by_section.get(section.get("section_number")),
                         created_at=utc_now(),
                         updated_at=utc_now(),

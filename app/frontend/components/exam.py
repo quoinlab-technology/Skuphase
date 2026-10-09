@@ -18,13 +18,13 @@ from fasthtml.common import (
     NotStr,
 )
 
-from faststrap import Badge, Button, Card, Row, Col, Icon, Svg
+from faststrap import Badge, Button, Card, Row, Col, Icon, Svg, Mermaid
 
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES
 from app.utils.exam_utils import format_mcq_option
 
 from app.services.column_math import render_column_math_svg
-from app.services.svg_safety import sanitize_svg
+from app.services.svg_safety import sanitize_svg, sanitize_mermaid
 
 
 def render_rich_text(text: str) -> Span:
@@ -53,6 +53,19 @@ def render_structured_blocks(blocks) -> Div | None:
             safe_svg = sanitize_svg(block.get("svg", ""))
             if safe_svg:
                 parts.append(Div(Svg(safe_svg, sanitize=False), cls="structured-svg-preview my-2"))
+        elif kind == "mermaid":
+            # Flow/process diagrams (life cycles, water cycle, food chains).
+            # Faststrap's Mermaid component emits a [data-fs-mermaid] div and
+            # the global runtime (loaded in app.py) renders it client-side.
+            safe_diagram = sanitize_mermaid(block.get("diagram", ""))
+            if safe_diagram:
+                parts.append(
+                    Div(
+                        Mermaid(safe_diagram, security_level="strict"),
+                        cls="structured-mermaid-preview my-2",
+                        style="max-width: 100%; overflow-x: auto;",
+                    )
+                )
         elif kind == "table" and block.get("rows"):
             rows = []
             for row_index, row in enumerate(block["rows"]):

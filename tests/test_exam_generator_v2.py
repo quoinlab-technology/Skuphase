@@ -289,6 +289,239 @@ def test_parse_response_repairs_invalid_escape_before_failing():
     assert parsed["sections"][0]["questions"][0]["marks"] == 2
 
 
+
+def test_repair_restores_latex_commands_eaten_by_valid_json_escapes():
+    """Single-backslash LaTeX whose first letter is a valid JSON escape
+    (e.g. \\frac -> form feed, \\times -> tab) must be restored, not lost.
+
+    This is the silent-corruption variant of the production failure: JSON
+    parses fine but formulas render garbled.
+    """
+    from app.services.exam_generator import _repair_json_text
+
+    import json as _json
+
+    broken = '{"q": "Solve $\\\\frac{1}{2}x + $\\\\times$ $\\\\theta$, $\\\\beta = \\\\rho \\\\rightarrow \\\\neq x"}'
+    repaired = _repair_json_text(broken)
+    data = _json.loads(repaired)
+    assert "\\frac{1}{2}" in data["q"]
+    assert "\\times" in data["q"]
+    assert "\\theta" in data["q"]
+    assert "\\beta" in data["q"]
+    assert "\\rho" in data["q"]
+    assert "\\rightarrow" in data["q"]
+    assert "\\neq" in data["q"]
+
+
+def test_repair_leaves_real_json_escapes_in_prose_untouched():
+    """Genuine \\n / \\t escapes not part of LaTeX commands must survive."""
+    from app.services.exam_generator import _repair_json_text
+
+    import json as _json
+
+    valid = '{"a": "line one\\nline two", "b": "col\\there"}'
+    repaired = _repair_json_text(valid)
+    data = _json.loads(repaired)
+    assert data["a"] == "line one\nline two"
+    assert data["b"] == "col\there"
+
+
+def test_repair_does_not_double_escape_correct_latex():
+    from app.services.exam_generator import _repair_json_text
+
+    import json as _json
+
+    correct = '{"explanation": "$x = \\\\frac{-b}{2a}$ and $\\\\ce{H2SO4}$"}'
+    assert _repair_json_text(correct) == correct
+    data = _json.loads(correct)
+    assert data["explanation"] == "$x = \\frac{-b}{2a}$ and $\\ce{H2SO4}$"
+
+
+def test_build_prompt_contains_rendering_contract_for_maths():
+    """STEM exams must instruct KaTeX figures and structured blocks."""
+    from unittest.mock import patch
+
+    from app.schemas.exam import ExamGenerationRequest, SectionConfig
+    from app.services.exam_generator import ExamGenerator
+
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    request = ExamGenerationRequest(
+        subject="Mathematics",
+        grade_level="SSS 2",
+        sections=[
+            SectionConfig(
+                section_number=1,
+                section_title="SECTION A",
+                question_type="multiple_choice",
+                num_questions=2,
+            )
+        ],
+    )
+    prompt = generator.build_prompt(request, {"combined_context": "ctx"})
+    assert "RENDERING CONTRACT" in prompt
+    assert "content_blocks" in prompt
+    assert "diagram_svg" in prompt
+    assert "mermaid" not in prompt.lower()
+
+
+def test_build_prompt_includes_mermaid_when_diagrams_enabled():
+    from unittest.mock import patch
+
+    from app.schemas.exam import ExamGenerationRequest, SectionConfig
+    from app.services.exam_generator import ExamGenerator
+
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    def _request(include_diagrams: bool):
+        return ExamGenerationRequest(
+            subject="Biology",
+            grade_level="SSS 1",
+            include_diagrams=include_diagrams,
+            sections=[
+                SectionConfig(
+                    section_number=1,
+                    section_title="SECTION A",
+                    question_type="multiple_choice",
+                    num_questions=1,
+                )
+            ],
+        )
+
+    on_prompt = generator.build_prompt(_request(True), {"combined_context": "ctx"})
+    off_prompt = generator.build_prompt(_request(False), {"combined_context": "ctx"})
+    assert "mermaid" in on_prompt.lower()
+    assert "mermaid" not in off_prompt.lower()
+
+
+def test_sanitize_content_blocks_keeps_safe_drops_unsafe():
+    from app.services.svg_safety import sanitize_content_blocks
+
+    blocks = [
+        {"type": "text", "text": "Step 1: factorise $x^2 - 9$:"},
+        {"type": "math", "latex": "x = \\frac{27}{3}"},
+        {"type": "table", "rows": [["x", "y"], ["1", "3"]]},
+        {"type": "svg", "svg": "<svg xmlns='http://www.w3.org/2000/svg'><circle cx='1' cy='1' r='1'/></svg>"},
+        {"type": "mermaid", "diagram": "graph TD\n A-->B"},
+        {"type": "video", "src": "x.mp4"},
+        {"type": "svg", "svg": "<svg><script>alert(1)</script></svg>"},
+        {"type": "mermaid", "diagram": "just some prose"},
+        {"type": "mermaid", "diagram": "graph TD\n A[\"<script>alert(1)</script>\"]-->B"},
+        "not-a-dict",
+    ]
+    cleaned = sanitize_content_blocks(blocks)
+    kinds = [b["type"] for b in cleaned]
+    assert kinds == ["text", "math", "table", "svg", "mermaid"]
+    assert cleaned[3]["svg"].startswith("<svg")
+    assert "<script" not in cleaned[3]["svg"].lower()
+    assert cleaned[4]["diagram"].startswith("graph")
+
+
+def test_sanitize_mermaid_rejects_unknown_keyword_and_none_input():
+    from app.services.svg_safety import sanitize_mermaid
+
+    assert sanitize_mermaid(None) is None
+    assert sanitize_mermaid("") is None
+    assert sanitize_mermaid("flowchart LR\n A-->B") is not None
+    assert sanitize_mermaid("sequenceDiagram\n A->>B: hi") is not None
+    assert sanitize_mermaid("Hello world") is None
+
+
+def test_render_structured_blocks_renders_mermaid():
+    from app.frontend.components.exam import render_structured_blocks
+
+    rendered = render_structured_blocks([{"type": "mermaid", "diagram": "graph TD\n A-->B"}])
+    html = str(rendered)
+    assert "data-fs-mermaid" in html
+    assert "graph TD" in html
+
+
+def test_render_structured_blocks_skips_malicious_mermaid():
+    from app.frontend.components.exam import render_structured_blocks
+
+    assert render_structured_blocks([{"type": "mermaid", "diagram": "graph TD\n <script>x</script>"}]) is None
+
+
+@pytest.mark.asyncio
+async def test_store_exam_persists_sanitized_content_blocks():
+    """AI-generated content_blocks must survive store_exam (cleaned)."""
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.services.exam_generator import ExamGenerator
+
+    def _generator():
+        with patch("app.services.exam_generator.get_llm_service"):
+            return ExamGenerator()
+
+    generator = _generator()
+
+    from app.schemas.exam import ExamGenerationRequest, SectionConfig
+
+    request = ExamGenerationRequest(
+        subject="Mathematics",
+        grade_level="JSS 2",
+        sections=[
+            SectionConfig(
+                section_number=1,
+                section_title="SECTION A",
+                question_type="multiple_choice",
+                num_questions=1,
+            )
+        ],
+    )
+    parsed = {
+        "sections": [
+            {
+                "section_number": 1,
+                "section_title": "SECTION A",
+                "questions": [
+                    {
+                        "type": "multiple_choice",
+                        "question": "Solve $2x = 6$.",
+                        "marks": 2,
+                        "options": ["A. 2", "B. 3", "C. 4", "D. 5"],
+                        "correct_answer": "B",
+                        "diagram_svg": None,
+                        "content_blocks": [
+                            {"type": "math", "latex": "x = \\frac{6}{2}"},
+                            {"type": "video", "src": "drop-me.mp4"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    db = AsyncMock()
+    added = []
+    db.add = MagicMock(side_effect=lambda obj: added.append(obj))
+    existing = SimpleNamespace(
+        id=uuid.uuid4(), total_marks=0, status="draft", workflow_state="draft", updated_at=None,
+        language=None,
+    )
+    db.execute = AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: existing))
+
+    result = await generator.store_exam(
+        parsed_exam=parsed,
+        request=request,
+        school_id=uuid.uuid4(),
+        created_by_user_id=uuid.uuid4(),
+        llm_response={"provider": "test"},
+        db=db,
+        exam_id=existing.id,
+    )
+    assert result is not None
+    questions = [o for o in added if type(o).__name__ == "Question"]
+    assert len(questions) == 1
+    stored = questions[0].content_blocks
+    assert stored is not None
+    assert [b["type"] for b in stored] == ["math"]
+    assert "frac" in stored[0]["latex"]
+
+
 @pytest.mark.asyncio
 async def test_groq_reasoning_effort_low_for_gpt_oss(monkeypatch):
     """gpt-oss reasoning tokens must not eat the JSON output budget.
