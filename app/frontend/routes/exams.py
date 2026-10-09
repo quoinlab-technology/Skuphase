@@ -4835,7 +4835,7 @@ def _render_generating_screen(
         cls="bg-white border rounded-4 shadow-sm p-5 text-center",
         aria_live="polite",
         hx_get=f"{endpoint}?poll_count={next_count}",
-        hx_trigger="every 2s",
+        hx_trigger="every 3s",
         hx_target=poll_target,
         hx_swap="outerHTML",
     )
@@ -6680,6 +6680,26 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         **{"aria-hidden": "true"},
     )
 
+    mobile_notice = Div(
+        Div(
+            Icon("phone", cls="bi fs-5 text-warning me-2 flex-shrink-0"),
+            Div(
+                Strong("Creating an exam on your phone?", cls="d-block text-dark small fw-bold"),
+                Span(
+                    "Manual composition with formulas and diagrams is easiest on a laptop or desktop. "
+                    "On mobile, AI Exam Generation from the scheme of work is much faster and simpler.",
+                    cls="small text-muted",
+                ),
+                Div(
+                    A("Use AI Exam Wizard instead →", href="/app/exams/new", cls="small fw-semibold text-success text-decoration-none mt-1 d-inline-block"),
+                    cls="mt-1",
+                ),
+            ),
+            cls="d-flex align-items-start p-3 bg-light rounded-3 border border-warning-subtle mb-3",
+        ),
+        cls="d-lg-none",
+    )
+
     return Div(
         Div(
             Div(
@@ -6714,6 +6734,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
             Row(
                 Col(
                     Div(id="draft-rescue-banner-slot"),
+                    mobile_notice,
                     meta_card,
                     formula_ribbon,
                     Div(id="manual-question-editor"),

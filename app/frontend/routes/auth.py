@@ -721,17 +721,34 @@ def register_more_routes(app):
             if req.session.pop("_reset_sent", None)
             else None,
             Div(
+                A("← Back to sign in", href="/login", cls="text-decoration-none small text-muted mb-3 d-inline-block"),
+                H1("Reset your password", cls="fw-bold text-dark mb-1", style="font-size: 1.85rem; letter-spacing: -0.02em;"),
+                P("Enter the email associated with your account to receive a reset link.", cls="text-muted small mb-4"),
                 Form(
                     Div(
-                        Label("Email address", cls="form-label"),
-                        Input("email", input_type="email", required=True, cls="form-control"),
+                        Label("Email address", cls="form-label text-muted small fw-medium mb-1", **{"for": "forgot-email"}),
+                        Input(
+                            "email",
+                            id="forgot-email",
+                            input_type="email",
+                            required=True,
+                            placeholder="you@example.com",
+                            cls="form-control rounded-3 py-2 px-3 border-0",
+                            style="background-color: #EDF2EC; font-size: 0.92rem;",
+                        ),
                         cls="mb-3",
                     ),
-                    Button("Send reset link", type="submit", variant="success", cls="btn-brand w-100"),
+                    Button(
+                        "Send reset link",
+                        type="submit",
+                        variant="success",
+                        cls="btn btn-brand w-100 rounded-pill py-3 fw-semibold text-white shadow-sm mt-2",
+                        style="background-color: #00412E !important; border-color: #00412E !important; font-size: 0.95rem;",
+                    ),
                     action="/forgot-password",
                     method="post",
                 ),
-                P(A("Back to sign in", href="/login"), cls="small text-center mt-3 mb-0"),
+                cls="w-100",
             ),
             title="Reset your password",
         )

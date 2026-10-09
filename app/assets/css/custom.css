@@ -2122,3 +2122,40 @@ body {
     display: none;
   }
 }
+
+/* SkuPhase Brand Logo Styles */
+.navbar-brand-logo {
+  height: 38px;
+  width: auto;
+  max-width: 175px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.app-sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+.app-sidebar-brand img,
+.app-sidebar-brand .navbar-brand-logo {
+  height: 34px;
+  width: auto;
+  max-width: 155px;
+  object-fit: contain;
+  transition: all 0.2s ease;
+}
+
+.app-shell.sidebar-collapsed .app-sidebar-brand {
+  justify-content: center;
+  padding: 0.25rem 0;
+}
+
+.app-shell.sidebar-collapsed .app-sidebar-brand img,
+.app-shell.sidebar-collapsed .app-sidebar-brand .navbar-brand-logo {
+  max-width: 40px;
+  height: 28px;
+  object-fit: contain;
+}

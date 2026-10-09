@@ -594,7 +594,7 @@ def _authoring_panel(detail: dict) -> Div:
     ]
     if detail.get("has_override"):
         header_bits.append(
-            Span("School corrected", cls="badge bg-warning-subtle text-warning border border-warning-subtle ms-2")
+            Span("School Customization", cls="badge bg-warning-subtle text-warning border border-warning-subtle ms-2")
         )
     if detail.get("is_archived"):
         header_bits.append(
@@ -673,7 +673,7 @@ def _authoring_panel(detail: dict) -> Div:
     if detail.get("has_override"):
         actions.append(
             Button(Icon("arrow-counterclockwise", cls="bi me-1"),
-                   "Revert to seeded text", type="button",
+                   "Revert to official national curriculum", type="button",
                    hx_post=f"/ui/curriculum/week/{week_id}/revert",
                    hx_target=f"#week-editor-{week_id}", hx_swap="innerHTML",
                    cls="btn btn-sm btn-outline-secondary rounded-pill px-3")

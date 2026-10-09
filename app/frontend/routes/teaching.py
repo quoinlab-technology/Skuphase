@@ -61,6 +61,40 @@ def _status_badge(status: str) -> Span:
 
 def _plan_card(plan: dict, user: dict) -> Card:
     plan_id = plan.get("id", "")
+    ai_note = plan.get("ai_lesson_note")
+    
+    refinement_chips = Div(
+        Span("Quick refinements:", cls="small fw-semibold text-muted d-block mb-1"),
+        Div(
+            Form(
+                Input(type="hidden", name="lesson_plan_id", value=plan_id),
+                Input(type="hidden", name="guidance", value="Include relatable Nigerian examples, local market contexts, and cultural applications familiar to primary pupils."),
+                Button(Icon("geo-alt-fill", cls="bi me-1 text-success"), "+ Nigerian Context", type="submit", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 small me-1 mb-1"),
+                action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
+            ),
+            Form(
+                Input(type="hidden", name="lesson_plan_id", value=plan_id),
+                Input(type="hidden", name="guidance", value="Make the lesson note concise, bulleted, and easy to deliver within a single 40-minute classroom period."),
+                Button(Icon("scissors", cls="bi me-1 text-primary"), "Make Shorter", type="submit", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 small me-1 mb-1"),
+                action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
+            ),
+            Form(
+                Input(type="hidden", name="lesson_plan_id", value=plan_id),
+                Input(type="hidden", name="guidance", value="Simplify vocabulary and explanations so slower learners and early ESL readers can follow easily."),
+                Button(Icon("lightbulb", cls="bi me-1 text-warning"), "Simplify Language", type="submit", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 small me-1 mb-1"),
+                action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
+            ),
+            Form(
+                Input(type="hidden", name="lesson_plan_id", value=plan_id),
+                Input(type="hidden", name="guidance", value="Add a step-by-step practical demonstration using everyday classroom items (chalk, cup, ruler, seeds)."),
+                Button(Icon("tools", cls="bi me-1 text-danger"), "Add Activity", type="submit", cls="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2 small me-1 mb-1"),
+                action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
+            ),
+            cls="d-flex flex-wrap align-items-center mb-2",
+        ),
+        cls="mb-2",
+    ) if ai_note else None
+
     return Card(
         Div(
             Div(
@@ -71,34 +105,39 @@ def _plan_card(plan: dict, user: dict) -> Card:
             ),
             P(" · ".join((plan.get("learning_objectives") or [])[:2]) or "Add learning objectives from the curriculum week.", cls="small text-muted mt-3 mb-3"),
             Div(
-                Strong("AI lesson note", cls="small text-success d-block mb-1"),
+                Strong("Draft lesson note", cls="small text-success d-block mb-1"),
+                refinement_chips,
                 Form(
-                    Textarea(plan.get("ai_lesson_note", ""), name="ai_lesson_note", rows="5", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2;"),
+                    Textarea(ai_note or "", name="ai_lesson_note", rows="6", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2; font-size: 0.9rem; line-height: 1.5;"),
                     Input(type="hidden", name="status", value="submitted"),
-                    Button("Save and submit", type="submit", variant="success", size="sm", cls="rounded-pill mt-2"),
+                    Div(
+                        Button(Icon("check-lg", cls="bi me-1"), "Save & submit for review", type="submit", variant="success", size="sm", cls="rounded-pill"),
+                        cls="d-inline-block mt-2 me-2",
+                    ),
                     action=f"/app/teaching/{plan_id}/save-note",
                     method="post",
+                    cls="d-inline",
                 ),
                 Form(
-                    Button("Approve", type="submit", variant="outline-primary", size="sm", cls="rounded-pill mt-2"),
+                    Button(Icon("patch-check", cls="bi me-1"), "Confirm for school", type="submit", variant="outline-primary", size="sm", cls="rounded-pill mt-2"),
                     action=f"/app/teaching/{plan_id}/approve",
                     method="post",
                     cls="d-inline-block",
                 ) if user.get("role") == "school_admin" and plan.get("status") == "submitted" else None,
                 cls="rounded-3 p-3 mb-3",
                 style="background:#F1F8F2;",
-            ) if plan.get("ai_lesson_note") else None,
+            ) if ai_note else None,
             Div(
                 Form(
                     Input(type="hidden", name="lesson_plan_id", value=plan_id),
-                    Button(Icon("sparkles", cls="bi me-1"), "Draft lesson note", type="submit", variant="outline-success", size="sm", cls="rounded-pill"),
+                    Button(Icon("sparkles", cls="bi me-1"), "Draft with AI" if not ai_note else "Regenerate draft", type="submit", variant="outline-success", size="sm", cls="rounded-pill"),
                     action=f"/app/teaching/{plan_id}/lesson-note",
                     method="post",
                     cls="d-inline",
                 ),
                 Form(
                     Input(type="hidden", name="lesson_plan_id", value=plan_id),
-                    Button(Icon("check2-circle", cls="bi me-1"), "Track coverage", type="submit", variant="outline-secondary", size="sm", cls="rounded-pill"),
+                    Button(Icon("check2-circle", cls="bi me-1"), "Track syllabus coverage", type="submit", variant="outline-secondary", size="sm", cls="rounded-pill"),
                     action=f"/app/teaching/{plan_id}/coverage",
                     method="post",
                     cls="d-inline ms-2",
@@ -125,18 +164,35 @@ def _exercise_card(exercise: dict) -> Card:
 
 def _coverage_card(row: dict, user: dict) -> Card:
     status = row.get("status", "planned")
-    next_status = {"planned": "in_progress", "in_progress": "completed", "completed": "verified"}.get(status)
-    label = {"planned": "Start teaching", "in_progress": "Mark complete", "completed": "Verify coverage"}.get(status)
+    status_config = {
+        "planned": ("Not started", "secondary", "in_progress", "Start teaching", "play-fill"),
+        "in_progress": ("Teaching now", "primary", "completed", "Mark as taught", "check2-circle"),
+        "completed": ("Taught", "success", "verified", "Confirm for school", "patch-check-fill"),
+        "verified": ("Confirmed by Admin", "dark", None, None, None),
+    }
+    badge_label, tone, next_status, btn_label, btn_icon = status_config.get(
+        status, (status.replace("_", " ").title(), "secondary", None, None, None)
+    )
     action = None
     if next_status and (next_status != "verified" or user.get("role") == "school_admin"):
         action = Form(
             Input(type="hidden", name="status", value=next_status),
-            Button(label, type="submit", variant="outline-success", size="sm", cls="rounded-pill"),
+            Button(Icon(btn_icon, cls="bi me-1") if btn_icon else None, btn_label, type="submit", variant=f"outline-{tone}", size="sm", cls="rounded-pill mt-2"),
             action=f"/app/teaching/coverage/{row.get('id')}",
             method="post",
-            cls="mt-2",
         )
-    return Card(Div(Span(status.replace("_", " ").title(), cls="small fw-semibold text-success"), P("Coverage record", cls="small text-muted mb-1"), action, cls="p-3"), cls="border rounded-4 shadow-sm bg-white")
+    elif status == "verified":
+        action = Span(Icon("check2-all", cls="bi me-1 text-success"), "Official school record", cls="small text-muted d-block mt-2")
+
+    return Card(
+        Div(
+            Span(badge_label, cls=f"badge rounded-pill bg-{tone}-subtle text-{tone} border border-{tone}-subtle px-3 py-1 fw-semibold"),
+            P("Curriculum topic record", cls="small text-muted mb-1 mt-2"),
+            action,
+            cls="p-3",
+        ),
+        cls="border rounded-4 shadow-sm bg-white h-100",
+    )
 
 
 def teaching_routes(app):
@@ -185,9 +241,39 @@ def teaching_routes(app):
             Input(type="hidden", name="curriculum_id", value=selected_week.get("curriculum_id", "")),
             Div(Label("Scheme week", cls="small fw-semibold text-muted mb-1"), Select("scheme_id", *week_options, required=True, cls=select_cls, style=select_style), cls="col-12"),
             Div(Label("Plan title", cls="small fw-semibold text-muted mb-1"), Input(name="title", required=True, value=f"{subject} · {term}", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
-            Div(Label("Activities", cls="small fw-semibold text-muted mb-1"), Textarea(name="activities", placeholder="One activity per line", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
-            Div(Label("Assessment notes", cls="small fw-semibold text-muted mb-1"), Textarea(name="assessment_notes", placeholder="How will learners demonstrate understanding?", rows="3", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-md-6"),
-            Div(Label("Instructional materials", cls="small fw-semibold text-muted mb-1"), Textarea(name="resources", placeholder="One resource per line (chart, realia, local example)", rows="2", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(
+                Label("Learning activities (examples below)", cls="small fw-semibold text-muted mb-1"),
+                Textarea(
+                    name="activities",
+                    placeholder="e.g.\n1. Demonstrate evaporation using a bowl of warm water and chalkboard sketch.\n2. Guide pupils in pairs to list 3 domestic uses of clean water.\n3. Class discussion on water conservation in the community.",
+                    rows="4",
+                    cls="form-control border-0 rounded-3",
+                    style="background:#F1F4F1; font-size: 0.88rem;",
+                ),
+                cls="col-md-6",
+            ),
+            Div(
+                Label("Assessment & check for understanding", cls="small fw-semibold text-muted mb-1"),
+                Textarea(
+                    name="assessment_notes",
+                    placeholder="e.g.\n1. Oral check: Ask pupils to define evaporation in their own words.\n2. Pair exercise: State 2 differences between boiling and evaporation.\n3. Workbook task: Questions 1 to 3.",
+                    rows="4",
+                    cls="form-control border-0 rounded-3",
+                    style="background:#F1F4F1; font-size: 0.88rem;",
+                ),
+                cls="col-md-6",
+            ),
+            Div(
+                Label("Instructional materials & local teaching resources", cls="small fw-semibold text-muted mb-1"),
+                Textarea(
+                    name="resources",
+                    placeholder="e.g.\n1. Wall chart of the water cycle\n2. Realia: Transparent cup of water, chalkboard ruler\n3. Primary Science Textbook, page 42",
+                    rows="3",
+                    cls="form-control border-0 rounded-3",
+                    style="background:#F1F4F1; font-size: 0.88rem;",
+                ),
+                cls="col-12",
+            ),
             Div(Button(Icon("plus-lg", cls="bi me-1"), "Create lesson plan", type="submit", variant="success", cls="rounded-pill px-4 btn-brand"), cls="col-12"),
             action="/app/teaching/create",
             method="post",
@@ -197,8 +283,29 @@ def teaching_routes(app):
         exercise_form = Form(
             Input(type="hidden", name="lesson_plan_id", value=active_plan.get("id", "")),
             Div(Label("Exercise title", cls="small fw-semibold text-muted mb-1"), Input(name="title", required=True, value=f"{subject} · Week {active_plan.get('week_number', 1)} practice", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
-            Div(Label("Instructions", cls="small fw-semibold text-muted mb-1"), Textarea(name="instructions", rows="2", placeholder="Answer all questions...", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
-            Div(Label("Questions (one per line)", cls="small fw-semibold text-muted mb-1"), Textarea(name="questions", required=True, rows="4", placeholder="Define photosynthesis.\nState two examples.", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(
+                Label("Instructions for learners", cls="small fw-semibold text-muted mb-1"),
+                Textarea(
+                    name="instructions",
+                    rows="2",
+                    placeholder="e.g. Answer all questions clearly in your exercise books. Marks are indicated against each question.",
+                    cls="form-control border-0 rounded-3",
+                    style="background:#F1F4F1; font-size: 0.88rem;",
+                ),
+                cls="col-12",
+            ),
+            Div(
+                Label("Questions (one question per line)", cls="small fw-semibold text-muted mb-1"),
+                Textarea(
+                    name="questions",
+                    required=True,
+                    rows="5",
+                    placeholder="e.g.\n1. What is the process of water changing to steam called? [2 marks]\n2. Mention two sources of clean water in Nigeria. [4 marks]\n3. State one method of water purification used at home. [2 marks]\n4. Why should drinking water be boiled? [2 marks]",
+                    cls="form-control border-0 rounded-3",
+                    style="background:#F1F4F1; font-size: 0.88rem;",
+                ),
+                cls="col-12",
+            ),
             Div(Button(Icon("file-earmark-plus", cls="bi me-1"), "Create worksheet", type="submit", variant="success", cls="rounded-pill px-4 btn-brand", disabled=not bool(active_plan)), cls="col-12"),
             action="/app/teaching/exercises/create",
             method="post",
@@ -242,9 +349,9 @@ def teaching_routes(app):
             guided_context,
             Card(Div(H2("Choose your teaching scope", cls="fs-5 fw-bold mb-3"), scope_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
             Row(
-                Col(Card(Div(Span("PLANNED WEEKS", cls="small text-muted fw-semibold"), Strong(str(summary.get("total", 0)), cls="d-block fs-2 text-dark"), P("Coverage records", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
-                Col(Card(Div(Span("COMPLETED", cls="small text-muted fw-semibold"), Strong(str(summary.get("completed", 0)), cls="d-block fs-2 text-success"), P("Teacher-marked complete", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
-                Col(Card(Div(Span("VERIFIED", cls="small text-muted fw-semibold"), Strong(str(summary.get("verified", 0)), cls="d-block fs-2 text-primary"), P("Admin-confirmed coverage", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
+                Col(Card(Div(Span("CURRICULUM WEEKS", cls="small text-muted fw-semibold"), Strong(str(summary.get("total", 0)), cls="d-block fs-2 text-dark"), P("Total syllabus weeks", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
+                Col(Card(Div(Span("TAUGHT SO FAR", cls="small text-muted fw-semibold"), Strong(str(summary.get("completed", 0)), cls="d-block fs-2 text-success"), P("Marked as taught", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
+                Col(Card(Div(Span("CONFIRMED BY ADMIN", cls="small text-muted fw-semibold"), Strong(str(summary.get("verified", 0)), cls="d-block fs-2 text-primary"), P("Verified school coverage", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
                 g=3,
                 cls="mb-4",
             ),
@@ -290,9 +397,15 @@ def teaching_routes(app):
         guard = ensure_login(req)
         if guard:
             return guard
-        resp = await call_api(req, "POST", f"/lesson-plans/{plan_id}/lesson-note", json={"lesson_plan_id": plan_id})
+        form = await req.form()
+        guidance = (form.get("guidance") or "").strip()
+        payload = {"lesson_plan_id": plan_id}
+        if guidance:
+            payload["additional_guidance"] = guidance
+        resp = await call_api(req, "POST", f"/lesson-plans/{plan_id}/lesson-note", json=payload)
         ok, data = unwrap(resp)
-        push_flash(req, "AI lesson note drafted from the scheme." if ok else data.get("message", "Lesson note failed."), "success" if ok else "danger")
+        msg = f"AI lesson note updated ({guidance[:30]}...)." if guidance else "AI lesson note drafted from the scheme."
+        push_flash(req, msg if ok else data.get("message", "Lesson note failed."), "success" if ok else "danger")
         return RedirectResponse("/app/teaching", status_code=303)
 
     @app.post("/app/teaching/{plan_id}/save-note")

@@ -49,7 +49,6 @@ def hero_section() -> Div:
     ]
     highlight_card = Card(
         Div(
-            Img(src="/assets/img/hero/skuphase_logo.png", alt="SkuPhase", cls="hero-logo-mark"),
             Span("Pilot workflow", cls="hero-side-badge"),
             cls="hero-side-kicker mb-3",
         ),

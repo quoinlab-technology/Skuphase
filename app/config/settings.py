@@ -102,7 +102,9 @@ class Settings(BaseSettings):
     # LLM providers ("Groq" primary, OpenRouter fallback)
     groq_api_key: str
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_model: str = "qwen/qwen3.8-27b"
+    # openai/gpt-oss-20b: ~6K OTPM on Groq — handles 25-question exams comfortably.
+    # qwen/qwen3.8-27b has only 1K OTPM and would 429 on anything beyond ~8 questions.
+    groq_model: str = "openai/gpt-oss-20b"
     openrouter_api_key: str = ""
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
 

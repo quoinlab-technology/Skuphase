@@ -1,6 +1,6 @@
 """Layout shells for the SkuPhase frontend (FRONTEND_SPEC sec 3.3)."""
 
-from fasthtml.common import A, Button as HtmlButton, Div, Footer, Form, H1, H2, Main, Nav, P, Script, Span, Strong
+from fasthtml.common import A, Img, Button as HtmlButton, Div, Footer, Form, H1, H2, Main, Nav, P, Script, Span, Strong
 from faststrap import Button, Col, Container, Icon, Row
 
 from app.frontend.theme import FONT_FAMILY
@@ -8,16 +8,14 @@ from app.frontend.components.feedback import app_toast_container, to_toast
 from app.config.settings import get_settings
 
 
-def _brand_mark():
-    """Brand mark matching prototype: squircle green icon + SkuPhase."""
-    return Span(
-        Span(
-            Icon("mortarboard-fill", cls="bi text-white"),
-            cls="d-inline-flex align-items-center justify-content-center me-2",
-            style="width:30px; height:30px; background-color: #00412E; border-radius: 7px; font-size: 0.95rem; vertical-align: -3px;",
-        ),
-        Span("SkuPhase", cls="fw-bold text-dark fs-5"),
-        cls="navbar-brand text-decoration-none d-inline-flex align-items-center mb-0",
+def _brand_mark(height: int = 36, white: bool = False):
+    """Official brand mark. SkuPhase logo image already contains the wordmark and tagline."""
+    src = "/assets/img/skuphase_logo_white.png" if white else "/assets/img/skuphase_logo.png"
+    return Img(
+        src=src,
+        alt="SkuPhase",
+        style=f"height: {height}px; width: auto; object-fit: contain; vertical-align: middle;",
+        cls="navbar-brand-logo",
     )
 
 
@@ -178,10 +176,9 @@ def AuthShell(*content, title: str = "Sign in"):
     left_brand_panel = Div(
         Div(
             A(
-                Icon("mortarboard-fill", cls="bi me-2 fs-4 text-white"),
-                Span("SkuPhase", cls="fw-bold fs-4 text-white"),
+                _brand_mark(height=46, white=True),
                 href="/",
-                cls="text-decoration-none d-flex align-items-center mb-5",
+                cls="text-decoration-none d-inline-block mb-5",
             ),
             Div(
                 H1(
@@ -230,8 +227,7 @@ def AuthShell(*content, title: str = "Sign in"):
         Div(
             Div(
                 A(
-                    Icon("mortarboard-fill", cls="bi me-2 fs-4 text-brand"),
-                    Span("SkuPhase", cls="fw-bold fs-4 text-dark"),
+                    _brand_mark(height=40),
                     href="/",
                     cls="text-decoration-none d-flex align-items-center justify-content-center mb-4 d-lg-none",
                 ),
@@ -306,8 +302,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
     sidebar = Div(
         Div(
             A(
-                Icon("mortarboard-fill", cls="bi me-2 fs-5 text-success"),
-                Span("SkuPhase", cls="app-sidebar-label fw-bold fs-5 text-white"),
+                _brand_mark(height=34, white=True),
                 href="/app",
                 cls="app-sidebar-brand text-decoration-none d-flex align-items-center",
             ),

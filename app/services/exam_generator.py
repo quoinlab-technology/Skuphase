@@ -111,14 +111,21 @@ class ExamGenerator:
             await db.commit()
 
             # 3. Single LLM call
-            logger.info("📞 Calling LLM for exam generation...")
+            # Dynamic token budget: each question uses ~150 output tokens in structured JSON
+            # (question text + 4 options + explanation + metadata). Buffer of 350 for
+            # section wrappers and exam header. LLMService._safe_max_tokens() will further
+            # cap this against the model's OTPM limit to avoid Groq 429 errors.
+            total_questions = sum(s.num_questions for s in request.sections)
+            dynamic_max_tokens = min(5100, max(1200, total_questions * 150 + 350))
+            logger.info(
+                "📞 Calling LLM for exam generation (questions=%d, requested_max_tokens=%d)...",
+                total_questions,
+                dynamic_max_tokens,
+            )
             llm_response = await self.llm_service.generate(
                 prompt=prompt,
                 temperature=0.7,
-                # Use 8192 (Groq qwen3.8-27b max output) to avoid truncating
-                # large multi-section exam JSONs. The default 4096 was too low
-                # for exams with 30+ questions across 3 sections.
-                max_tokens=8192,
+                max_tokens=dynamic_max_tokens,
             )
 
             logger.info(
@@ -308,6 +315,7 @@ Pedagogy & Distractor Craft (Strict Standard):
 • NEVER use absurd options or lazy filler distractors.
 • For Chemistry formulas, ALWAYS use mhchem notation inside LaTeX: $\\ce{{...}}$ (e.g. $\\ce{{H2SO4}}$, $\\ce{{CuSO4}}$, $\\ce{{2H2 + O2 -> 2H2O}}$).
 • For Mathematics, write formulas in clean LaTeX: e.g. $x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$.
+• Explanations must be concise and pedagogical (1 to 2 clear sentences maximum per question). Do not output lengthy, verbose essays for explanations.
 
 ═══════════════════════════════════════════════════════════════
 SECTION 3: EXAM STRUCTURE
@@ -349,6 +357,7 @@ Generate the complete exam now. Ensure:
 • Total marks sum to exactly {total_marks}
 • Questions are original, educationally sound, and Nigerian-appropriate
 • Every question tests content from the curriculum
+• Explanations are crisp, clear, and limited to 1-2 sentences per question
 • JSON is valid and parseable
 • Follow section-specific instructions exactly
 
@@ -558,8 +567,13 @@ TEACHER'S CUSTOM INSTRUCTIONS
             ValueError: If parsing fails
         """
         try:
+            # Strip reasoning-model chain-of-thought wrappers (<think>…</think>).
+            # Qwen3 and some gpt-oss models emit these before the JSON payload.
+            json_text = re.sub(
+                r"<think>.*?</think>", "", response_text, flags=re.DOTALL
+            ).strip()
+
             # Extract JSON from response (handle markdown code blocks)
-            json_text = response_text.strip()
             if json_text.startswith("```"):
                 # Remove markdown code blocks
                 lines = json_text.split("\n")
