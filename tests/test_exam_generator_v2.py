@@ -182,6 +182,33 @@ async def test_generate_exam_empty_curriculum_context_is_non_fatal(mock_db_sessi
 
 
 @pytest.mark.asyncio
+async def test_generate_exam_retries_once_after_malformed_json(mock_db_session, mock_llm_service):
+    """A successful provider response with broken JSON gets one bounded retry."""
+    mock_llm_service.generate = AsyncMock(side_effect=[
+        {"content": '{"sections":[{"section_number":1,"questions":[', "tokens_used": 10, "cost": 0.0},
+        {"content": json.dumps(MOCK_LLM_RESPONSE_JSON), "tokens_used": 1000, "cost": 0.0},
+    ])
+    generator = _make_generator(mock_llm_service)
+    request = ExamGenerationRequest(
+        subject="Basic Science",
+        grade_level="Primary 4",
+        sections=MOCK_SECTION_CONFIG,
+        duration_minutes=60,
+    )
+
+    exam = await generator.generate_exam(
+        request=request,
+        school_id=MOCK_SCHOOL_ID,
+        created_by_user_id=MOCK_USER_ID,
+        db=mock_db_session,
+    )
+
+    assert exam.status == "under_review"
+    assert mock_llm_service.generate.await_count == 2
+    assert mock_llm_service.generate.await_args_list[1].kwargs["temperature"] == 0.2
+
+
+@pytest.mark.asyncio
 async def test_parse_response_validation():
     """Test response parsing validation logic."""
     with patch("app.services.exam_generator.get_llm_service"):
@@ -351,4 +378,3 @@ def test_resolve_optimal_provider():
     # High question volume (> 30 questions) -> Gemini
     assert ExamGenerator._resolve_optimal_provider("English Language", "Primary 5", 35) == "gemini"
     assert ExamGenerator._resolve_optimal_provider("Civic Education", "JSS 3", 40) == "gemini"
-

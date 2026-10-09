@@ -229,6 +229,11 @@ class LLMService:
                         messages=[{"role": "user", "content": prompt}],
                         temperature=temperature,
                         max_tokens=safe_max_tokens,
+                        # JSON mode prevents the common missing-comma and
+                        # trailing-prose failures for exam responses. Models
+                        # that reject this option fall through to the normal
+                        # provider error/fallback path.
+                        response_format={"type": "json_object"},
                     )
 
                     # Extract response and strip thinking tags
@@ -313,6 +318,7 @@ class LLMService:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
                 )
 
                 raw_content = response.choices[0].message.content or ""

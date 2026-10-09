@@ -219,10 +219,40 @@ class ExamGenerator:
 
             # 4. Parse response (section-aware)
             stage = "parse_response"
-            parsed_exam = self.parse_response(
-                llm_response["content"],
-                request.sections,
-            )
+            try:
+                parsed_exam = self.parse_response(
+                    llm_response["content"],
+                    request.sections,
+                )
+            except ValueError as parse_error:
+                # A provider can return a successful HTTP response while
+                # still emitting malformed JSON. Retry once with a stricter
+                # instruction rather than storing a partial paper or failing
+                # immediately. The bounded retry is intentionally here, after
+                # transport/provider retries, so it cannot multiply outages.
+                logger.warning(
+                    "generation.parse_retry exam_id=%s provider=%s error=%s",
+                    request_exam_id,
+                    llm_response.get("provider", preferred_provider),
+                    str(parse_error)[:240],
+                )
+                retry_prompt = (
+                    prompt
+                    + "\n\nIMPORTANT RECOVERY INSTRUCTION: Your previous response was not valid JSON. "
+                    "Return ONLY one complete JSON object matching the requested schema. "
+                    "Do not use markdown fences, comments, ellipses, or trailing text. "
+                    "Complete every requested question before closing the JSON object."
+                )
+                llm_response = await self.llm_service.generate(
+                    prompt=retry_prompt,
+                    temperature=0.2,
+                    max_tokens=dynamic_max_tokens,
+                    preferred_provider=preferred_provider,
+                )
+                parsed_exam = self.parse_response(
+                    llm_response["content"],
+                    request.sections,
+                )
             logger.info("generation.response_parsed exam_id=%s sections=%s", request_exam_id, len(parsed_exam.get("sections", [])))
             stage = "quality_validation"
             validation = self.quality_validator.validate_or_raise(
@@ -819,6 +849,24 @@ TEACHER'S CUSTOM INSTRUCTIONS
                 s for s in data["sections"] if s.get("questions")
             ]
             if not data["sections"]:
+                return None
+
+            # A partial salvage is not a valid examination. Returning it would
+            # let downstream validation/store code produce an incomplete paper
+            # with missing sections or questions. Force the caller to retry
+            # the provider response instead.
+            expected_questions = sum(s.num_questions for s in sections)
+            recovered_questions = sum(
+                len(section.get("questions") or []) for section in data["sections"]
+            )
+            if len(data["sections"]) != len(sections) or recovered_questions != expected_questions:
+                logger.warning(
+                    "Discarding incomplete JSON salvage: sections=%s/%s questions=%s/%s",
+                    len(data["sections"]),
+                    len(sections),
+                    recovered_questions,
+                    expected_questions,
+                )
                 return None
 
             _attach_authoritative_passages(data, sections)
