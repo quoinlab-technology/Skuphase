@@ -1,4 +1,4 @@
-﻿"""Deterministic quality checks for LLM-generated exams."""
+"""Deterministic quality checks for LLM-generated exams."""
 
 from __future__ import annotations
 
@@ -173,6 +173,15 @@ class ExamQualityValidator:
                         errors.append(
                             f"Section {req_section.section_number} question {idx} must use A/B correct_answer (A=True, B=False)."
                         )
+                elif q_type == "fill_in_blanks":
+                    # Fill-in-the-blank: correct_answer must be a non-empty string
+                    answer = q.get("correct_answer")
+                    if not answer or not str(answer).strip():
+                        errors.append(
+                            f"Section {req_section.section_number} question {idx} (fill_in_blanks) must have a correct_answer."
+                        )
+                # theory, essay, short_answer: marking_scheme is optional — no hard errors for absence
+
 
                 # Sub-parts: when present, their marks must sum to the question total.
                 sub_parts = q.get("sub_parts")

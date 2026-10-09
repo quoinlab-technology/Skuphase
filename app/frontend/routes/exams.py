@@ -4866,7 +4866,41 @@ def _render_generating_screen(
 # Generated State Screen (media_1788788326252.png)
 # ---------------------------------------------------------------------------
 
+def _render_generation_failed_screen(exam_id: str) -> Div:
+    """Error card shown in the wizard when the background generation job fails."""
+    return Div(
+        Div(
+            Div(
+                Icon("exclamation-triangle-fill", cls="bi", style="font-size:2rem; color:#dc2626;"),
+                style="width:4.75rem; height:4.75rem; background:#FEE2E2; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:1.5rem;",
+            ),
+            H2("Generation Failed", style="font-weight:700; font-size:1.5rem; color:#0f172a; margin-bottom:0.45rem;"),
+            P(
+                "The AI could not complete your exam. This can happen due to a content quality check, "
+                "a provider timeout, or an unusually complex request. Please try again — it usually succeeds on the next attempt.",
+                style="font-size:0.9rem; color:#64748b; margin-bottom:1.75rem; max-width:420px; margin-left:auto; margin-right:auto;",
+            ),
+            A(
+                "Try Again",
+                Icon("arrow-counterclockwise", cls="bi ms-2", style="font-size:0.8rem;"),
+                href="/app/exams/new",
+                style="background:#00412E; color:#fff; text-decoration:none; border-radius:999px; padding:0.65rem 2.25rem; font-size:0.92rem; font-weight:600; display:inline-flex; align-items:center; cursor:pointer; margin-right:0.75rem;",
+            ),
+            A(
+                "View Exam",
+                href=f"/app/exams/{exam_id}",
+                style="color:#64748b; text-decoration:none; font-size:0.88rem; font-weight:500;",
+            ),
+            cls="bg-white border border-danger-subtle rounded-4 shadow-sm p-5 text-center",
+        ),
+        id="wizard-container",
+        cls="mt-2",
+        style="max-width:760px; margin:0 auto;",
+    )
+
+
 def _render_generated_screen(exam_id: str, exam: dict) -> Div:
+
     """Centered confirmation card matching media_1788788326252.png."""
     total_q = exam.get("total_questions") or len(exam.get("questions") or [])
     raw_score = exam.get("quality_score")
@@ -5125,6 +5159,8 @@ def register_action_routes(app):
                 term=generation["term"],
                 poll_count=poll_count,
             )
+        if state == "failed":
+            return _render_generation_failed_screen(exam_id)
         # Reset poll count when done
         return _render_generated_screen(exam_id, exam)
 
@@ -5442,6 +5478,10 @@ def register_action_routes(app):
             # Flash is only rendered by the shell in full-page redirect flows).
             return show_toast(data.get("message", "We couldn't delete this exam — check your connection and try again."), "danger")
         set_flash(req.session, "success", "Exam deleted.")
+        # HTMX follows 303 redirects and swaps the redirect target into the DOM.
+        # Use HX-Redirect instead so HTMX triggers a full browser navigation.
+        if req.headers.get("hx-request") == "true":
+            return Response(status_code=200, headers={"HX-Redirect": "/app/exams"})
         return RedirectResponse("/app/exams", status_code=303)
 
 
