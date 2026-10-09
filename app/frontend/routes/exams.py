@@ -1075,7 +1075,12 @@ def register_page_routes(app):
             else:
                 cls = "badge rounded-pill bg-white text-muted border px-3 py-2 fw-normal text-decoration-none shadow-sm"
                 style = "font-size: 0.88rem;"
-            return A(f"{label}{count_str}", href=href, cls=cls, style=style,
+            return A(
+                f"{label}{count_str}",
+                href=href,
+                cls=f"exam-filter-link {cls}",
+                style=style,
+                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
                      **({"aria-current": "true"} if is_active else {}))
 
         all_exams = (data.get("exams", []) or []) if ok else []
@@ -1113,7 +1118,7 @@ def register_page_routes(app):
                 **{"aria-label": "Search exams"},
             ),
             cls="d-flex align-items-center bg-white border rounded-pill px-3 py-2 shadow-sm flex-grow-1",
-            style="min-width: 240px; max-width: 360px;",
+                style="min-width: 240px; max-width: 360px;",
         )
 
         subject_select = HtmlSelect(
@@ -1121,7 +1126,7 @@ def register_page_routes(app):
             name="subject",
             cls="form-select rounded-pill bg-white border px-3 py-2 shadow-sm",
             style="min-width: 160px; max-width: 200px; font-size: 0.92rem; cursor: pointer;",
-            onchange="this.form.submit()",
+            onchange="this.form.classList.add('is-loading'); this.form.submit()",
         )
 
         grade_select = HtmlSelect(
@@ -1129,7 +1134,7 @@ def register_page_routes(app):
             name="grade",
             cls="form-select rounded-pill bg-white border px-3 py-2 shadow-sm",
             style="min-width: 140px; max-width: 180px; font-size: 0.92rem; cursor: pointer;",
-            onchange="this.form.submit()",
+            onchange="this.form.classList.add('is-loading'); this.form.submit()",
         )
 
         filter_form = Form(
@@ -1139,6 +1144,7 @@ def register_page_routes(app):
             Input("status", type="hidden", value=status) if status else "",
             action="/app/exams",
             method="get",
+            onsubmit="this.classList.add('is-loading');",
             cls="d-flex flex-wrap gap-3 align-items-center mb-4",
             id="exams-filter",
         )
@@ -1551,7 +1557,8 @@ def register_page_routes(app):
         # response or it will be nested below the existing strip and appear
         # duplicated.  Navigation clicks target #exam-tab-section and still
         # receive the complete strip + content partial.
-        if req.headers.get("hx-target") == "#tab-content":
+        hx_target = (req.headers.get("hx-target") or "").lstrip("#")
+        if hx_target == "tab-content":
             return _questions_tab(exam, user, show_answers=answers == "1")
         return Div(
             _tab_strip(exam_id, exam, active_tab="questions"),
@@ -2541,11 +2548,19 @@ def _tab_strip(exam_id: str, exam: dict = None, active_tab: str = "questions") -
         active_cls = "active" if is_active else ""
         return HtmlButton(
             *content,
+            Span(
+                id=f"tab-spinner-{exam_id}-{key}",
+                cls="spinner-border spinner-border-sm ms-2 htmx-indicator",
+                role="status",
+                aria_label=f"Loading {label}",
+            ),
             cls=f"nav-link {active_cls}",
             type="button",
             hx_get=f"/ui/exams/{exam_id}/tab/{path}",
             hx_target="#exam-tab-section",
             hx_swap="innerHTML",
+            hx_indicator=f"#tab-spinner-{exam_id}-{key}",
+            hx_disabled_elt="this",
             **{"data-tab": key},
         )
 
@@ -2751,10 +2766,18 @@ def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
                     hx_get=f"/ui/exams/{exam_id}/tab/questions?answers={'0' if show_answers else '1'}",
                     hx_target="#tab-content",
                     hx_swap="innerHTML",
+                    hx_indicator=f"#answers-spinner-{exam_id}",
+                    hx_disabled_elt="this",
                     checked=show_answers,
                     cls="form-check-input me-2",
                 ),
                 "Show answers & explanations",
+                Span(
+                    id=f"answers-spinner-{exam_id}",
+                    cls="spinner-border spinner-border-sm ms-2 htmx-indicator",
+                    role="status",
+                    aria_label="Loading answers",
+                ),
                 cls="form-check-label small fw-semibold text-dark cursor-pointer d-flex align-items-center mb-0",
             ),
             cls="form-check form-switch mb-0",
