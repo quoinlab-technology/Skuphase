@@ -25,7 +25,7 @@ class SectionConfig(BaseModel):
     
     section_number: int = Field(..., ge=1, description="Section number (1, 2, 3...)")
     section_title: str = Field(..., description="Section title (e.g., 'SECTION A: OBJECTIVES')")
-    question_type: str = Field(..., description="Question type: multiple_choice, short_answer, essay, true_false")
+    question_type: str = Field(..., description="Question type: multiple_choice, short_answer, essay, true_false, theory, fill_in_blanks")
     num_questions: int = Field(..., ge=1, le=100, description="Number of questions in this section")
     marks_per_question: Optional[int] = Field(None, ge=1, description="Marks per question (if uniform)")
     
@@ -69,7 +69,7 @@ class SectionConfig(BaseModel):
     @field_validator("question_type")
     @classmethod
     def validate_question_type(cls, v):
-        allowed = ["multiple_choice", "short_answer", "essay", "true_false"]
+        allowed = ["multiple_choice", "short_answer", "essay", "true_false", "theory", "fill_in_blanks"]
         if v not in allowed:
             raise ValueError(f"question_type must be one of {allowed}")
         return v
@@ -454,7 +454,7 @@ class ManualQuestionInput(BaseModel):
     question_number: int = Field(..., ge=1)
     section_number: int = Field(default=1, ge=1, le=20)
     section_name: Optional[str] = Field(default=None, max_length=100)
-    type: str = Field(..., description="multiple_choice, short_answer, essay, true_false")
+    type: str = Field(..., description="multiple_choice, short_answer, essay, true_false, theory, fill_in_blanks")
     question_text: str = Field(..., min_length=3)
     marks: int = Field(..., ge=1, le=100)
     difficulty: Optional[str] = None

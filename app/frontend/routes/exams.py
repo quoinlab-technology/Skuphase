@@ -94,6 +94,8 @@ QUESTION_TYPES = [
     ("short_answer", "Short answer"),
     ("essay", "Essay"),
     ("true_false", "True / False"),
+    ("theory", "Theory"),
+    ("fill_in_blanks", "Fill in the Blanks"),
 ]
 INSTRUCTION_TYPES = [
     ("answer_all", "Answer all"),

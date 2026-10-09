@@ -465,10 +465,28 @@ SECTION {section.section_number}: {section.section_title}
                 inst += f"{p.body}\n"
                 inst += "\u2022 Base EVERY question in this section on the passage above.\n"
                 inst += "\u2022 Every answer MUST be directly findable in the passage text alone.\n"
-            if section.allow_sub_parts and section.question_type in ("short_answer", "essay"):
+            if section.allow_sub_parts and section.question_type in ("short_answer", "essay", "theory"):
                 inst += "\u2022 Split each question into sub-parts (a), (b)... whose marks "
                 inst += "sum exactly to the question's total marks.\n"
+            # Type-specific output guidance
+            if section.question_type == "theory":
+                inst += (
+                    "\u2022 Theory questions: omit 'options' and 'correct_answer'. "
+                    "Provide a 'marking_scheme' list with key points (strings) the model answer must cover.\n"
+                )
+            elif section.question_type == "fill_in_blanks":
+                inst += (
+                    "\u2022 Fill-in-the-blanks questions: omit 'options'. "
+                    "Write the question with a blank shown as _______. "
+                    "Set 'correct_answer' to the exact word or phrase that fills the blank.\n"
+                )
+            elif section.question_type in ("essay", "short_answer"):
+                inst += (
+                    "\u2022 Open-ended questions: omit 'options'. "
+                    "Provide a 'marking_scheme' list with key marking points.\n"
+                )
             instructions.append(inst)
+
         
         return "\n".join(instructions)
     
