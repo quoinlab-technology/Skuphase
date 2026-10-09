@@ -257,6 +257,17 @@ async def _worker_loop(stop_event: asyncio.Event) -> None:
     concurrency = max(1, int(get_settings().worker_concurrency))
     semaphore = asyncio.Semaphore(concurrency)
 
+    async def _reset_database_pool() -> None:
+        """Drop dead pooler sockets so the next poll creates fresh ones."""
+        try:
+            from app.core.database import engine
+
+            if engine is not None:
+                await engine.dispose()
+                logger.warning("Disposed database pool after a worker connection failure; retrying with fresh sockets")
+        except Exception:
+            logger.exception("Could not dispose the database pool after a worker failure")
+
     async def _guarded(row) -> None:
         async with semaphore:
             await _process_one(
@@ -276,6 +287,7 @@ async def _worker_loop(stop_event: asyncio.Event) -> None:
 
         except Exception:
             logger.exception("Job worker loop iteration failed")
+            await _reset_database_pool()
             await asyncio.sleep(_POLL_INTERVAL_SECONDS * 2)
 
         try:

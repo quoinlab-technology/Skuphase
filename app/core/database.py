@@ -31,13 +31,23 @@ def _get_engine():
         connect_args["statement_cache_size"] = 0
         connect_args["prepared_statement_cache_size"] = 0
 
+    is_pooler = "pooler" in db_url_lower or "pgbouncer" in db_url_lower
+    # Supabase's shared poolers enforce a relatively small connection budget.
+    # Do not let SQLAlchemy's overflow burst consume the whole project pool;
+    # a bounded pool is also kinder to the background worker and web requests.
+    pool_size = min(settings.database_pool_size, 5) if is_pooler else settings.database_pool_size
+    max_overflow = min(settings.database_max_overflow, 5) if is_pooler else settings.database_max_overflow
+
     return create_async_engine(
         settings.database_url,
         echo=False,
         pool_pre_ping=True,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_recycle=1800,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=30,
+        pool_use_lifo=True,
+        # Rotate pooler connections before common idle-timeout windows.
+        pool_recycle=300 if is_pooler else 1800,
         connect_args=connect_args,
     )
 
