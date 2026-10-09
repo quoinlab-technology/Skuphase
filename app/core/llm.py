@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Optional, Dict, Any, List
 import asyncio
+import time
 from datetime import datetime, timedelta
 import json
 
@@ -94,13 +95,17 @@ class LLMService:
         self.groq_base_url = groq_base_url or settings.groq_base_url
         self.groq_model = groq_model or getattr(settings, "groq_model", "openai/gpt-oss-20b")
         self.openrouter_model = openrouter_model or getattr(settings, "openrouter_model", "meta-llama/llama-3.3-70b-instruct")
+        self.provider_timeout_seconds = max(
+            10,
+            int(getattr(settings, "llm_provider_timeout_seconds", settings.llm_timeout_seconds)),
+        )
 
         if self.groq_api_key:
             self.groq_client = AsyncOpenAI(
                 api_key=self.groq_api_key,
                 base_url=self.groq_base_url,
-                timeout=settings.llm_timeout_seconds,
-                max_retries=1,
+                timeout=self.provider_timeout_seconds,
+                max_retries=0,
             )
             logger.info(f"✅ Groq API client initialized: {self.groq_base_url} (model: {self.groq_model})")
         else:
@@ -114,8 +119,8 @@ class LLMService:
             self.openrouter_client = AsyncOpenAI(
                 api_key=self.openrouter_api_key,
                 base_url="https://openrouter.ai/api/v1",
-                timeout=settings.llm_timeout_seconds,
-                max_retries=1,
+                timeout=self.provider_timeout_seconds,
+                max_retries=0,
             )
             logger.info("✅ OpenRouter fallback client initialized")
         else:
@@ -209,6 +214,7 @@ class LLMService:
         if self.groq_client:
             safe_max_tokens = self._safe_max_tokens(model, max_tokens)
             for attempt in range(2):
+                started_at = time.monotonic()
                 try:
                     # Check request-rate limits
                     await self._check_rate_limits(model)
@@ -238,7 +244,12 @@ class LLMService:
                     # Track usage
                     self._track_usage(tokens_used)
 
-                    logger.info("✅ Groq generation successful: %d tokens, $%.4f", tokens_used, cost)
+                    logger.info(
+                        "✅ Groq generation successful: %d tokens, $%.4f duration_ms=%.0f",
+                        tokens_used,
+                        cost,
+                        (time.monotonic() - started_at) * 1000,
+                    )
 
                     return {
                         "content": content,
@@ -259,9 +270,10 @@ class LLMService:
                         continue
 
                     logger.exception(
-                        "llm.provider_failed provider=groq model=%s attempt=%s error_type=%s error=%s",
+                        "llm.provider_failed provider=groq model=%s attempt=%s duration_ms=%.0f error_type=%s error=%s",
                         model,
                         attempt + 1,
+                        (time.monotonic() - started_at) * 1000,
                         type(e).__name__,
                         err_msg[:300],
                     )
@@ -293,6 +305,7 @@ class LLMService:
         # Fallback to OpenRouter
         if self.openrouter_client:
             try:
+                started_at = time.monotonic()
                 logger.info("llm.route provider=openrouter model=%s", self.openrouter_model)
 
                 response = await self.openrouter_client.chat.completions.create(
@@ -309,7 +322,12 @@ class LLMService:
                 tokens_used = response.usage.total_tokens
                 cost = self._calculate_cost("llama-3.3-70b", tokens_used, "openrouter")
 
-                logger.info("✅ OpenRouter generation successful: %d tokens, $%.4f", tokens_used, cost)
+                logger.info(
+                    "✅ OpenRouter generation successful: %d tokens, $%.4f duration_ms=%.0f",
+                    tokens_used,
+                    cost,
+                    (time.monotonic() - started_at) * 1000,
+                )
 
                 return {
                     "content": content,
@@ -321,8 +339,9 @@ class LLMService:
 
             except Exception as e:
                 logger.exception(
-                    "llm.provider_failed provider=openrouter model=%s error_type=%s error=%s",
+                    "llm.provider_failed provider=openrouter model=%s duration_ms=%.0f error_type=%s error=%s",
                     self.openrouter_model,
+                    (time.monotonic() - started_at) * 1000,
                     type(e).__name__,
                     str(e)[:300],
                 )
@@ -347,7 +366,10 @@ class LLMService:
             raise ValueError("GEMINI_API_KEY is not configured")
 
         models_to_try = [model or self.gemini_model]
-        for candidate in ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"]:
+        # Keep fallback bounded: one configured model plus Google's stable
+        # alias is enough. Trying a long list serially can turn one provider
+        # outage into several minutes of perceived waiting.
+        for candidate in ["gemini-flash-latest"]:
             if candidate not in models_to_try:
                 models_to_try.append(candidate)
 
@@ -356,6 +378,7 @@ class LLMService:
         gemini_max_tokens = max(max_tokens, 8192)
 
         for current_model in models_to_try:
+            started_at = time.monotonic()
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={self.gemini_api_key}"
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -367,7 +390,7 @@ class LLMService:
             }
 
             try:
-                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+                async with httpx.AsyncClient(timeout=self.provider_timeout_seconds) as client:
                     response = await client.post(url, json=payload)
                     if response.status_code == 200:
                         data = response.json()
@@ -410,8 +433,12 @@ class LLMService:
                             cost = (tokens_used / 1000) * 0.000075
                             self._track_usage(tokens_used)
                             logger.info(
-                                "✅ Gemini generation successful with %s (finishReason=%s): %d tokens, $%.4f",
-                                current_model, finish_reason, tokens_used, cost,
+                                "✅ Gemini generation successful with %s (finishReason=%s): %d tokens, $%.4f duration_ms=%.0f",
+                                current_model,
+                                finish_reason,
+                                tokens_used,
+                                cost,
+                                (time.monotonic() - started_at) * 1000,
                             )
                             return {
                                 "content": content,
@@ -438,16 +465,18 @@ class LLMService:
                             f"{prompt_feedback.get('blockReason') or response.text[:200]}"
                         )
                     logger.warning(
-                        "llm.provider_attempt_failed provider=gemini model=%s status=%s response=%s",
+                        "llm.provider_attempt_failed provider=gemini model=%s status=%s duration_ms=%.0f response=%s",
                         current_model,
                         response.status_code,
+                        (time.monotonic() - started_at) * 1000,
                         response.text[:200],
                     )
             except Exception as e:
                 last_err = str(e)
                 logger.exception(
-                    "llm.provider_attempt_failed provider=gemini model=%s error_type=%s error=%s",
+                    "llm.provider_attempt_failed provider=gemini model=%s duration_ms=%.0f error_type=%s error=%s",
                     current_model,
+                    (time.monotonic() - started_at) * 1000,
                     type(e).__name__,
                     last_err[:300],
                 )

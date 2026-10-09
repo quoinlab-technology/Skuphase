@@ -117,6 +117,11 @@ class Settings(BaseSettings):
     background_retry_attempts: int = 3
     background_retry_base_delay_seconds: float = 2.0
 
+    # Keep a single provider attempt bounded so a failed provider cannot hold
+    # an exam generation job for several minutes before fallback is tried.
+    # Deployments may raise this for unusually slow private providers.
+    llm_provider_timeout_seconds: int = 45
+
     # In-app worker concurrency (jobs processed in parallel per instance)
     worker_concurrency: int = 3
     # Hard timeout for a single LLM provider call (seconds). Must stay well

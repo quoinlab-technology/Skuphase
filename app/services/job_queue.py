@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Sequence
@@ -181,6 +182,7 @@ async def _process_one(
     request_data = dict(request_data)
     created_by = uuid.UUID(request_data.pop("__created_by_user_id"))
     attempts = (claimed_attempts or 0) + 1
+    started_at = time.monotonic()
     logger.info(
         "generation.job_started job_id=%s exam_id=%s attempt=%s",
         job_id,
@@ -218,6 +220,12 @@ async def _process_one(
                 exam.id,
                 attempts,
             )
+            logger.info(
+                "generation.job_duration job_id=%s exam_id=%s duration_ms=%.0f",
+                job_id,
+                exam.id,
+                (time.monotonic() - started_at) * 1000,
+            )
 
         async with session_maker() as db:
             await db.execute(
@@ -237,6 +245,12 @@ async def _process_one(
             retryable,
             type(exc).__name__,
             str(exc)[:500],
+        )
+        logger.info(
+            "generation.job_duration job_id=%s exam_id=%s duration_ms=%.0f",
+            job_id,
+            exam_id,
+            (time.monotonic() - started_at) * 1000,
         )
         async with session_maker() as db:
             job_row = (await db.execute(
