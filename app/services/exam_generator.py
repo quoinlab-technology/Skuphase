@@ -70,6 +70,35 @@ class ExamGenerator:
         self.few_shot_selector = FewShotSelector()
         self.llm_service = get_llm_service()
 
+    @staticmethod
+    def _resolve_optimal_provider(subject: str, grade_level: str, total_questions: int) -> str:
+        """
+        Class level, subject, and question volume aware provider routing.
+
+        - Senior Secondary STEM (SSS 1-3 Physics, Chemistry, Further Maths, Technical Drawing, Biology):
+          Requires deep equation balancing, stoichiometry, calculus, and scientific accuracy -> Gemini.
+        - High question volume (> 30 questions):
+          Requires high token headroom (up to 8,192 tokens) -> Gemini.
+        - Primary & Junior Secondary (Primary 1-6, JSS 1-3) with <= 30 questions:
+          Requires rapid turnaround and low complexity -> Groq (sub-6s LPU inference).
+        """
+        subj = (subject or "").lower()
+        grade = (grade_level or "").lower()
+
+        is_senior = any(s in grade for s in ["sss", "ss 1", "ss 2", "ss 3", "ss1", "ss2", "ss3", "senior"])
+        is_stem = any(s in subj for s in [
+            "physics", "chemistry", "further math", "technical drawing", "biology",
+            "calculus", "organic", "mechanics"
+        ])
+
+        if is_senior and is_stem:
+            return "gemini"
+
+        if total_questions > 30:
+            return "gemini"
+
+        return "groq"
+
     async def generate_exam(
         self,
         request: ExamGenerationRequest,
@@ -129,15 +158,27 @@ class ExamGenerator:
             # Otherwise cap at 5,100 to stay within Groq's safe headroom.
             max_token_ceiling = 7500 if getattr(self.llm_service, "gemini_api_key", None) else 5100
             dynamic_max_tokens = min(max_token_ceiling, max(1200, total_questions * 150 + 350))
+
+            # Intelligent Class & Subject Router
+            preferred_provider = self._resolve_optimal_provider(
+                subject=request.subject,
+                grade_level=request.grade_level,
+                total_questions=total_questions,
+            )
             logger.info(
-                "📞 Calling LLM for exam generation (questions=%d, requested_max_tokens=%d)...",
+                "🎯 Intelligent LLM Router selected [%s] for %s - %s (%d questions, requested_max_tokens=%d)",
+                preferred_provider.upper(),
+                request.grade_level,
+                request.subject,
                 total_questions,
                 dynamic_max_tokens,
             )
+
             llm_response = await self.llm_service.generate(
                 prompt=prompt,
                 temperature=0.7,
                 max_tokens=dynamic_max_tokens,
+                preferred_provider=preferred_provider,
             )
 
             logger.info(

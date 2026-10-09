@@ -332,3 +332,23 @@ def test_question_bank_schema_accepts_long_essay_answer():
         correct_answer="= 5 × 1000 = ₦5,000 ... " * 5,  # far longer than 1 char
     )
     assert len(item.correct_answer) > 1
+
+
+def test_resolve_optimal_provider():
+    """Verify intelligent class & subject aware LLM routing."""
+    # Senior Secondary STEM -> Gemini
+    assert ExamGenerator._resolve_optimal_provider("Physics", "SSS 1", 20) == "gemini"
+    assert ExamGenerator._resolve_optimal_provider("Chemistry", "SS 2", 25) == "gemini"
+    assert ExamGenerator._resolve_optimal_provider("Further Mathematics", "SSS 3", 15) == "gemini"
+    assert ExamGenerator._resolve_optimal_provider("Biology", "Senior Secondary 2", 20) == "gemini"
+
+    # Primary and Junior Secondary -> Groq (for speed)
+    assert ExamGenerator._resolve_optimal_provider("Mathematics", "Primary 4", 25) == "groq"
+    assert ExamGenerator._resolve_optimal_provider("Basic Science", "JSS 2", 20) == "groq"
+    assert ExamGenerator._resolve_optimal_provider("English Language", "Primary 6", 30) == "groq"
+    assert ExamGenerator._resolve_optimal_provider("Social Studies", "JSS 1", 25) == "groq"
+
+    # High question volume (> 30 questions) -> Gemini
+    assert ExamGenerator._resolve_optimal_provider("English Language", "Primary 5", 35) == "gemini"
+    assert ExamGenerator._resolve_optimal_provider("Civic Education", "JSS 3", 40) == "gemini"
+

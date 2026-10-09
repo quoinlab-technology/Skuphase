@@ -171,31 +171,39 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         use_fallback_on_error: bool = True,
+        preferred_provider: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Generate text using LLM (Groq primary, OpenRouter fallback).
+        Generate text using LLM with intelligent class/subject-aware routing.
 
-        Args:
-            prompt: The prompt to send to the LLM
-            model: Model to use (default: openai/gpt-oss-20b)
-            temperature: Sampling temperature (0-1)
-            max_tokens: Maximum tokens to generate
-            use_fallback_on_error: Use OpenRouter if Groq fails
-
-        Returns:
-            Dict with:
-                - content: Generated text (thinking tags stripped)
-                - model: Model used
-                - tokens_used: Total tokens consumed
-                - cost: Estimated cost in USD
-                - provider: "groq" or "openrouter"
-
-        Raises:
-            ValueError: If generation fails
+        Providers:
+        - Groq: ultra-fast (sub-6s), primary for Primary & JSS (<30 questions).
+        - Gemini: high-token (up to 8,192 tokens) & STEM reasoning (SSS Physics/Chem/Further Maths or >30 questions).
+        - OpenRouter: multi-provider tertiary fallback.
         """
+        # If Gemini is preferred (e.g. SSS STEM or >30 questions)
+        if preferred_provider == "gemini" and self.gemini_api_key:
+            try:
+                logger.info(
+                    "🎯 Routing to preferred provider Gemini (model=%s, max_tokens=%d)",
+                    self.gemini_model,
+                    max_tokens,
+                )
+                return await self._generate_gemini(
+                    prompt=prompt,
+                    model=self.gemini_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                logger.warning(
+                    "⚠️ Preferred Gemini generation failed: %s. Falling back to Groq...",
+                    str(e)[:250],
+                )
+
         model = model or getattr(self, "groq_model", self.DEFAULT_GROQ_MODEL)
 
-        # Try Groq first with 1 quick retry on transient 429
+        # Try Groq (primary for speed)
         if self.groq_client:
             safe_max_tokens = self._safe_max_tokens(model, max_tokens)
             for attempt in range(2):
@@ -254,8 +262,8 @@ class LLMService:
                     logger.warning("⚠️ Falling back from Groq to secondary provider...")
                     break
 
-        # Fallback to Gemini (high token capacity & STEM reasoning)
-        if self.gemini_api_key and use_fallback_on_error:
+        # Fallback to Gemini (if not already tried as preferred)
+        if self.gemini_api_key and use_fallback_on_error and preferred_provider != "gemini":
             try:
                 logger.info("Generating with Gemini fallback (model: %s)", self.gemini_model)
                 return await self._generate_gemini(
@@ -316,48 +324,56 @@ class LLMService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is not configured")
 
-        model = model or self.gemini_model
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": min(max_tokens, 8192),
-                "responseMimeType": "application/json" if "json" in prompt.lower() else "text/plain",
-            },
-        }
+        models_to_try = [model or self.gemini_model]
+        for candidate in ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"]:
+            if candidate not in models_to_try:
+                models_to_try.append(candidate)
 
-        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-            response = await client.post(url, json=payload)
-            if response.status_code != 200:
-                raise ValueError(f"Gemini API error ({response.status_code}): {response.text[:250]}")
-            data = response.json()
+        last_err = None
+        for current_model in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={self.gemini_api_key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": temperature,
+                    "maxOutputTokens": min(max_tokens, 8192),
+                    "responseMimeType": "application/json" if "json" in prompt.lower() else "text/plain",
+                },
+            }
 
-        candidates = data.get("candidates", [])
-        if not candidates or not candidates[0].get("content"):
-            raise ValueError("Gemini returned empty candidate response")
+            try:
+                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+                    response = await client.post(url, json=payload)
+                    if response.status_code == 200:
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and candidates[0].get("content"):
+                            parts = candidates[0]["content"].get("parts", [])
+                            if parts and parts[0].get("text"):
+                                raw_content = parts[0]["text"]
+                                content = self._strip_thinking(raw_content)
+                                usage = data.get("usageMetadata", {})
+                                tokens_used = usage.get("totalTokenCount", 0)
+                                cost = (tokens_used / 1000) * 0.000075
+                                self._track_usage(tokens_used)
+                                logger.info(
+                                    "✅ Gemini generation successful with %s: %d tokens, $%.4f",
+                                    current_model, tokens_used, cost,
+                                )
+                                return {
+                                    "content": content,
+                                    "model": current_model,
+                                    "tokens_used": tokens_used,
+                                    "cost": cost,
+                                    "provider": "gemini",
+                                }
+                    last_err = f"Status {response.status_code}: {response.text[:200]}"
+                    logger.warning("Gemini model %s returned: %s. Trying next...", current_model, last_err)
+            except Exception as e:
+                last_err = str(e)
+                logger.warning("Gemini model %s exception: %s. Trying next...", current_model, last_err)
 
-        parts = candidates[0]["content"].get("parts", [])
-        if not parts or not parts[0].get("text"):
-            raise ValueError("Gemini returned empty text content")
-
-        raw_content = parts[0]["text"]
-        content = self._strip_thinking(raw_content)
-
-        usage = data.get("usageMetadata", {})
-        tokens_used = usage.get("totalTokenCount", 0)
-        cost = (tokens_used / 1000) * 0.000075
-
-        self._track_usage(tokens_used)
-        logger.info("✅ Gemini generation successful: %d tokens, $%.4f", tokens_used, cost)
-
-        return {
-            "content": content,
-            "model": model,
-            "tokens_used": tokens_used,
-            "cost": cost,
-            "provider": "gemini",
-        }
+        raise ValueError(f"All Gemini models failed. Last error: {last_err}")
 
     async def _check_rate_limits(self, model: str) -> None:
         """
