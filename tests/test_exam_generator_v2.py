@@ -230,6 +230,106 @@ async def test_parse_response_validation():
     assert len(parsed["sections"]) == 2
 
 
+def test_repair_json_text_fixes_invalid_backslash_escape():
+    """LaTeX like \\ce{H2SO4} inside a JSON string must not kill parsing.
+
+    Regression for a real production failure: the Chemistry prompt tells the
+    model to emit mhchem notation, the model wrote a single backslash, and
+    json.loads rejected it with \"Invalid \\escape\".
+    """
+    from app.services.exam_generator import _repair_json_text
+
+    # Simulate the model emitting ONE backslash (invalid JSON escape):
+    broken = '{"explanation": "Sulphuric acid is \\ce{H2SO4} diluted in water."}'
+    repaired = _repair_json_text(broken)
+    import json as _json
+
+    data = _json.loads(repaired)
+    assert "\\ce{H2SO4}" in data["explanation"]
+
+
+def test_repair_json_text_fixes_embedded_unescaped_quotes():
+    """An unescaped quote inside a value must be escaped, not end the string."""
+    from app.services.exam_generator import _repair_json_text
+
+    broken = '{"question": "The teacher said "begin now" to the class.", "marks": 2}'
+    repaired = _repair_json_text(broken)
+    import json as _json
+
+    data = _json.loads(repaired)
+    assert data["marks"] == 2
+    assert "begin now" in data["question"]
+
+
+def test_repair_json_text_strips_trailing_commas():
+    from app.services.exam_generator import _repair_json_text
+
+    broken = '{"options": ["A. 1", "B. 2",], "marks": 1,}'
+    repaired = _repair_json_text(broken)
+    import json as _json
+
+    assert _json.loads(repaired) == {"options": ["A. 1", "B. 2"], "marks": 1}
+
+
+def test_repair_json_text_returns_valid_json_unchanged():
+    from app.services.exam_generator import _repair_json_text
+
+    valid = '{"a": "line\\nbreak \\t tab \\" quote", "b": [1, 2]}'
+    assert _repair_json_text(valid) == valid
+
+
+def test_parse_response_repairs_invalid_escape_before_failing():
+    """parse_response must recover a complete JSON with bad escapes."""
+    with patch("app.services.exam_generator.get_llm_service"):
+        generator = ExamGenerator()
+
+    # Model output with a single-backslash LaTeX escape inside a string.
+    response = '{"sections": [{"section_number": 1, "section_title": "SECTION A", "instruction": "Answer ALL", "questions": [{"id": 1, "type": "multiple_choice", "question": "Which compound is \\ce{NaCl}?", "options": ["A. Salt", "B. Sand", "C. Sugar", "D. Stone"], "correct_answer": "A", "marks": 2}]}]}'
+    parsed = generator.parse_response(response, MOCK_SECTION_CONFIG[:1])
+    assert parsed["sections"][0]["questions"][0]["marks"] == 2
+
+
+@pytest.mark.asyncio
+async def test_groq_reasoning_effort_low_for_gpt_oss(monkeypatch):
+    """gpt-oss reasoning tokens must not eat the JSON output budget.
+
+    Regression: production runs returned empty or truncated content because
+    chain-of-thought consumed max_tokens. The Groq call must request
+    reasoning_effort=low for gpt-oss models.
+    """
+    from app.core.llm import LLMService
+
+    captured = {}
+
+    class _FakeMessage:
+        content = '{"ok": true}'
+
+    class _FakeChoice:
+        message = _FakeMessage()
+
+    class _FakeUsage:
+        total_tokens = 10
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+        usage = _FakeUsage()
+
+    class _FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    service = LLMService(groq_api_key="test-key")
+    service.groq_client = type("C", (), {"chat": _FakeChat()})()
+
+    await service.generate(prompt="p", max_tokens=1000, preferred_provider="groq")
+    assert captured.get("reasoning_effort") == "low"
+    assert captured.get("response_format") == {"type": "json_object"}
+
+
 def test_difficulty_distribution_wired_into_prompt():
     """CP5: difficulty mix must reach the LLM prompt."""
     with patch("app.services.exam_generator.get_llm_service"):

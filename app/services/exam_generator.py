@@ -55,6 +55,92 @@ def _normalize_exam_bloom_levels(parsed):
                 q["bloom_level"] = normalized
 
 
+# Characters that may legally follow a closing string quote in JSON.
+_JSON_STRUCTURAL_CHARS = (",", ":", "}", "]")
+
+
+def _repair_json_text(text: str) -> str:
+    """Best-effort repair of common LLM JSON defects (string-aware).
+
+    Single pass over the text that fixes:
+    * Invalid backslash escapes inside strings — e.g. LaTeX ``\\ce{...}`` or
+      ``\\frac{...}`` emitted with a single backslash, which ``json.loads``
+      rejects with "Invalid \\escape".
+    * Unescaped quote characters embedded inside string values, which
+      otherwise close the string early and produce "Expecting ',' delimiter".
+    * Trailing commas before ``]`` / ``}``.
+
+    Returns the repaired text, or the input unchanged when nothing looked
+    broken so callers can detect "no repair possible".
+    """
+    out: List[str] = []
+    i = 0
+    n = len(text)
+    in_str = False
+    changed = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if ch == "\\":
+                nxt = text[i + 1] if i + 1 < n else ""
+                if nxt in ('"', "\\", "/", "b", "f", "n", "r", "t"):
+                    out.append(ch)
+                    out.append(nxt)
+                    i += 2
+                    continue
+                if (
+                    nxt == "u"
+                    and i + 5 < n
+                    and all(c in "0123456789abcdefABCDEF" for c in text[i + 2 : i + 6])
+                ):
+                    out.append(text[i : i + 6])
+                    i += 6
+                    continue
+                # Invalid escape (or dangling backslash): keep it literal by
+                # escaping the backslash, e.g. \ce{X} -> \\ce{X}.
+                out.append("\\\\")
+                changed = True
+                i += 1
+                continue
+            if ch == '"':
+                # Closing quote, or an unescaped quote embedded in the value?
+                # Peek ahead: only a structural character (or EOF) may legally
+                # follow a real closing quote; anything else means the quote
+                # was part of the value and must be escaped.
+                j = i + 1
+                while j < n and text[j] in " \t\r\n":
+                    j += 1
+                if j >= n or text[j] in _JSON_STRUCTURAL_CHARS:
+                    in_str = False
+                    out.append(ch)
+                    i += 1
+                    continue
+                out.append('\\"')
+                changed = True
+                i += 1
+                continue
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j >= n or text[j] in "]}":
+                # Trailing comma with nothing after it: drop it.
+                changed = True
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out) if changed else text
+
+
 
 def utc_now() -> datetime:
     """Timezone-aware UTC timestamp."""
@@ -729,7 +815,17 @@ TEACHER'S CUSTOM INSTRUCTIONS
                     json_text = json_text[first_brace : last_brace + 1].strip()
 
             # Parse JSON with strict=False to allow unescaped newlines/control characters in strings
-            data = json.loads(json_text, strict=False)
+            try:
+                data = json.loads(json_text, strict=False)
+            except json.JSONDecodeError:
+                # Second chance: repair common LLM JSON defects (invalid
+                # backslash escapes such as LaTeX \ce{...}, trailing commas)
+                # before giving up on an otherwise complete response.
+                repaired = _repair_json_text(json_text)
+                if repaired == json_text:
+                    raise
+                logger.warning("Attempting repair of malformed LLM JSON before salvage")
+                data = json.loads(repaired, strict=False)
 
             # Validate structure
             if "sections" not in data:
@@ -840,7 +936,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
             truncated += "]" * max(opens_sq, 0)
             truncated += "}" * max(opens_br, 0)
 
-            data = json.loads(truncated, strict=False)
+            data = json.loads(_repair_json_text(truncated), strict=False)
             if "sections" not in data or not data["sections"]:
                 return None
 

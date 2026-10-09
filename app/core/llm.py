@@ -207,6 +207,15 @@ class LLMService:
                     type(e).__name__,
                     str(e)[:300],
                 )
+        elif preferred_provider == "gemini":
+            # Routing asked for Gemini (SSS STEM / high question volume) but
+            # the key is missing. Without this warning the run silently uses
+            # Groq's smaller token budget and large exams get truncated.
+            logger.warning(
+                "llm.route preferred=gemini but GEMINI_API_KEY is not configured; "
+                "falling back to Groq/OpenRouter with a smaller token budget "
+                "(large exams may truncate or fail to parse)"
+            )
 
         model = model or getattr(self, "groq_model", self.DEFAULT_GROQ_MODEL)
 
@@ -224,16 +233,26 @@ class LLMService:
                         model, safe_max_tokens,
                     )
 
-                    response = await self.groq_client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=temperature,
-                        max_tokens=safe_max_tokens,
+                    request_kwargs: Dict[str, Any] = {
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": temperature,
+                        "max_tokens": safe_max_tokens,
                         # JSON mode prevents the common missing-comma and
                         # trailing-prose failures for exam responses. Models
                         # that reject this option fall through to the normal
                         # provider error/fallback path.
-                        response_format={"type": "json_object"},
+                        "response_format": {"type": "json_object"},
+                    }
+                    # gpt-oss is a reasoning model: chain-of-thought tokens are
+                    # billed against max_tokens, so the default effort can burn
+                    # the whole budget and emit empty (or mid-JSON truncated)
+                    # content. Low effort keeps the JSON payload intact.
+                    if "gpt-oss" in model:
+                        request_kwargs["reasoning_effort"] = "low"
+
+                    response = await self.groq_client.chat.completions.create(
+                        **request_kwargs
                     )
 
                     # Extract response and strip thinking tags
