@@ -424,15 +424,21 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
                 Div(Icon(icon_name, cls=icon_svg_cls), cls=icon_container_cls),
                 Div(
                     A(
-                        Strong(title_text, cls="fw-semibold text-dark d-block text-truncate mb-1"),
+                        Strong(
+                            title_text,
+                            cls="fw-semibold text-dark d-block text-truncate mb-1",
+                            style="max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;",
+                        ),
                         href=detail_link,
-                        cls="text-decoration-none",
+                        cls="text-decoration-none d-block",
+                        style="min-width:0; max-width:100%; overflow:hidden;",
                     ),
                     Span(subtitle_text, cls="text-muted small"),
-                    cls="flex-grow-1 min-w-0 me-2",
+                    cls="flex-grow-1 min-w-0 me-2 overflow-hidden",
+                    style="min-width:0;",
                 ),
                 _row_actions(exam, user),
-                cls="d-flex align-items-start justify-content-between mb-3",
+                cls="d-flex align-items-start justify-content-between mb-3 w-100",
             ),
             Div(
                 StatusBadge(exam),
@@ -443,9 +449,9 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
                 ),
                 cls="d-flex align-items-center justify-content-between pt-2 border-top border-light",
             ),
-            cls="p-3",
+            cls="p-3 w-100 overflow-hidden",
         ),
-        cls="bg-white rounded-4 shadow-sm border mb-3",
+        cls="exam-mobile-card bg-white rounded-4 shadow-sm border mb-3 w-100 overflow-hidden",
         id=f"exam-card-{exam_id}",
     )
 
@@ -1540,6 +1546,13 @@ def register_page_routes(app):
         if not ok:
             return show_toast(exam.get("message", "We couldn't load the questions right now — refresh to try again."), "danger")
         user = current_user(req) or {}
+        # The answer toggle targets the existing #tab-content element and
+        # swaps its innerHTML.  Do not include the parent tab strip in that
+        # response or it will be nested below the existing strip and appear
+        # duplicated.  Navigation clicks target #exam-tab-section and still
+        # receive the complete strip + content partial.
+        if req.headers.get("hx-target") == "#tab-content":
+            return _questions_tab(exam, user, show_answers=answers == "1")
         return Div(
             _tab_strip(exam_id, exam, active_tab="questions"),
             Div(_questions_tab(exam, user, show_answers=answers == "1"), id="tab-content"),

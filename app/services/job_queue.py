@@ -156,6 +156,13 @@ async def _claim_jobs(session_maker) -> Sequence[Any]:
         result = await db.execute(claim)
         rows = result.all()
         await db.commit()
+        if rows:
+            logger.info(
+                "generation.queue_claimed count=%s job_ids=%s exam_ids=%s",
+                len(rows),
+                ",".join(str(row[0]) for row in rows),
+                ",".join(str(row[1]) for row in rows),
+            )
         return rows
 
 
@@ -174,6 +181,12 @@ async def _process_one(
     request_data = dict(request_data)
     created_by = uuid.UUID(request_data.pop("__created_by_user_id"))
     attempts = (claimed_attempts or 0) + 1
+    logger.info(
+        "generation.job_started job_id=%s exam_id=%s attempt=%s",
+        job_id,
+        exam_id,
+        attempts,
+    )
 
     async with session_maker() as db:
         job_row = (await db.execute(
@@ -199,7 +212,12 @@ async def _process_one(
                 db=db,
                 exam_id=exam_id,
             )
-            logger.info("Generation job succeeded for exam %s", exam.id)
+            logger.info(
+                "generation.job_succeeded job_id=%s exam_id=%s attempt=%s",
+                job_id,
+                exam.id,
+                attempts,
+            )
 
         async with session_maker() as db:
             await db.execute(
@@ -210,13 +228,16 @@ async def _process_one(
             await db.commit()
 
     except Exception as exc:
-        logger.error(
-            "Generation job failed for exam %s (attempt %s): %s",
+        retryable = _is_transient(exc) and attempts < max(1, max_attempts)
+        logger.exception(
+            "generation.job_failed job_id=%s exam_id=%s attempt=%s retryable=%s error_type=%s error=%s",
+            job_id,
             exam_id,
             attempts,
-            exc,
+            retryable,
+            type(exc).__name__,
+            str(exc)[:500],
         )
-        retryable = _is_transient(exc) and attempts < max(1, max_attempts)
         async with session_maker() as db:
             job_row = (await db.execute(
                 select(GenerationJob).where(GenerationJob.id == job_id)

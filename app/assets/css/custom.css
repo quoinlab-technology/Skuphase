@@ -1432,6 +1432,26 @@ body {
    On < 768px the semantic Faststrap table becomes a stack of
    cards. Each td shows its data-label via ::before.          */
 @media (max-width: 767.98px) {
+  /* Exam list cards must keep their action menu visible on narrow phones.
+     Long generated titles are ellipsized inside the flexible title column,
+     while the kebab action remains a non-shrinking control. */
+  .exam-mobile-card,
+  .exam-mobile-card > div,
+  .exam-mobile-card .d-flex {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .exam-mobile-card {
+    overflow: hidden;
+  }
+
+  .exam-mobile-card .dropdown {
+    flex: 0 0 auto;
+    margin-left: 0.25rem;
+  }
+
   .app-table-container {
     overflow-x: auto;
   }

@@ -122,10 +122,22 @@ class ExamGenerator:
         Raises:
             ValueError: If generation fails
         """
+        stage = "initialise"
+        request_exam_id = str(exam_id) if exam_id else "unknown"
+        total_questions = sum(s.num_questions for s in request.sections)
         try:
-            logger.info("🚀 Starting exam generation for %s - %s", request.subject, request.grade_level)
+            logger.info(
+                "generation.start exam_id=%s subject=%s grade=%s term=%s questions=%s sections=%s",
+                request_exam_id,
+                request.subject,
+                request.grade_level,
+                request.term,
+                total_questions,
+                len(request.sections),
+            )
 
             # 1. Retrieve curriculum context (scheme of work + few-shot examples)
+            stage = "retrieve_context"
             curriculum_context = await self.retrieve_context(
                 subject=request.subject,
                 grade_level=request.grade_level,
@@ -133,9 +145,17 @@ class ExamGenerator:
                 selected_weeks=request.selected_weeks,
                 db=db,
             )
+            logger.info(
+                "generation.context_ready exam_id=%s scheme=%s few_shot=%s",
+                request_exam_id,
+                curriculum_context.get("has_scheme_data"),
+                curriculum_context.get("few_shot_count"),
+            )
 
             # 2. Build dynamic prompt
+            stage = "build_prompt"
             prompt = self.build_prompt(request, curriculum_context)
+            logger.info("generation.prompt_ready exam_id=%s prompt_chars=%s", request_exam_id, len(prompt))
 
             # Release the read transaction so no DB connection/lock is held
             # across the long LLM await (session discipline).
@@ -143,7 +163,6 @@ class ExamGenerator:
 
             # 3. Single LLM call
             # Validate total question count against configured admin limit
-            total_questions = sum(s.num_questions for s in request.sections)
             max_allowed = getattr(settings, "max_questions_per_exam", 50)
             if total_questions > max_allowed:
                 raise ValueError(
@@ -151,29 +170,35 @@ class ExamGenerator:
                     "Please reduce questions or generate in separate sections."
                 )
 
-            # Dynamic token budget: each question uses ~150 output tokens in structured JSON
-            # (question text + 4 options + explanation + metadata). Buffer of 350 for
-            # section wrappers and exam header.
-            # If Gemini is configured, allow up to 7,500 tokens for large exams (>30 questions).
-            # Otherwise cap at 5,100 to stay within Groq's safe headroom.
-            max_token_ceiling = 7500 if getattr(self.llm_service, "gemini_api_key", None) else 5100
-            dynamic_max_tokens = min(max_token_ceiling, max(1200, total_questions * 150 + 350))
-
             # Intelligent Class & Subject Router
+            stage = "llm_provider_selection"
             preferred_provider = self._resolve_optimal_provider(
                 subject=request.subject,
                 grade_level=request.grade_level,
                 total_questions=total_questions,
             )
+
+            # Dynamic token budget:
+            # - Gemini has no strict OTPM ceiling and uses output tokens for internal reasoning + comprehensive JSON.
+            #   Give Gemini the full 8,192 tokens so it never truncates mid-exam.
+            # - Groq has strict 6K OTPM limits; cap at 5,100 to stay safely below rate limits.
+            if preferred_provider == "gemini":
+                dynamic_max_tokens = 8192
+            else:
+                max_token_ceiling = 7500 if getattr(self.llm_service, "gemini_api_key", None) else 5100
+                dynamic_max_tokens = min(max_token_ceiling, max(1200, total_questions * 180 + 400))
+
             logger.info(
-                "🎯 Intelligent LLM Router selected [%s] for %s - %s (%d questions, requested_max_tokens=%d)",
+                "generation.llm_selected exam_id=%s provider=%s subject=%s grade=%s questions=%s max_tokens=%s",
+                request_exam_id,
                 preferred_provider.upper(),
-                request.grade_level,
                 request.subject,
+                request.grade_level,
                 total_questions,
                 dynamic_max_tokens,
             )
 
+            stage = f"llm_call:{preferred_provider}"
             llm_response = await self.llm_service.generate(
                 prompt=prompt,
                 temperature=0.7,
@@ -182,16 +207,22 @@ class ExamGenerator:
             )
 
             logger.info(
-                "✅ LLM call successful: %s tokens, $%.6f",
+                "generation.llm_succeeded exam_id=%s provider=%s model=%s tokens=%s cost=%s",
+                request_exam_id,
+                llm_response.get("provider", preferred_provider),
+                llm_response.get("model"),
                 llm_response.get("tokens_used"),
                 llm_response.get("cost", 0),
             )
 
             # 4. Parse response (section-aware)
+            stage = "parse_response"
             parsed_exam = self.parse_response(
                 llm_response["content"],
                 request.sections,
             )
+            logger.info("generation.response_parsed exam_id=%s sections=%s", request_exam_id, len(parsed_exam.get("sections", [])))
+            stage = "quality_validation"
             validation = self.quality_validator.validate_or_raise(
                 parsed_exam=parsed_exam,
                 request=request,
@@ -201,6 +232,7 @@ class ExamGenerator:
             logger.info("Generation quality metrics: %s", validation.metrics)
 
             # 5. Store exam
+            stage = "store_exam"
             exam = await self.store_exam(
                 parsed_exam=parsed_exam,
                 request=request,
@@ -211,12 +243,20 @@ class ExamGenerator:
                 exam_id=exam_id,
             )
 
-            logger.info("✅ Exam generated successfully: %s", exam.id)
+            logger.info("generation.succeeded exam_id=%s", exam.id)
             return exam
 
         except Exception as e:
-            logger.error("❌ Exam generation failed: %s", str(e))
-            raise ValueError(f"Exam generation failed: {str(e)}")
+            logger.exception(
+                "generation.failed exam_id=%s stage=%s subject=%s grade=%s questions=%s error_type=%s",
+                request_exam_id,
+                stage,
+                request.subject,
+                request.grade_level,
+                total_questions,
+                type(e).__name__,
+            )
+            raise ValueError(f"Exam generation failed at {stage}: {str(e)}") from e
 
     async def retrieve_context(
         self,
@@ -644,14 +684,20 @@ TEACHER'S CUSTOM INSTRUCTIONS
                 r"<think>.*?</think>", "", response_text, flags=re.DOTALL
             ).strip()
 
-            # Extract JSON from response (handle markdown code blocks)
-            if json_text.startswith("```"):
-                # Remove markdown code blocks
-                lines = json_text.split("\n")
-                json_text = "\n".join(lines[1:-1]) if len(lines) > 2 else json_text
+            # Robust JSON extraction:
+            # 1. Search for markdown code block (```json ... ``` or ``` ... ```)
+            fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", json_text)
+            if fence_match:
+                json_text = fence_match.group(1).strip()
+            else:
+                # 2. Extract from first '{' to last '}' to ignore any conversational intro/outro text
+                first_brace = json_text.find("{")
+                last_brace = json_text.rfind("}")
+                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                    json_text = json_text[first_brace : last_brace + 1].strip()
 
-            # Parse JSON
-            data = json.loads(json_text)
+            # Parse JSON with strict=False to allow unescaped newlines/control characters in strings
+            data = json.loads(json_text, strict=False)
 
             # Validate structure
             if "sections" not in data:
@@ -714,13 +760,14 @@ TEACHER'S CUSTOM INSTRUCTIONS
         """
         try:
             text = raw.strip()
-            # Strip ```json ... ``` fences
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:])
-            if text.endswith("```"):
-                text = text[:text.rfind("```")]
-            text = text.strip()
+            # Strip markdown fences if present
+            fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)(?:```|$)", text)
+            if fence_match:
+                text = fence_match.group(1).strip()
+            else:
+                first_brace = text.find("{")
+                if first_brace != -1:
+                    text = text[first_brace:].strip()
 
             # Find the position of the last closing brace of a complete question
             # by scanning for `}` preceded by a complete "topic" or "marks" field
@@ -761,7 +808,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
             truncated += "]" * max(opens_sq, 0)
             truncated += "}" * max(opens_br, 0)
 
-            data = json.loads(truncated)
+            data = json.loads(truncated, strict=False)
             if "sections" not in data or not data["sections"]:
                 return None
 

@@ -185,7 +185,7 @@ class LLMService:
         if preferred_provider == "gemini" and self.gemini_api_key:
             try:
                 logger.info(
-                    "🎯 Routing to preferred provider Gemini (model=%s, max_tokens=%d)",
+                    "llm.route provider=gemini model=%s max_tokens=%s",
                     self.gemini_model,
                     max_tokens,
                 )
@@ -196,9 +196,11 @@ class LLMService:
                     max_tokens=max_tokens,
                 )
             except Exception as e:
-                logger.warning(
-                    "⚠️ Preferred Gemini generation failed: %s. Falling back to Groq...",
-                    str(e)[:250],
+                logger.exception(
+                    "llm.provider_failed provider=gemini model=%s preferred=true error_type=%s error=%s; falling back",
+                    self.gemini_model,
+                    type(e).__name__,
+                    str(e)[:300],
                 )
 
         model = model or getattr(self, "groq_model", self.DEFAULT_GROQ_MODEL)
@@ -254,7 +256,13 @@ class LLMService:
                         await asyncio.sleep(3.0)
                         continue
 
-                    logger.error("❌ Groq generation failed: %s", err_msg[:300])
+                    logger.exception(
+                        "llm.provider_failed provider=groq model=%s attempt=%s error_type=%s error=%s",
+                        model,
+                        attempt + 1,
+                        type(e).__name__,
+                        err_msg[:300],
+                    )
 
                     if not use_fallback_on_error or not (self.gemini_api_key or self.openrouter_client):
                         raise ValueError(f"Groq generation failed: {err_msg}")
@@ -265,7 +273,7 @@ class LLMService:
         # Fallback to Gemini (if not already tried as preferred)
         if self.gemini_api_key and use_fallback_on_error and preferred_provider != "gemini":
             try:
-                logger.info("Generating with Gemini fallback (model: %s)", self.gemini_model)
+                logger.info("llm.route provider=gemini model=%s preferred=false", self.gemini_model)
                 return await self._generate_gemini(
                     prompt=prompt,
                     model=self.gemini_model,
@@ -273,12 +281,17 @@ class LLMService:
                     max_tokens=max_tokens,
                 )
             except Exception as e:
-                logger.warning("⚠️ Gemini generation failed: %s. Falling back to OpenRouter...", str(e)[:250])
+                logger.exception(
+                    "llm.provider_failed provider=gemini model=%s preferred=false error_type=%s error=%s; falling back",
+                    self.gemini_model,
+                    type(e).__name__,
+                    str(e)[:300],
+                )
 
         # Fallback to OpenRouter
         if self.openrouter_client:
             try:
-                logger.info("Generating with OpenRouter fallback (model: %s)", self.openrouter_model)
+                logger.info("llm.route provider=openrouter model=%s", self.openrouter_model)
 
                 response = await self.openrouter_client.chat.completions.create(
                     model=self.openrouter_model,
@@ -303,7 +316,12 @@ class LLMService:
                 }
 
             except Exception as e:
-                logger.error("❌ OpenRouter generation failed: %s", str(e)[:300])
+                logger.exception(
+                    "llm.provider_failed provider=openrouter model=%s error_type=%s error=%s",
+                    self.openrouter_model,
+                    type(e).__name__,
+                    str(e)[:300],
+                )
                 raise ValueError(f"All LLM providers failed: {str(e)}")
 
         raise ValueError("No LLM provider available")
@@ -330,13 +348,16 @@ class LLMService:
                 models_to_try.append(candidate)
 
         last_err = None
+        # Ensure Gemini always has the full 8,192 tokens so thought tokens and long exams never get truncated
+        gemini_max_tokens = max(max_tokens, 8192)
+
         for current_model in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={self.gemini_api_key}"
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
                     "temperature": temperature,
-                    "maxOutputTokens": min(max_tokens, 8192),
+                    "maxOutputTokens": gemini_max_tokens,
                     "responseMimeType": "application/json" if "json" in prompt.lower() else "text/plain",
                 },
             }
@@ -348,31 +369,59 @@ class LLMService:
                         data = response.json()
                         candidates = data.get("candidates", [])
                         if candidates and candidates[0].get("content"):
-                            parts = candidates[0]["content"].get("parts", [])
-                            if parts and parts[0].get("text"):
-                                raw_content = parts[0]["text"]
-                                content = self._strip_thinking(raw_content)
-                                usage = data.get("usageMetadata", {})
-                                tokens_used = usage.get("totalTokenCount", 0)
-                                cost = (tokens_used / 1000) * 0.000075
-                                self._track_usage(tokens_used)
-                                logger.info(
-                                    "✅ Gemini generation successful with %s: %d tokens, $%.4f",
-                                    current_model, tokens_used, cost,
-                                )
-                                return {
-                                    "content": content,
-                                    "model": current_model,
-                                    "tokens_used": tokens_used,
-                                    "cost": cost,
-                                    "provider": "gemini",
-                                }
+                            cand = candidates[0]
+                            parts = cand["content"].get("parts", [])
+                            finish_reason = cand.get("finishReason", "")
+                            if finish_reason == "MAX_TOKENS":
+                                logger.warning("⚠️ Gemini model %s reached MAX_TOKENS limit", current_model)
+
+                            # Combine all text parts (skipping pure thought blocks)
+                            content_parts = [
+                                p.get("text", "")
+                                for p in parts
+                                if p.get("text") and not p.get("thought", False)
+                            ]
+                            if not content_parts:
+                                content_parts = [p.get("text", "") for p in parts if p.get("text")]
+                            raw_content = "".join(content_parts)
+                            content = self._strip_thinking(raw_content)
+
+                            usage = data.get("usageMetadata", {})
+                            tokens_used = usage.get("totalTokenCount", 0)
+                            cost = (tokens_used / 1000) * 0.000075
+                            self._track_usage(tokens_used)
+                            logger.info(
+                                "✅ Gemini generation successful with %s (finishReason=%s): %d tokens, $%.4f",
+                                current_model, finish_reason, tokens_used, cost,
+                            )
+                            return {
+                                "content": content,
+                                "model": current_model,
+                                "tokens_used": tokens_used,
+                                "cost": cost,
+                                "provider": "gemini",
+                            }
                     last_err = f"Status {response.status_code}: {response.text[:200]}"
-                    logger.warning("Gemini model %s returned: %s. Trying next...", current_model, last_err)
+                    logger.warning(
+                        "llm.provider_attempt_failed provider=gemini model=%s status=%s response=%s",
+                        current_model,
+                        response.status_code,
+                        response.text[:200],
+                    )
             except Exception as e:
                 last_err = str(e)
-                logger.warning("Gemini model %s exception: %s. Trying next...", current_model, last_err)
+                logger.exception(
+                    "llm.provider_attempt_failed provider=gemini model=%s error_type=%s error=%s",
+                    current_model,
+                    type(e).__name__,
+                    last_err[:300],
+                )
 
+        logger.error(
+            "llm.provider_exhausted provider=gemini models=%s last_error=%s",
+            ",".join(models_to_try),
+            str(last_err)[:300],
+        )
         raise ValueError(f"All Gemini models failed. Last error: {last_err}")
 
     async def _check_rate_limits(self, model: str) -> None:
