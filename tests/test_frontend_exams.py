@@ -94,14 +94,16 @@ def logged_in(client, monkeypatch):
         "app.frontend.routes.auth.call_api", _stub(FakeResp(200, _tokens()))
     )
     client.post("/login", data={"email": "a@b.com", "password": "password123"})
-    calls = {"n": 0, "last": None}
+    calls = {"n": 0, "last": None, "history": []}
 
     def _make(responses):
         calls["n"] = 0
+        calls["history"] = []
 
         async def fake(req, method, path, json=None, params=None):
             calls["n"] += 1
             calls["last"] = (method, path, json)
+            calls["history"].append((method, path, json))
             resp = responses if isinstance(responses, FakeResp) else (
                 responses[min(calls["n"] - 1, len(responses) - 1)])
             return resp() if callable(resp) else resp
@@ -248,6 +250,34 @@ def test_modern_wizard_preserves_scope_title_and_target_marks(client, logged_in)
     assert "Primary 6 Mathematics Examination" in r.text
     assert "Mathematics · Primary 6" in r.text
     assert "60 marks" in r.text
+
+
+def test_generation_recovers_sections_when_session_state_is_missing(client, logged_in):
+    """The final confirm form must survive a dropped/oversized session cookie."""
+    calls = logged_in(_gen_ok())
+    sections = [{
+        "section_number": 1,
+        "section_title": "Section A: Objectives",
+        "question_type": "multiple_choice",
+        "num_questions": 20,
+        "marks": 40,
+        "marks_per_question": 2,
+        "instruction_type": "answer_all",
+        "sub_part_style": "none",
+    }]
+    r = client.post("/ui/exams/generate", data={
+        "subject": "Mathematics",
+        "grade_level": "Primary 6",
+        "term": "First Term",
+        "selected_weeks": ["1", "2"],
+        "sections_json": json.dumps(sections),
+        "duration_minutes": "60",
+        "language": "English",
+    })
+    assert r.status_code == 200
+    generation_calls = [call for call in calls["history"] if call[0:2] == ("POST", "/exams/generate")]
+    assert len(generation_calls) == 1
+    assert generation_calls[0][2]["sections"] == sections
 
 
 def test_wizard_step1_navigation(client, logged_in):

@@ -9,6 +9,7 @@ action handlers (refine, submit-final, approve, export, download, delete).
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from urllib.parse import quote, urlencode
 
@@ -88,6 +89,8 @@ from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_t
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 from app.services.svg_safety import sanitize_svg
+
+logger = logging.getLogger("skuphase.frontend.exams")
 
 QUESTION_TYPES = [
     ("multiple_choice", "Multiple choice"),
@@ -585,6 +588,48 @@ def _build_sections_from_form(form) -> list:
             }
         )
         new_sec_num += 1
+    return sections
+
+
+def _sections_from_json(raw_value) -> list:
+    """Recover section configuration carried by the confirm form.
+
+    The wizard normally reads sections from the signed session.  The confirm
+    form also carries a compact snapshot so a browser/proxy that drops an
+    oversized session cookie cannot turn a valid paper into an empty request.
+    Client supplied values are normalized exactly like regular form fields.
+    """
+    if not raw_value:
+        return []
+    try:
+        payload = json.loads(str(raw_value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    sections = []
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("section_title") or item.get("title") or "").strip()
+        if not title:
+            continue
+        num_questions = max(1, _safe_int(item.get("num_questions"), 1))
+        marks_per_question = max(1, _safe_int(item.get("marks_per_question"), 1))
+        total_marks = _safe_int(item.get("marks"), 0)
+        if total_marks <= 0:
+            total_marks = num_questions * marks_per_question
+        sections.append({
+            "section_number": index,
+            "section_title": title[:200],
+            "question_type": str(item.get("question_type") or "multiple_choice"),
+            "num_questions": num_questions,
+            "marks": total_marks,
+            "marks_per_question": marks_per_question,
+            "instruction_type": str(item.get("instruction_type") or "answer_all"),
+            "sub_part_style": str(item.get("sub_part_style") or "none"),
+        })
     return sections
 
 
@@ -1241,10 +1286,11 @@ def register_page_routes(app):
             # never block the exam wizard.
             req.session["coverage_warning"] = ""
         wiz = _wizard_state(req)
-        if step == "2" and not wiz.get("curriculum_weeks"):
+        if step == "2":
             try:
                 weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"))
                 if weeks:
+                    req.state.wizard_curriculum_weeks = weeks
                     wiz["curriculum_weeks"] = [
                         {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
                         for w in weeks
@@ -1252,6 +1298,12 @@ def register_page_routes(app):
                     wiz["curriculum_scope"] = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
                     if not wiz.get("selected_weeks"):
                         wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
+                    # Curriculum cards are render-time data.  Do not persist
+                    # the full catalogue in Starlette's signed cookie session:
+                    # auth tokens + week metadata can exceed browser/proxy
+                    # cookie limits and silently erase the wizard state.
+                    wiz.pop("curriculum_weeks", None)
+                    wiz.pop("curriculum_scope", None)
                     _wizard_save(req, wiz)
             except Exception:
                 pass
@@ -1309,19 +1361,10 @@ def register_page_routes(app):
                 wiz.pop("exam_title", None)
             wiz["total_marks"] = (form.get("total_marks") or wiz.get("total_marks") or "100").strip()
 
-            # Preload curriculum weeks for Step 2
-            try:
-                weeks = await _get_curriculum_weeks(req, wiz["grade_level"], wiz["subject"], wiz["term"])
-                if weeks:
-                    wiz["curriculum_weeks"] = [
-                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
-                        for w in weeks
-                    ]
-                    wiz["curriculum_scope"] = _wizard_scope_key(wiz["grade_level"], wiz["subject"], wiz["term"])
-                    if not wiz.get("selected_weeks"):
-                        wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
-            except Exception:
-                pass
+            # Step 2 reloads the curriculum for rendering.  Keep only the
+            # selected week numbers in the cookie-backed session.
+            wiz.pop("curriculum_weeks", None)
+            wiz.pop("curriculum_scope", None)
 
             _wizard_save(req, wiz)
             target_step = "2"
@@ -1351,12 +1394,16 @@ def register_page_routes(app):
                     wiz["total_marks"] = posted_total
                 if "focus_topics" in form:
                     wiz["focus_topics"] = (form.get("focus_topics") or "").strip()
+                wiz.pop("curriculum_weeks", None)
+                wiz.pop("curriculum_scope", None)
                 _wizard_save(req, wiz)
                 target_step = "3"
         elif next_step == "4" or any(k.startswith("section_") for k in form.keys()):
             sections = _build_sections_from_form(form)
             if sections:
                 wiz["sections"] = sections
+            wiz.pop("curriculum_weeks", None)
+            wiz.pop("curriculum_scope", None)
             for scope_key in ("subject", "grade_level", "term"):
                 scope_value = (form.get(scope_key) or "").strip()
                 if scope_value:
@@ -4062,7 +4109,7 @@ def _wizard_sources(request: Request) -> Div:
     grade = wiz.get("grade_level", "Primary 4")
     term = wiz.get("term", "First Term")
 
-    weeks = _get_curriculum_weeks_sync(wiz)
+    weeks = getattr(request.state, "wizard_curriculum_weeks", None) or _get_curriculum_weeks_sync(wiz)
     if "selected_weeks" in wiz and isinstance(wiz["selected_weeks"], list):
         selected_weeks = [str(w) for w in wiz["selected_weeks"]]
     else:
@@ -4713,6 +4760,21 @@ def _wizard_confirm(request: Request) -> Div:
                 style="margin-bottom:1.5rem;",
             ),
             Input(name="custom_instructions", type="hidden", value=custom_instructions),
+            # Carry a compact snapshot with the final request as a recovery
+            # path when a cookie-backed session is lost by a browser/proxy.
+            Input(name="subject", type="hidden", value=str(subject if subject != "Not selected" else "")),
+            Input(name="grade_level", type="hidden", value=str(grade if grade != "Not selected" else "")),
+            Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
+            Input(name="exam_title", type="hidden", value=str(wiz.get("exam_title") or "")),
+            Input(name="total_marks", type="hidden", value=str(total_marks)),
+            Input(name="difficulty_preset", type="hidden", value=str(preset_raw)),
+            *[Input(name="selected_weeks", type="hidden", value=str(week)) for week in selected_weeks],
+            *[Input(name="bloom_levels", type="hidden", value=str(level)) for level in bloom_list],
+            Input(
+                name="sections_json",
+                type="hidden",
+                value=json.dumps(sections, separators=(",", ":")),
+            ),
             # Notice Box matching media_1788788440994.png flow
             Div(
                 Icon("stars", cls="bi", style="font-size:1.35rem; color:#00412E; flex-shrink:0;"),
@@ -5079,7 +5141,19 @@ def register_action_routes(app):
                 except ValueError:
                     return _wizard_error("Weeks must be a comma-separated list of numbers, e.g. 1,2,3.")
 
-        sections = _build_sections_from_form(form) or wiz.get("sections") or []
+        form_sections = _build_sections_from_form(form)
+        sections = form_sections or _sections_from_json(form.get("sections_json")) or wiz.get("sections") or []
+        logger.info(
+            "generation.wizard_submit sections=%d form_sections=%d session_sections=%d "
+            "form_keys=%d wizard_keys=%s subject=%s grade=%s",
+            len(sections),
+            len(form_sections),
+            len(wiz.get("sections") or []),
+            len(list(form.keys())),
+            sorted(str(key) for key in wiz.keys() if key not in {"curriculum_weeks"}),
+            bool(form.get("subject") or wiz.get("subject")),
+            bool(form.get("grade_level") or wiz.get("grade_level")),
+        )
         if not sections:
             return _wizard_error(
                 "You need at least one section. Go back to Step 2 and add sections."
