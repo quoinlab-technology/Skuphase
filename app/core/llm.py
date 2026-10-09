@@ -228,6 +228,8 @@ class LLMService:
                     # Extract response and strip thinking tags
                     raw_content = response.choices[0].message.content or ""
                     content = self._strip_thinking(raw_content)
+                    if not content:
+                        raise ValueError("Groq returned an empty response")
                     tokens_used = response.usage.total_tokens
 
                     # Calculate cost
@@ -302,6 +304,8 @@ class LLMService:
 
                 raw_content = response.choices[0].message.content or ""
                 content = self._strip_thinking(raw_content)
+                if not content:
+                    raise ValueError("OpenRouter returned an empty response")
                 tokens_used = response.usage.total_tokens
                 cost = self._calculate_cost("llama-3.3-70b", tokens_used, "openrouter")
 
@@ -386,6 +390,21 @@ class LLMService:
                             raw_content = "".join(content_parts)
                             content = self._strip_thinking(raw_content)
 
+                            if not content:
+                                finish_reason = finish_reason or "EMPTY_CONTENT"
+                                prompt_feedback = data.get("promptFeedback") or {}
+                                block_reason = prompt_feedback.get("blockReason") or "none"
+                                last_err = (
+                                    f"Empty Gemini response (finishReason={finish_reason}, "
+                                    f"blockReason={block_reason})"
+                                )
+                                logger.warning(
+                                    "llm.provider_attempt_failed provider=gemini model=%s reason=%s",
+                                    current_model,
+                                    last_err,
+                                )
+                                continue
+
                             usage = data.get("usageMetadata", {})
                             tokens_used = usage.get("totalTokenCount", 0)
                             cost = (tokens_used / 1000) * 0.000075
@@ -401,7 +420,23 @@ class LLMService:
                                 "cost": cost,
                                 "provider": "gemini",
                             }
-                    last_err = f"Status {response.status_code}: {response.text[:200]}"
+                    data = {}
+                    try:
+                        data = response.json()
+                    except ValueError:
+                        pass
+                    prompt_feedback = data.get("promptFeedback") or {}
+                    if response.status_code == 200:
+                        last_err = (
+                            "HTTP 200 with no usable candidates "
+                            f"(candidates={len(data.get('candidates') or [])}, "
+                            f"blockReason={prompt_feedback.get('blockReason') or 'none'})"
+                        )
+                    else:
+                        last_err = (
+                            f"Status {response.status_code}: "
+                            f"{prompt_feedback.get('blockReason') or response.text[:200]}"
+                        )
                     logger.warning(
                         "llm.provider_attempt_failed provider=gemini model=%s status=%s response=%s",
                         current_model,

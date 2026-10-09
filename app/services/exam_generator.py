@@ -207,12 +207,14 @@ class ExamGenerator:
             )
 
             logger.info(
-                "generation.llm_succeeded exam_id=%s provider=%s model=%s tokens=%s cost=%s",
+                "generation.llm_succeeded exam_id=%s provider=%s model=%s tokens=%s cost=%s content_chars=%s content_shape=%s",
                 request_exam_id,
                 llm_response.get("provider", preferred_provider),
                 llm_response.get("model"),
                 llm_response.get("tokens_used"),
                 llm_response.get("cost", 0),
+                len(llm_response.get("content") or ""),
+                "json_object" if (llm_response.get("content") or "").lstrip().startswith("{") else "non_json_or_empty",
             )
 
             # 4. Parse response (section-aware)
