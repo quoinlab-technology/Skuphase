@@ -449,9 +449,9 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
                 ),
                 cls="d-flex align-items-center justify-content-between pt-2 border-top border-light",
             ),
-            cls="p-3 w-100 overflow-hidden",
+            cls="p-3 w-100",
         ),
-        cls="exam-mobile-card bg-white rounded-4 shadow-sm border mb-3 w-100 overflow-hidden",
+        cls="exam-mobile-card bg-white rounded-4 shadow-sm border mb-3 w-100",
         id=f"exam-card-{exam_id}",
     )
 
@@ -2283,9 +2283,10 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
         primary_actions.extend([
             Button(
                 Icon("shield-check", cls="bi me-2"),
-                "Run Preflight",
+                Span("Run Preflight", cls="preflight-label-full"),
+                Span("Preflight", cls="preflight-label-short"),
                 type="button",
-                cls="btn btn-outline-dark bg-white rounded-pill px-4 py-2 fw-semibold me-2 d-inline-flex align-items-center shadow-sm",
+                cls="exam-preflight-action btn btn-outline-dark bg-white rounded-pill px-4 py-2 fw-semibold me-2 d-inline-flex align-items-center shadow-sm",
                 hx_get=f"/ui/exams/{exam_id}/tab/preflight?run=1",
                 hx_target="#exam-tab-section",
                 hx_swap="innerHTML",
