@@ -99,14 +99,19 @@ class Settings(BaseSettings):
     # verification, reset, and invitation links point back to the live app.
     app_base_url: str = "http://localhost:8000"
 
-    # LLM providers ("Groq" primary, OpenRouter fallback)
+    # LLM providers (Groq primary, Gemini high-token secondary, OpenRouter tertiary fallback)
     groq_api_key: str
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    # openai/gpt-oss-20b: ~6K OTPM on Groq — handles 25-question exams comfortably.
-    # qwen/qwen3.8-27b has only 1K OTPM and would 429 on anything beyond ~8 questions.
+    # openai/gpt-oss-20b: ~6K OTPM on Groq — handles 25-question exams comfortably in ~6s.
     groq_model: str = "openai/gpt-oss-20b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite"
     openrouter_api_key: str = ""
     openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
+
+    # Admin / School-level exam generation safeguards
+    max_questions_per_exam: int = 50
+    max_daily_exams_per_school: int = 30
 
     # Background retries (Postgres-backed jobs)
     background_retry_attempts: int = 3

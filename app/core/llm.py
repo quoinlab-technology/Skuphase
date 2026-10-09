@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timedelta
 import json
 
+import httpx
 from openai import AsyncOpenAI
 from app.config.settings import get_settings
 
@@ -120,6 +121,12 @@ class LLMService:
         else:
             self.openrouter_client = None
             logger.warning("⚠️ OpenRouter API key not provided (no fallback)")
+
+        # Initialize Gemini API (high token capacity & STEM reasoning fallback)
+        self.gemini_api_key = getattr(settings, "gemini_api_key", None)
+        self.gemini_model = getattr(settings, "gemini_model", "gemini-3.1-flash-lite")
+        if self.gemini_api_key:
+            logger.info(f"✅ Gemini API client configured: model={self.gemini_model}")
 
         # Rate limiting tracking (simple in-memory for MVP)
         self._request_times: List[datetime] = []
@@ -241,11 +248,24 @@ class LLMService:
 
                     logger.error("❌ Groq generation failed: %s", err_msg[:300])
 
-                    if not use_fallback_on_error or not self.openrouter_client:
+                    if not use_fallback_on_error or not (self.gemini_api_key or self.openrouter_client):
                         raise ValueError(f"Groq generation failed: {err_msg}")
 
-                    logger.warning("⚠️ Falling back to OpenRouter...")
+                    logger.warning("⚠️ Falling back from Groq to secondary provider...")
                     break
+
+        # Fallback to Gemini (high token capacity & STEM reasoning)
+        if self.gemini_api_key and use_fallback_on_error:
+            try:
+                logger.info("Generating with Gemini fallback (model: %s)", self.gemini_model)
+                return await self._generate_gemini(
+                    prompt=prompt,
+                    model=self.gemini_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                logger.warning("⚠️ Gemini generation failed: %s. Falling back to OpenRouter...", str(e)[:250])
 
         # Fallback to OpenRouter
         if self.openrouter_client:
@@ -279,6 +299,65 @@ class LLMService:
                 raise ValueError(f"All LLM providers failed: {str(e)}")
 
         raise ValueError("No LLM provider available")
+
+    async def _generate_gemini(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+    ) -> Dict[str, Any]:
+        """
+        Generate text using Google Gemini API.
+
+        Provides up to 8,192 output tokens and high mathematical/scientific
+        reasoning without Groq on-demand OTPM ceilings.
+        """
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is not configured")
+
+        model = model or self.gemini_model
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": min(max_tokens, 8192),
+                "responseMimeType": "application/json" if "json" in prompt.lower() else "text/plain",
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+            response = await client.post(url, json=payload)
+            if response.status_code != 200:
+                raise ValueError(f"Gemini API error ({response.status_code}): {response.text[:250]}")
+            data = response.json()
+
+        candidates = data.get("candidates", [])
+        if not candidates or not candidates[0].get("content"):
+            raise ValueError("Gemini returned empty candidate response")
+
+        parts = candidates[0]["content"].get("parts", [])
+        if not parts or not parts[0].get("text"):
+            raise ValueError("Gemini returned empty text content")
+
+        raw_content = parts[0]["text"]
+        content = self._strip_thinking(raw_content)
+
+        usage = data.get("usageMetadata", {})
+        tokens_used = usage.get("totalTokenCount", 0)
+        cost = (tokens_used / 1000) * 0.000075
+
+        self._track_usage(tokens_used)
+        logger.info("✅ Gemini generation successful: %d tokens, $%.4f", tokens_used, cost)
+
+        return {
+            "content": content,
+            "model": model,
+            "tokens_used": tokens_used,
+            "cost": cost,
+            "provider": "gemini",
+        }
 
     async def _check_rate_limits(self, model: str) -> None:
         """

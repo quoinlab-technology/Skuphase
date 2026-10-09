@@ -20,8 +20,10 @@ from app.services.exam_quality_validator import (
 from app.services.curriculum_service import CurriculumService
 from app.services.few_shot_selector import FewShotSelector
 from app.core.llm import get_llm_service
+from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 def _attach_authoritative_passages(parsed, sections):
@@ -111,12 +113,22 @@ class ExamGenerator:
             await db.commit()
 
             # 3. Single LLM call
+            # Validate total question count against configured admin limit
+            total_questions = sum(s.num_questions for s in request.sections)
+            max_allowed = getattr(settings, "max_questions_per_exam", 50)
+            if total_questions > max_allowed:
+                raise ValueError(
+                    f"Total questions ({total_questions}) exceeds the configured limit of {max_allowed} questions per exam. "
+                    "Please reduce questions or generate in separate sections."
+                )
+
             # Dynamic token budget: each question uses ~150 output tokens in structured JSON
             # (question text + 4 options + explanation + metadata). Buffer of 350 for
-            # section wrappers and exam header. LLMService._safe_max_tokens() will further
-            # cap this against the model's OTPM limit to avoid Groq 429 errors.
-            total_questions = sum(s.num_questions for s in request.sections)
-            dynamic_max_tokens = min(5100, max(1200, total_questions * 150 + 350))
+            # section wrappers and exam header.
+            # If Gemini is configured, allow up to 7,500 tokens for large exams (>30 questions).
+            # Otherwise cap at 5,100 to stay within Groq's safe headroom.
+            max_token_ceiling = 7500 if getattr(self.llm_service, "gemini_api_key", None) else 5100
+            dynamic_max_tokens = min(max_token_ceiling, max(1200, total_questions * 150 + 350))
             logger.info(
                 "📞 Calling LLM for exam generation (questions=%d, requested_max_tokens=%d)...",
                 total_questions,

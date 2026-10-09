@@ -4293,7 +4293,7 @@ def _wizard_structure(request: Request) -> Div:
             Div(
                 Div(
                     Label("Number of Questions", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.4rem; display:block;"),
-                    Input(name=f"section_{idx}_num", type="number", value=str(num_q), min="1", max="200",
+                    Input(name=f"section_{idx}_num", type="number", value=str(num_q), min="1", max="50",
                           cls="form-control sec-num-input",
                           oninput="onNumOrMarkChange(this, 'num')",
                           style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;"),
