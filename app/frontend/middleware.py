@@ -91,7 +91,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if "Content-Security-Policy" not in response.headers:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "img-src 'self' data: blob: https://cdn.jsdelivr.net; "
+                # School logos are served from the public Supabase Storage
+                # origin after upload.  Keep the allow-list scoped to
+                # Supabase subdomains rather than permitting arbitrary images.
+                "img-src 'self' data: blob: https://cdn.jsdelivr.net https://*.supabase.co; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
                 "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
