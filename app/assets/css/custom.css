@@ -2324,3 +2324,23 @@ body {
   height: 28px;
   object-fit: contain;
 }
+/* School branding preview: restrained, print-oriented presentation. */
+.school-logo-preview-wrap {
+  min-height: 148px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border: 1px dashed rgba(0, 65, 46, .24);
+  border-radius: 1rem;
+  background: #f7faf7;
+}
+.school-logo-preview {
+  max-width: 220px;
+  max-height: 120px;
+  object-fit: contain;
+}
+.school-logo-empty {
+  min-height: 116px;
+  width: 100%;
+}

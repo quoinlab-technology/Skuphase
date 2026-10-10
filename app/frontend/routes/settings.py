@@ -6,7 +6,6 @@ curriculum levels, and exam generation policies.
 
 import secrets
 
-import httpx
 from fasthtml.common import (
     A,
     Div,
@@ -17,6 +16,7 @@ from fasthtml.common import (
     Strong,
     Title,
     to_xml,
+    Img,
 )
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
@@ -39,6 +39,13 @@ from app.frontend.components.feedback import pop_flash, push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 from app.config.settings import get_settings
+from app.services.school_logo_storage import delete_logo, upload_logo
+
+
+def _owned_logo_path(school_id: str, path: str | None) -> str | None:
+    """Only allow cleanup inside this school's logo prefix."""
+    prefix = f"schools/{school_id}/logo/"
+    return path if path and path.startswith(prefix) else None
 
 # Audit2 Phase 2 — Settings → Notifications tab (mirrors prototype
 # Settings.png–Settings6.png and NotificationPrefs schema defaults).
@@ -186,8 +193,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
                 ),
                 Col(
                     Div(
-                        Input("logo_url", label="School Logo URL / Asset Path (advanced)", value=logo_url, placeholder="Optional: https://... or /assets/..."),
-                        P("Prefer the upload button below if you have the logo file on your computer.", cls="text-muted small mt-1 mb-0"),
+                        Input("logo_url", input_type="hidden", value=logo_url),
                     ),
                     span=12,
                     md=6,
@@ -203,6 +209,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
                 method="post",
                 enctype="multipart/form-data",
                 cls="border rounded-3 p-3 bg-light-subtle mb-3",
+                style="display:none;",
             ),
             Div(
                 Button("Save School Profile", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold w-100 w-md-auto"),
@@ -213,6 +220,94 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
         action="/app/settings?tab=profile",
         method="post",
     )
+
+    # Keep logo actions outside the profile form. This avoids invalid nested
+    # multipart forms and gives the administrator a clear replace/reset flow.
+    logo_preview = (
+        Img(src=logo_url, alt=f"{name} school logo", cls="school-logo-preview img-fluid rounded-3")
+        if logo_url
+        else Div(
+            Icon("image", cls="bi fs-1 text-muted"),
+            Span("No logo uploaded", cls="small text-muted"),
+            cls="school-logo-empty d-flex flex-column align-items-center justify-content-center",
+        )
+    )
+    logo_actions = Card(
+        Div(
+            Div(
+                Strong("School logo", cls="d-block text-dark"),
+                P("This logo is used on school-generated documents.", cls="text-muted small mb-0"),
+                cls="flex-grow-1",
+            ),
+            Span(
+                "Uploaded" if logo_url else "Not set",
+                cls=f"badge rounded-pill {'bg-success-subtle text-success' if logo_url else 'bg-light text-muted'}",
+            ),
+            cls="d-flex align-items-start justify-content-between gap-3 mb-3",
+        ),
+        Div(logo_preview, cls="school-logo-preview-wrap mb-3"),
+        Form(
+            Input("logo_file", input_type="file", accept="image/png,image/jpeg,image/webp", cls="form-control rounded-3", required=True),
+            Div(
+                P("PNG, JPG, or WebP · maximum 5 MB", cls="text-muted small mb-0"),
+                Button(
+                    "Replace logo" if logo_url else "Upload logo",
+                    type="submit",
+                    variant="success",
+                    cls="btn-brand rounded-pill px-3",
+                ),
+                cls="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2",
+            ),
+            action="/app/settings/logo-upload",
+            method="post",
+            enctype="multipart/form-data",
+            cls="mb-2",
+        ),
+        (
+            Button(
+                "Reset logo",
+                type="button",
+                variant="outline-danger",
+                cls="rounded-pill px-3",
+                **{"data-bs-toggle": "modal", "data-bs-target": "#resetSchoolLogoModal"},
+            )
+            if logo_url
+            else Div()
+        ),
+        cls="p-4 border-0 shadow-sm rounded-4 mt-3",
+    )
+    reset_logo_modal = Div(
+        Div(
+            Div(
+                Div(
+                    Strong("Reset school logo", cls="modal-title"),
+                    Button("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
+                    cls="modal-header border-0",
+                ),
+                Div(
+                    P("This removes the current logo from school settings and Supabase Storage. You can upload a new logo afterwards.", cls="text-muted mb-0"),
+                    cls="modal-body",
+                ),
+                Div(
+                    Button("Cancel", type="button", variant="light", cls="rounded-pill px-4 me-2", **{"data-bs-dismiss": "modal"}),
+                    Form(
+                        Button("Reset logo", type="submit", variant="danger", cls="rounded-pill px-4"),
+                        action="/app/settings/logo-reset",
+                        method="post",
+                        cls="d-inline",
+                    ),
+                    cls="modal-footer border-0",
+                ),
+                cls="modal-content border-0 shadow-lg rounded-4",
+            ),
+            cls="modal-dialog modal-dialog-centered",
+        ),
+        id="resetSchoolLogoModal",
+        cls="modal fade",
+        tabindex="-1",
+        **{"aria-hidden": "true"},
+    )
+    profile_content = Div(profile_content, logo_actions, reset_logo_modal)
 
     # Tab 2: My Account
     account_content = Card(
@@ -561,34 +656,84 @@ def register_routes(app):
         if len(content) > 5 * 1024 * 1024:
             push_flash(req, "Logo must be 5 MB or smaller.", "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
-        filename = f"school-logo-{secrets.token_urlsafe(12)}{extension}"
         settings = get_settings()
-        if not settings.supabase_url or not settings.supabase_service_role_key:
-            push_flash(req, "Logo storage is not configured yet. Add Supabase Storage credentials first.", "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
-        object_path = f"schools/{school_id}/{filename}"
-        storage_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/{settings.supabase_storage_bucket}/{object_path}"
+        object_path = f"schools/{school_id}/logo/{secrets.token_urlsafe(12)}{extension}"
+        old_path = ""
+        current_settings = await call_api(req, "GET", f"/schools/{school_id}/settings")
+        current_ok, current_data = unwrap(current_settings)
+        if current_ok:
+            old_path = _owned_logo_path(school_id, current_data.get("logo_storage_path")) or ""
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                storage_response = await client.post(
-                    storage_url,
-                    content=content,
-                    headers={
-                        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                        "apikey": settings.supabase_service_role_key,
-                        "Content-Type": getattr(upload, "content_type", "application/octet-stream"),
-                        "x-upsert": "true",
-                    },
-                )
-            storage_response.raise_for_status()
+            logo_url = await upload_logo(
+                settings,
+                object_path,
+                content,
+                getattr(upload, "content_type", "application/octet-stream"),
+            )
         except Exception:
             push_flash(req, "The logo could not be uploaded to Supabase Storage.", "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
-        logo_url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{settings.supabase_storage_bucket}/{object_path}"
-        response = await call_api(req, "PUT", f"/schools/{school_id}/settings", json={"logo_url": logo_url})
+
+        response = await call_api(
+            req,
+            "PUT",
+            f"/schools/{school_id}/settings",
+            json={"logo_url": logo_url, "logo_storage_path": object_path},
+        )
         ok, data = unwrap(response)
         if not ok:
+            try:
+                await delete_logo(settings, object_path)
+            except Exception:
+                pass
             push_flash(req, data.get("message", "Could not save the uploaded logo."), "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        if old_path and old_path != object_path:
+            try:
+                await delete_logo(settings, old_path)
+            except Exception:
+                # The new logo is already canonical; an orphan cleanup can be
+                # retried later without breaking the administrator workflow.
+                pass
+        session_user = req.session.get("user")
+        if isinstance(session_user, dict):
+            session_user["school_logo_url"] = logo_url
+            req.session["user"] = session_user
         push_flash(req, "School logo uploaded successfully.", "success")
+        return RedirectResponse("/app/settings?tab=profile", status_code=303)
+
+    @app.post("/app/settings/logo-reset")
+    async def reset_school_logo(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        if user.get("role") != "school_admin":
+            push_flash(req, "Only administrators can update school settings.", "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        school_id = user.get("school_id")
+        settings = get_settings()
+        current_response = await call_api(req, "GET", f"/schools/{school_id}/settings")
+        ok, current = unwrap(current_response)
+        old_path = _owned_logo_path(school_id, current.get("logo_storage_path")) if ok else None
+        response = await call_api(
+            req,
+            "PUT",
+            f"/schools/{school_id}/settings",
+            json={"logo_url": None, "logo_storage_path": None},
+        )
+        saved, data = unwrap(response)
+        if not saved:
+            push_flash(req, data.get("message", "Could not reset the school logo."), "danger")
+            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        if old_path:
+            try:
+                await delete_logo(settings, old_path)
+            except Exception:
+                pass
+        session_user = req.session.get("user")
+        if isinstance(session_user, dict):
+            session_user["school_logo_url"] = None
+            req.session["user"] = session_user
+        push_flash(req, "School logo reset. You can upload a new one at any time.", "success")
         return RedirectResponse("/app/settings?tab=profile", status_code=303)

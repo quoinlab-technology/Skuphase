@@ -140,7 +140,13 @@ def test_settings_page_renders_for_admin(monkeypatch):
 
     async def fake_school_call(req, method, path, **kwargs):
         if "/schools/s1/settings" in path:
-            return FakeResp(200, {"active_term": "First Term", "academic_year": "2025/2026", "min_pass_mark": 50})
+            return FakeResp(200, {
+                "active_term": "First Term",
+                "academic_year": "2025/2026",
+                "min_pass_mark": 50,
+                "logo_url": "https://example.supabase.co/storage/v1/object/public/school-assets/schools/s1/logo/current.png",
+                "logo_storage_path": "schools/s1/logo/current.png",
+            })
         if "/schools/s1" in path:
             return FakeResp(200, {"name": "Greenfield Academy", "contact_email": "admin@greenfield.edu.ng"})
         return FakeResp(404, {})
@@ -150,6 +156,8 @@ def test_settings_page_renders_for_admin(monkeypatch):
     assert resp.status_code == 200
     assert "School Settings" in resp.text
     assert "Greenfield Academy" in resp.text
+    assert "Reset school logo" in resp.text
+    assert "current.png" in resp.text
 
 
 def test_ops_page_renders_for_admin(monkeypatch):

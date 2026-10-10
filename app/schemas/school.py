@@ -10,6 +10,7 @@ class SchoolSettingsUpdate(BaseModel):
     """Update school settings."""
     
     logo_url: Optional[str] = None
+    logo_storage_path: Optional[str] = None
     colors: Optional[Dict[str, str]] = None  # e.g., {"primary": "#0066cc", "secondary": "#ff6600"}
     llm_provider: Optional[str] = Field(None, pattern="^(grok|openrouter|openai)$")
     exam_format: Optional[str] = None  # e.g., "multiple_choice", "essay", "mixed"
@@ -21,6 +22,7 @@ class SchoolSettingsResponse(BaseModel):
     
     school_id: UUID
     logo_url: Optional[str] = None
+    logo_storage_path: Optional[str] = None
     colors: Optional[Dict[str, str]] = None
     llm_provider: Optional[str] = None
     exam_format: Optional[str] = None

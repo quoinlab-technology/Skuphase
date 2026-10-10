@@ -63,6 +63,7 @@ class SchoolService:
                 SchoolSettingsResponse(
                     school_id=settings.school_id,
                     logo_url=settings.logo_url,
+                    logo_storage_path=settings.logo_storage_path,
                     colors={
                         "primary": settings.primary_color,
                         "secondary": settings.secondary_color,
@@ -163,6 +164,7 @@ class SchoolService:
         return SchoolSettingsResponse(
             school_id=settings.school_id,
             logo_url=settings.logo_url,
+            logo_storage_path=settings.logo_storage_path,
             colors={
                 "primary": settings.primary_color,
                 "secondary": settings.secondary_color,
@@ -205,8 +207,10 @@ class SchoolService:
         try:
             # Update settings fields
             update_data = {}
-            if request.logo_url:
+            if "logo_url" in request.model_fields_set:
                 update_data["logo_url"] = request.logo_url
+            if request.logo_storage_path is not None:
+                update_data["logo_storage_path"] = request.logo_storage_path
             if request.colors and "primary" in request.colors:
                 update_data["primary_color"] = request.colors["primary"]
             if request.colors and "secondary" in request.colors:

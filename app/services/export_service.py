@@ -14,6 +14,7 @@ from app.models.exam import Exam, Question
 from app.utils.exam_utils import format_mcq_option
 from app.services.svg_safety import sanitize_svg
 from app.services.math_rendering import extract_display_formulas, formula_to_svg
+from app.services.branding import logo_flowable
 
 
 
@@ -400,31 +401,12 @@ class ExportService:
                 if line.strip():
                     header.append(Paragraph(esc(line), instruction_style))
 
-        # Check for school logo
-        logo_flowable = None
-        if school_logo_path:
-            try:
-                lpath = Path(school_logo_path)
-                if not lpath.is_file():
-                    raw_str = str(school_logo_path).lstrip("/")
-                    candidates = [
-                        Path(raw_str),
-                        Path("app") / raw_str,
-                        Path("assets") / raw_str,
-                        Path("assets") / raw_str.replace("assets/", "", 1),
-                    ]
-                    for cand in candidates:
-                        if cand.is_file():
-                            lpath = cand
-                            break
-                if lpath.is_file():
-                    logo_flowable = ReportLabImage(str(lpath), width=22 * mm, height=22 * mm)
-            except Exception as exc:
-                logger.warning("Failed to load school logo '%s' for PDF: %s", school_logo_path, exc)
-                logo_flowable = None
+        # Supabase logos are remote URLs; branding.logo_flowable downloads
+        # them safely into memory for this export.
+        logo_image = logo_flowable(school_logo_path, width=22 * mm, height=22 * mm)
 
-        if logo_flowable:
-            header_table = Table([[logo_flowable, header]], colWidths=[26 * mm, None])
+        if logo_image:
+            header_table = Table([[logo_image, header]], colWidths=[26 * mm, None])
             header_table.setStyle(
                 TableStyle([
                     ("BOX", (0, 0), (-1, -1), 1, "#222222"),
@@ -620,6 +602,17 @@ class ExportService:
 
         def _footer(canvas, _doc):
             canvas.saveState()
+            # A very light school-name watermark helps identify printed copies
+            # without competing with questions, diagrams, or answer choices.
+            if school_name:
+                canvas.saveState()
+                canvas.setFillColorRGB(0.86, 0.89, 0.87)
+                canvas.setFont(_base_font, 22)
+                canvas.translate(A4[0] / 2, A4[1] / 2)
+                canvas.rotate(35)
+                canvas.drawCentredString(0, 0, str(school_name).upper()[:80])
+                canvas.restoreState()
+
             canvas.setFont(_base_font, 8)
             if style_cfg["show_page_numbers"]:
                 canvas.drawCentredString(A4[0] / 2, 8 * mm, f"Page {_doc.page}")
@@ -636,6 +629,7 @@ class ExportService:
         questions: List[Question],
         school_name: str | None = None,
         school_address: str | None = None,
+        school_logo_path: str | None = None,
         document_style: dict | None = None,
     ) -> str:
         """Export a compact 1-page Teacher Answer Key & Marking Guide."""
@@ -663,6 +657,9 @@ class ExportService:
         tc_style = ParagraphStyle("MGTc", parent=styles["Normal"], fontSize=9, leading=11, fontName="Helvetica-Bold", alignment=1)
 
         story = []
+        logo_image = logo_flowable(school_logo_path, width=18 * mm, height=18 * mm)
+        if logo_image:
+            story.append(Table([[logo_image]], colWidths=[174 * mm], style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])) )
         if school_name:
             story.append(Paragraph(f"<b>{esc(school_name.upper())}</b>", title_style))
         story.append(Paragraph(f"<b>{esc(exam.subject).upper()} ({esc(exam.grade_level).upper()}) — MARKING GUIDE</b>", title_style))
@@ -791,6 +788,7 @@ class ExportService:
         cls,
         exam: Exam,
         school_name: str | None = None,
+        school_logo_path: str | None = None,
         document_style: dict | None = None,
     ) -> str:
         """Export a standardized 50-question A4 OMR Bubble Sheet for optical/rapid marking."""
@@ -815,6 +813,9 @@ class ExportService:
         cell_style = ParagraphStyle("OMRCell", parent=styles["Normal"], fontSize=8.5, leading=11, fontName="Courier")
 
         story = []
+        logo_image = logo_flowable(school_logo_path, width=18 * mm, height=18 * mm)
+        if logo_image:
+            story.append(Table([[logo_image]], colWidths=[174 * mm], style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])) )
         if school_name:
             story.append(Paragraph(f"<b>{esc(school_name.upper())}</b>", title_style))
         story.append(Paragraph(f"<b>{esc(exam.subject).upper()} — OMR ANSWER SHEET</b>", title_style))

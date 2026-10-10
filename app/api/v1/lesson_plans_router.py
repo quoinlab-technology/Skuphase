@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
 from app.models.user import User
+from app.models.school import SchoolSettings
 from app.models.curriculum import SchemeOfWork, Curriculum
 from app.models.lesson_plan import LessonPlan, WeeklyExercise, SyllabusCoverage
 from app.schemas.lesson_plan import (LessonPlanCreate, LessonPlanUpdate, LessonPlanResponse,
@@ -106,7 +107,16 @@ async def export_weekly_exercise(exercise_id: UUID, current_user: User = Depends
     if exercise is None:
         raise HTTPException(status_code=404, detail="Weekly exercise not found")
     plan = await db.scalar(select(LessonPlan).where(LessonPlan.id == exercise.lesson_plan_id))
-    filename = export_worksheet_pdf(export_dir=ExportService.EXPORT_DIR, title=exercise.title, subject="Curriculum Exercise", grade_level=plan.term if plan else "", instructions=exercise.instructions, questions=exercise.questions or [])
+    school_settings = await db.scalar(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
+    filename = export_worksheet_pdf(
+        export_dir=ExportService.EXPORT_DIR,
+        title=exercise.title,
+        subject="Curriculum Exercise",
+        grade_level=plan.term if plan else "",
+        instructions=exercise.instructions,
+        questions=exercise.questions or [],
+        school_logo_path=school_settings.logo_url if school_settings else None,
+    )
     return {"filename": filename, "download_path": f"/api/v1/lesson-plans/exercises/{exercise_id}/download/{filename}"}
 
 

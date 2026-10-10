@@ -2511,6 +2511,7 @@ async def export_exam(
                 exam=exam,
                 questions=list(questions),
                 school_name=school_name,
+                school_logo_path=school_logo_url,
                 school_address=school_address,
                 document_style=document_style,
             )
@@ -2519,6 +2520,7 @@ async def export_exam(
                 ExportService.export_omr_sheet_pdf,
                 exam=exam,
                 school_name=school_name,
+                school_logo_path=school_logo_url,
                 document_style=document_style,
             )
         else:

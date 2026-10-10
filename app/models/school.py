@@ -41,6 +41,8 @@ class SchoolSettings(BaseModel):
     
     # Branding
     logo_url = Column(String(500))
+    # Exact Supabase object key, used for safe replacement and removal.
+    logo_storage_path = Column(String(500))
     primary_color = Column(String(7))  # Hex color
     secondary_color = Column(String(7))
     
