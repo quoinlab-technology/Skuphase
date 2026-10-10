@@ -16,6 +16,7 @@ from pathlib import Path
 from fasthtml.common import FastHTML, Link, Script
 from faststrap import add_bootstrap, mount_assets
 from faststrap.pwa import add_pwa
+from starlette.responses import RedirectResponse, Response
 
 from app.config.settings import get_settings
 from app.frontend.routes import auth as auth_routes
@@ -34,11 +35,26 @@ from app.frontend.middleware import register_middlewares
 
 settings = get_settings()
 
+
+def _session_expired_handler(req, exc):
+    """Leave an expired in-app session at the sign-in page.
+
+    HTMX requests need an explicit client-side redirect; normal browser
+    requests use a standard 303 so no protected action remains on screen.
+    """
+    if req.headers.get("hx-request", "").lower() == "true":
+        return Response(status_code=200, headers={"HX-Redirect": "/login?expired=1"})
+    return RedirectResponse("/login?expired=1", status_code=303)
+
 frontend_app = FastHTML(
     secret_key=settings.jwt_secret_key,
     sess_https_only=settings.app_env != "development",
     sess_path="/",
-    exception_handlers={404: public_routes.not_found_handler, 500: public_routes.server_error_handler},
+    exception_handlers={
+        404: public_routes.not_found_handler,
+        500: public_routes.server_error_handler,
+        303: _session_expired_handler,
+    },
 )
 
 # Faststrap: exactly once, at startup (FRONTEND_SPEC sec 2.1).  Uses Faststrap's

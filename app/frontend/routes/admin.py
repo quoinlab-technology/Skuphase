@@ -70,6 +70,8 @@ def register_routes(app):
         active_users = sum(1 for item in users if item.get("is_active", True) and item.get("is_verified", True))
         pending_invites = sum(1 for item in users if not item.get("is_verified", True))
         school_name = school.get("name") or user.get("school_name") or "Your school"
+        contact_email = school.get("contact_email") or user.get("email") or "Not provided"
+        contact_phone = school.get("contact_phone") or school.get("phone") or "Not provided"
         academic_year = school_settings.get("academic_year") or "Not set"
         active_term = school_settings.get("active_term") or "Not set"
         readiness_checks = readiness_data.get("checks", {}) if readiness_ok and isinstance(readiness_data, dict) else {}
@@ -103,6 +105,35 @@ def register_routes(app):
                     P(
                         "School defaults flow into new papers and documents automatically. Teachers can still create drafts, edit questions, and export work without waiting for approval.",
                         cls="text-muted small mb-0",
+                    ),
+                ),
+                cls="d-flex align-items-start gap-2 p-3",
+            ),
+            cls="border-0 shadow-sm rounded-4 mb-4 bg-white",
+        )
+
+        contact_card = Card(
+            Div(
+                Div(Icon("telephone", cls="bi fs-5"), cls="app-row-icon brand me-3"),
+                Div(
+                    Strong("School contact", cls="d-block text-dark mb-1"),
+                    Div(
+                        Icon("envelope", cls="bi me-2 text-muted"),
+                        Span(contact_email, cls="small text-muted"),
+                        cls="d-flex align-items-center mb-1",
+                    ),
+                    Div(
+                        Icon("telephone", cls="bi me-2 text-muted"),
+                        (
+                            A(
+                                contact_phone,
+                                href=f"tel:{contact_phone}",
+                                cls="small text-decoration-none",
+                            )
+                            if contact_phone != "Not provided"
+                            else Span(contact_phone, cls="small text-muted")
+                        ),
+                        cls="d-flex align-items-center",
                     ),
                 ),
                 cls="d-flex align-items-start gap-2 p-3",
@@ -144,6 +175,7 @@ def register_routes(app):
             header,
             metrics,
             guidance,
+            contact_card,
             readiness_card,
             Div(Strong("Control centre", cls="fs-5 text-dark d-block mb-3"), controls),
             user=user,

@@ -14,7 +14,10 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from httpx import ASGITransport, AsyncClient
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
+
+from app.frontend.deps import clear_auth
 
 FRIENDLY_403 = {
     "You are not allowed to browse question bank": "You do not have permission to browse the question bank.",
@@ -69,32 +72,61 @@ async def call_api(
 
     # Automatic token revalidation & refresh on 401.
     # If the access token is expired and we have a refresh token, try to get a
-    # fresh pair and replay the original request.  On failure we simply return
+    # fresh pair and replay the original request. If recovery fails, the
+    # signed browser session is cleared and the outer frontend redirects to
+    # sign-in rather than rendering a stale 401 action error.
     # the original 401 — session cleanup / redirect is the responsibility of
     # ensure_login, not this low-level helper (calling clear_auth here wiped
     # the session during dashboard parallel fetches on the login redirect chain).
     if resp.status_code == 401 and request and hasattr(request, "session"):
+        access_tok = request.session.get("access_token")
         refresh_tok = request.session.get("refresh_token")
-        if refresh_tok and not path.endswith("/refresh-token"):
+        # Only a JWT can be classified as expired. Opaque tokens are used by
+        # integrations/tests and must not trigger a browser logout path.
+        is_jwt = bool(access_tok and access_tok.count(".") == 2)
+        exempt_auth_paths = {"/auth/login", "/auth/logout", "/auth/refresh-token"}
+        if is_jwt and path not in exempt_auth_paths:
+            recovered = False
             try:
-                refresh_resp = await client.post("/api/v1/auth/refresh-token", json={"refresh_token": refresh_tok})
-                if refresh_resp.is_success:
-                    tokens = refresh_resp.json()
-                    new_acc = tokens.get("access_token")
-                    if new_acc:
-                        request.session["access_token"] = new_acc
-                        if "refresh_token" in tokens:
-                            request.session["refresh_token"] = tokens["refresh_token"]
-                        if "user" in tokens:
-                            request.session["user"] = tokens["user"]
-                        request.session["_refreshed"] = True
-                        new_headers = {"Authorization": f"Bearer {new_acc}"}
-                        if headers:
-                            new_headers.update(headers)
-                        resp = await client.request(method, f"/api/v1{path}", json=json, content=content, params=params, headers=new_headers)
-                # If refresh fails, return original 401; ensure_login handles the redirect.
+                if refresh_tok:
+                    refresh_resp = await client.post(
+                        "/api/v1/auth/refresh-token",
+                        json={"refresh_token": refresh_tok},
+                    )
+                    if refresh_resp.is_success:
+                        tokens = refresh_resp.json()
+                        new_acc = tokens.get("access_token")
+                        if new_acc:
+                            request.session["access_token"] = new_acc
+                            if "refresh_token" in tokens:
+                                request.session["refresh_token"] = tokens["refresh_token"]
+                            if "user" in tokens:
+                                request.session["user"] = tokens["user"]
+                            request.session["_refreshed"] = True
+                            new_headers = {"Authorization": f"Bearer {new_acc}"}
+                            if headers:
+                                new_headers.update(headers)
+                            resp = await client.request(
+                                method,
+                                f"/api/v1{path}",
+                                json=json,
+                                content=content,
+                                params=params,
+                                headers=new_headers,
+                            )
+                            recovered = resp.status_code != 401
             except Exception:
-                pass
+                recovered = False
+            if not recovered:
+                clear_auth(request.session)
+                # Stop the current action immediately. Returning the original
+                # 401 lets individual route handlers render a misleading
+                # action error; an expired browser session belongs at login.
+                raise HTTPException(
+                    status_code=303,
+                    detail="Your session expired. Please sign in again.",
+                    headers={"Location": "/login?expired=1"},
+                )
 
     return resp
 

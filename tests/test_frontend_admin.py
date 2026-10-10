@@ -97,7 +97,11 @@ def test_admin_control_centre_renders_for_admin(monkeypatch):
                 {"id": "u2", "full_name": "Invited Teacher", "role": "teacher", "is_active": True, "is_verified": False},
             ]})
         if path == "/schools/s1":
-            return FakeResp(200, {"name": "Greenfield Academy"})
+            return FakeResp(200, {
+                "name": "Greenfield Academy",
+                "contact_email": "admin@greenfield.edu.ng",
+                "contact_phone": "+234 801 000 0000",
+            })
         if path == "/schools/s1/settings":
             return FakeResp(200, {"active_term": "First Term", "academic_year": "2025/2026"})
         return FakeResp(404, {})
@@ -107,6 +111,7 @@ def test_admin_control_centre_renders_for_admin(monkeypatch):
     assert resp.status_code == 200
     assert "School administration" in resp.text
     assert "Greenfield Academy" in resp.text
+    assert "+234 801 000 0000" in resp.text
     assert "Active staff" in resp.text
     assert "Pending invites" in resp.text
     assert "Set the defaults once" in resp.text
