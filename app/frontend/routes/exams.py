@@ -815,9 +815,9 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         content_blocks.append(Div(*q_parts, cls="print-compact-q print-avoid-break question-print-card", style="margin-bottom: 8px; page-break-inside: avoid;"))
 
     toolbar = Div(
-        Button("Print Exam Paper (2-Col Eco Mode)", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
-        A("Teacher Marking Guide", href=f"/app/exams/{exam.get('id', '')}/print/answer-key", target="_blank", cls="btn btn-outline-primary rounded-pill px-3 me-2"),
-        A("OMR Bubble Sheet", href=f"/app/exams/{exam.get('id', '')}/print/omr", target="_blank", cls="btn btn-outline-success rounded-pill px-3 me-2"),
+        Button("Print Exam Paper (2-Col Eco Mode)", type="button", cls="btn btn-brand text-white rounded-pill px-4 me-2", onclick="window.print()"),
+        A("Teacher Marking Guide", href=f"/app/exams/{exam.get('id', '')}/print/answer-key", target="_blank", cls="btn btn-outline-brand rounded-pill px-3 me-2"),
+        A("OMR Bubble Sheet", href=f"/app/exams/{exam.get('id', '')}/print/omr", target="_blank", cls="btn btn-outline-brand rounded-pill px-3 me-2"),
         Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
         cls="no-print d-flex flex-wrap gap-2 justify-content-center p-3 mb-4 bg-light border rounded-4 shadow-sm",
     )
@@ -886,7 +886,7 @@ def _render_answer_key_paper(exam: dict, user: dict) -> Div:
     ) if theory else Div()
 
     toolbar = Div(
-        Button("Print Marking Guide", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        Button("Print Marking Guide", type="button", cls="btn btn-brand text-white rounded-pill px-4 me-2", onclick="window.print()"),
         Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
         cls="no-print d-flex justify-content-center p-3 mb-4 bg-light border rounded-pill shadow-sm",
     )
@@ -973,7 +973,7 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
     )
 
     toolbar = Div(
-        Button("Print OMR Sheet", type="button", cls="btn btn-dark rounded-pill px-4 me-2", onclick="window.print()"),
+        Button("Print OMR Sheet", type="button", cls="btn btn-brand text-white rounded-pill px-4 me-2", onclick="window.print()"),
         Button("Close", type="button", cls="btn btn-outline-secondary rounded-pill px-3", onclick="window.close()"),
         cls="no-print d-flex justify-content-center p-3 mb-4 bg-light border rounded-pill shadow-sm",
     )
@@ -2659,7 +2659,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                             "Print Exam Paper",
                             href=f"/app/exams/{exam_id}/print/student",
                             target="_blank",
-                            cls="btn btn-sm btn-dark rounded-pill px-3 w-100",
+                            cls="btn btn-sm btn-brand rounded-pill px-3 w-100 text-white",
                         ),
                         cls="p-3 d-flex flex-column h-100",
                     ),
@@ -2678,7 +2678,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                             "Print Marking Guide",
                             href=f"/app/exams/{exam_id}/print/answer-key",
                             target="_blank",
-                            cls="btn btn-sm btn-outline-primary rounded-pill px-3 w-100",
+                            cls="btn btn-sm btn-outline-brand rounded-pill px-3 w-100",
                         ),
                         cls="p-3 d-flex flex-column h-100",
                     ),
@@ -2697,7 +2697,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                             "Print OMR Sheet",
                             href=f"/app/exams/{exam_id}/print/omr",
                             target="_blank",
-                            cls="btn btn-sm btn-outline-success rounded-pill px-3 w-100",
+                            cls="btn btn-sm btn-outline-brand rounded-pill px-3 w-100",
                         ),
                         cls="p-3 d-flex flex-column h-100",
                     ),
@@ -2794,7 +2794,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                     name="format_name", id=f"exchange-format-{exam_id}", cls="form-select form-select-sm", style="max-width:7rem;",
                     onchange=f"this.form.setAttribute('hx-post','/app/exams/{exam_id}/exchange/' + this.value + '/preview'); htmx.process(this.form);",
                 ),
-                Button("Preview", type="submit", cls="btn btn-sm btn-outline-primary rounded-pill px-3"),
+                Button("Preview", type="submit", cls="btn btn-sm btn-outline-brand rounded-pill px-3"),
                 cls="d-flex flex-wrap gap-2",
             ),
             Div(id="exchange-preview-result"),

@@ -98,4 +98,27 @@ body {
   border-color: #003425;
   color: #ffffff;
 }
+
+.btn-outline-brand {
+  background: transparent;
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.btn-outline-brand:hover,
+.btn-outline-brand:focus-visible {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff;
+}
+
+.curriculum-week-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.curriculum-week-meta .badge { margin: 0 !important; }
 """

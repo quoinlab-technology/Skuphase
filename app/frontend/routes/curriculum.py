@@ -145,9 +145,8 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
                     Button(
                         f"{t.title()} Term",
                         type="button",
-                        variant=("dark" if t == term else "light"),
-                        cls="rounded-pill px-3 py-1 me-2 border"
-                        + (" text-white fw-semibold" if t == term else " text-muted"),
+                        cls=("btn btn-brand text-white fw-semibold" if t == term else "btn btn-outline-brand")
+                        + " rounded-pill px-3 py-1 me-2",
                         # Each term pill does an HTMX swap with the new term value
                         hx_get=f"/ui/curriculum/content?term={t}",
                         hx_target="#curriculum-content",
@@ -200,7 +199,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                 hx_get=f"/ui/curriculum/week/{week_id}/edit",
                 hx_target=f"#week-editor-{week_id}",
                 hx_swap="innerHTML",
-                cls="btn btn-sm btn-outline-primary rounded-pill px-2",
+                cls="btn btn-sm btn-brand rounded-pill px-3 text-white",
                 title="Correct imported text or add local notes",
                 type="button",
             )
@@ -210,7 +209,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
 
         week_badge = Span(
             f"Week {w_num}",
-            cls="badge bg-success-subtle text-success border border-success-subtle fw-semibold me-3",
+            cls="badge bg-success-subtle text-success border border-success-subtle fw-semibold",
             style="font-size: 0.82rem; min-width: 68px; text-align: center;",
         )
 
@@ -219,13 +218,13 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
         state_badges = []
         if w.get("has_override"):
             state_badges.append(
-                Span("Corrected", cls="badge bg-warning-subtle text-warning border border-warning-subtle fw-normal me-2",
+                Span("Corrected", cls="badge bg-warning-subtle text-warning border border-warning-subtle fw-normal",
                      title=f"School-corrected. Seeded text: {w.get('seeded_topic', '')}",
                      style="font-size: 0.72rem;")
             )
         if w.get("is_archived"):
             state_badges.append(
-                Span("Archived", cls="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal me-2",
+                Span("Archived", cls="badge bg-secondary-subtle text-secondary border border-secondary-subtle fw-normal",
                      title="Archived for this school; excluded from coverage and exam generation.",
                      style="font-size: 0.72rem;")
             )
@@ -233,24 +232,27 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
             state_badges.append(
                 Span(Icon("sticky", cls="bi me-1", title="Has local teacher notes"),
                      title="Has local teacher notes",
-                     cls="badge bg-info-subtle text-info border border-info-subtle fw-normal me-2",
+                     cls="badge bg-info-subtle text-info border border-info-subtle fw-normal",
                      style="font-size: 0.72rem;")
             )
         week_rows.append(
             Div(
                 Div(
-                    Input(
-                        type="checkbox",
-                        cls="form-check-input week-select-cb me-3",
-                        style="width: 1.25rem; height: 1.25rem; cursor: pointer;",
-                        **{
-                            "data-week": str(w_num),
-                            "data-topic": str(topic),
-                            "onchange": "syncWeekSelection()",
-                        },
+                    Div(
+                        Input(
+                            type="checkbox",
+                            cls="form-check-input week-select-cb",
+                            style="width: 1.25rem; height: 1.25rem; cursor: pointer;",
+                            **{
+                                "data-week": str(w_num),
+                                "data-topic": str(topic),
+                                "onchange": "syncWeekSelection()",
+                            },
+                        ),
+                        week_badge,
+                        *state_badges,
+                        cls="curriculum-week-meta",
                     ),
-                    week_badge,
-                    *state_badges,
                     Div(
                         Strong(topic, id=f"week-topic-{week_id}",
                                cls="fs-6 text-dark d-block mb-1"),
@@ -263,7 +265,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                             Icon("lightning-charge-fill", cls="bi me-1"),
                             "Draft Exam",
                             href=f"/app/exams/new?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}&weeks={w_num}",
-                            cls="btn btn-sm btn-outline-success rounded-pill px-3 me-2",
+                            cls="btn btn-sm btn-outline-brand rounded-pill px-3 me-2",
                         ),
 
                         cls="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0",
@@ -488,7 +490,7 @@ def curriculum_routes(app):
                                     href=f"/app/exams/new?class_level={quote(c_lvl)}&subject={quote(s_name)}&term={quote(t_val)}&weeks={w_num}",
                                     variant="success",
                                     size="sm",
-                                    cls="rounded-pill px-3 me-2 btn-brand",
+                                    cls="rounded-pill px-3 me-2 btn-brand text-white",
                                 ),
                                 cls="mt-auto d-flex flex-wrap gap-2",
                             ),
@@ -507,7 +509,7 @@ def curriculum_routes(app):
                     Div(
                         Icon("search", cls="bi text-muted fs-1 mb-2 d-block"),
                         P(f"No curriculum entries matched \"{q}\". Try a broader topic like \"Fractions\", \"Living Things\", or \"Civic Values\".", cls="text-muted small mb-3"),
-                        A("Clear Search", href="/app/curriculum", cls="btn btn-sm btn-outline-success rounded-pill"),
+                        A("Clear Search", href="/app/curriculum", cls="btn btn-sm btn-outline-brand rounded-pill"),
                         cls="p-5 text-center bg-white rounded-4 border shadow-sm",
                     )
                 ),
