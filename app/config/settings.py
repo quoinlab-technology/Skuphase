@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     # Admin / School-level exam generation safeguards
     max_questions_per_exam: int = 50
     max_daily_exams_per_school: int = 30
+    # Per-teacher guardrail keeps school-wide autonomy from becoming an
+    # accidental budget sink. Administrators can override this at deployment
+    # time without changing the workflow.
+    max_daily_exams_per_teacher: int = 10
 
     # Background retries (Postgres-backed jobs)
     background_retry_attempts: int = 3

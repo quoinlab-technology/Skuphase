@@ -133,23 +133,27 @@ def test_wizard_generate_without_steps_fails_gracefully(client, monkeypatch):
 
 
 def test_proposal_reject_calls_reject_endpoint_and_never_generates(client, monkeypatch):
+    """Proposals retired - all proposals routes return 410 Gone.
+
+    reject must never trigger generation.
+    """
     _login(client, monkeypatch)
     stub = ApiStub([
-        ("POST", "/exams/generation-proposals/p1/reject",
-         FakeResp(200, {"id": "p1", "status": "rejected"})),
+        ("POST", "/exams/generation-proposals/p1/reject", FakeResp(410, {})),
     ])
     monkeypatch.setattr("app.frontend.routes.proposals.call_api", stub)
 
-    r = client.post("/app/proposals/p1/reject",
-                    data={"admin_note": "Out of scope"}, follow_redirects=False)
-    assert r.status_code == 303
+    r = client.post("/app/proposals/p1/reject", data={"admin_note": "Out of scope"}, follow_redirects=False)
+    assert r.status_code == 410
 
-    paths = [c["path"] for c in stub.calls]
-    assert "/exams/generation-proposals/p1/reject" in paths
-    assert not any("/generate" in p for p in paths), "reject must not trigger generation"
+    # Retired browser routes must not make a pointless request to another
+    # retired endpoint.
+    assert stub.calls == []
+    assert not any("/generate" in call["path"] for call in stub.calls)
 
 
 def test_proposal_generate_sends_sections_payload(client, monkeypatch):
+    """Proposals retired - all proposals routes return 410 Gone."""
     _login(client, monkeypatch)
     stub = ApiStub([
         ("POST", "/exams/generate", FakeResp(200, {"exam_id": "e2"})),
@@ -159,13 +163,7 @@ def test_proposal_generate_sends_sections_payload(client, monkeypatch):
     r = client.post("/app/proposals/p1/generate", data={
         "term": "First Term", "selected_weeks": "1,2", "desired_outcomes": "word problems",
     }, follow_redirects=False)
-    assert r.status_code == 303
-
-    gen = [c for c in stub.calls if "generate" in c["path"] and c["method"] == "POST"]
-    assert gen, "expected a generate call"
-    sent = gen[0]["json"] or {}
-    # audit #4: the backend schema requires non-empty sections -> 422 otherwise
-    assert sent.get("sections"), "sections payload must be present"
+    assert r.status_code == 410
 
 
 # ---------------------------------------------------------------------------
@@ -237,11 +235,10 @@ def test_individual_teacher_role_separation(client, monkeypatch):
 
 
 def test_individual_teacher_proposals_redirect(client, monkeypatch):
-    """Accessing /app/proposals directly as individual teacher redirects to /app."""
+    """Accessing /app/proposals for individual teachers is retired -> /app."""
     _login(client, monkeypatch, role="teacher", account_type="individual_teacher")
     r = client.get("/app/proposals", follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/app"
+    assert r.status_code == 410
 
 
 def test_staff_reactivation_submits_active_true(client, monkeypatch):

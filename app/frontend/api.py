@@ -18,8 +18,8 @@ from starlette.requests import Request
 
 FRIENDLY_403 = {
     "You are not allowed to browse question bank": "You do not have permission to browse the question bank.",
-    "You are not allowed to view proposals": "Generation proposals are only available for school staff accounts.",
-    "You are not allowed to create proposals": "Only school staff can submit generation proposals.",
+    "You are not allowed to view proposals": "Generation proposals have been retired. Open Exams to generate directly.",
+    "You are not allowed to create proposals": "Generation proposals have been retired. Open Exams to generate directly.",
 }
 
 

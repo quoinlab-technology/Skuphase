@@ -283,7 +283,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         ("Teaching", "/app/teaching", "teaching", "journal-bookmark"),
     ]
     if is_school_staff:
-        nav_items.append(("Generation Proposals", "/app/proposals", "proposals", "lightbulb"))
+        pass
 
     nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
 
@@ -388,9 +388,9 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
                     if bell_count
                     else []
                 ),
-                href="/app/exams" if is_individual else "/app/proposals",
+                href="/app/exams",
                 cls="app-topbar-bell me-3",
-                title="My Exams" if is_individual else "Pending proposals & reviews",
+                title="Exams and generation status",
             ),
             Div(
                 HtmlButton(

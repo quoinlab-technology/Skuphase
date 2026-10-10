@@ -196,7 +196,9 @@ def test_export_exam_endpoint_success():
 
 
 def test_refine_exam_endpoint_forbidden_for_school_teacher():
-    user = _admin(role="teacher")
+    # Teacher autonomy: teachers (school_staff) may refine. Auditors are
+    # read-only and must be rejected with 403.
+    user = _admin(role="auditor")
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
@@ -417,6 +419,10 @@ def test_refine_from_comments_no_comments_does_not_consume_budget():
 
 
 def test_teacher_can_create_generation_proposal():
+    """Teacher-generated proposals have been retired (410 Gone).
+
+    Old clients fail loudly instead of silently queuing.
+    """
     user = _admin(role="teacher")
     db = AsyncMock()
     db.add = MagicMock()
@@ -441,14 +447,11 @@ def test_teacher_can_create_generation_proposal():
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["subject"] == "Basic Science"
-    assert db.commit.await_count == 1
-    assert db.add.call_count == 1
+    assert response.status_code == 410
 
 
 def test_admin_can_generate_exam_from_proposal():
+    """Generation from proposals has been retired (410 Gone)."""
     user = _admin()
     proposal = SimpleNamespace(
         id=uuid.uuid4(),
@@ -484,17 +487,13 @@ def test_admin_can_generate_exam_from_proposal():
             },
         )
 
-    assert response.status_code == 202
-    assert response.json()["status"] == "generating"
-    assert proposal.status == "used"
-    assert proposal.used_by_user_id == user.user_id
-    # F-10: exam + proposal flip + job are committed atomically by the
-    # request-scoped dependency, so the endpoint itself performs no commit.
-    assert db.commit.await_count == 0
-    mock_enqueue.assert_called_once()
+    assert response.status_code == 410
+    assert proposal.status == "open"
+    mock_enqueue.assert_not_called()
 
 
 def test_auditor_cannot_generate_exam_from_proposal():
+    """Auditor cannot generate from proposals - retired endpoint returns 410."""
     user = _admin(role="auditor")
     db = AsyncMock()
     db.add = MagicMock()
@@ -506,8 +505,8 @@ def test_auditor_cannot_generate_exam_from_proposal():
         json={"sections": [SECTION_PAYLOAD]},
     )
 
-    assert response.status_code == 403
-    assert db.commit.await_count == 0
+    assert response.status_code == 410
+    db.commit.assert_not_called()
 
 
 def test_teacher_can_submit_manual_exam():

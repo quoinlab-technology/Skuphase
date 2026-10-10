@@ -1,9 +1,9 @@
-"""Role-aware dashboard (FRONTEND_SPEC sec 6.8 & UI_design/Dashboard.png).
+"""Role-aware dashboard.
 
 Dashboard matching UI_design/Dashboard.png:
 - Greeting header with role pill, date, and "+ Generate Exam" action
 - 4 KPI metric cards (Generating, Under Review, Approved, Failed)
-- 2-column layout: Recent Exams list (8 cols) + Proposals list (4 cols)
+- 2-column layout: Recent Exams list (8 cols) + coverage/quick actions (4 cols)
 - Quick Actions horizontal cards at the bottom
 """
 
@@ -135,37 +135,6 @@ def _recent_exam_item(exam: dict):
     )
 
 
-def _proposal_item(prop: dict):
-    """Item row in Proposals card matching UI_design/Dashboard.png."""
-    pid = str(prop.get("id") or "")
-    title = prop.get("title") or f"{prop.get('grade_level', '')} {prop.get('subject', '')} — Proposal"
-    creator = prop.get("creator_name") or prop.get("requested_by") or "Teacher"
-    status = prop.get("status") or "open"
-
-    st_map = {
-        "open": ("Open", "open"),
-        "accepted": ("Accepted", "accepted"),
-        "used": ("Generated", "generated"),
-        "generated": ("Generated", "generated"),
-        "rejected": ("Rejected", "failed"),
-    }
-    st_text, st_type = st_map.get(status.lower(), (status.title(), "draft"))
-
-    return Div(
-        Div(
-            A(
-                Strong(title, cls="text-dark d-block mb-1"),
-                href=f"/app/proposals#{pid}",
-                cls="text-decoration-none",
-            ),
-            Div(creator, cls="text-muted small"),
-            cls="flex-grow-1",
-        ),
-        _status_badge_pill(st_text, st_type),
-        cls="d-flex align-items-center justify-content-between py-3 border-bottom",
-    )
-
-
 def register_routes(app):
     @app.get("/app")
     async def dashboard(req: Request):
@@ -199,17 +168,6 @@ def register_routes(app):
         review_count = len(data_review.get("exams") or []) if ok_review else 0
         approved_count = len(data_approved.get("exams") or []) if ok_approved else 0
         failed_count = len(data_failed.get("exams") or []) if ok_failed else 0
-
-        # Load proposals if school staff
-        proposals_list = []
-        if is_school_staff:
-            try:
-                resp_prop = await call_api(req, "GET", "/exams/generation-proposals")
-                ok_p, p_data = unwrap(resp_prop)
-                if ok_p and isinstance(p_data, list):
-                    proposals_list = p_data
-            except Exception:
-                pass
 
         # Greeting matching Dashboard.png
         user_first = (user.get("full_name") or user.get("email") or "there").split()[0]
@@ -342,47 +300,22 @@ def register_routes(app):
             cls="p-3 h-100 shadow-sm border-0",
         )
 
-        # Proposals widget or Overview widget for right column
-        if is_school_staff and proposals_list:
-            proposals_body = Div(
-                *[_proposal_item(p) for p in proposals_list[:4]],
-            )
-        elif is_school_staff:
-            proposals_body = Div(
-                P("No open proposals yet. Teachers can submit proposals for exam generation.", cls="text-muted small py-4 text-center"),
-                A(
-                    Icon("lightbulb", cls="bi me-1"),
-                    "New Proposal",
-                    href="/app/proposals/new",
-                    cls="btn btn-sm btn-outline-success d-block mx-auto mb-2",
-                    style="max-width: 160px",
-                ),
-            )
-        else:
-            # Individual teacher curriculum coverage card
-            proposals_body = Div(
-                P("Official NERDC Curriculum & Scheme of Work", cls="fw-bold small text-dark mb-1"),
-                P("Pre-Nursery through SSS 3 active and seeded with standard national learning objectives.", cls="text-muted small mb-3"),
-                Div(
-                    Div(Span("Mathematics, English, Basic Science", cls="small fw-semibold"), cls="mb-1"),
-                    Div(Span("Social Studies, National Values, Languages", cls="small text-muted"), cls="mb-3"),
-                    A(
-                        Icon("journal-bookmark", cls="bi me-1"),
-                        "Explore Curriculum",
-                        href="/app/curriculum",
-                        cls="btn btn-sm btn-outline-secondary d-inline-block",
-                    ),
-                ),
-                cls="py-2",
-            )
-
         right_widget_card = Card(
             Div(
-                Strong("Proposals" if is_school_staff else "Curriculum Coverage", cls="fs-6 text-dark"),
-                A("View all", href="/app/proposals" if is_school_staff else "/app/curriculum", cls="small text-brand text-decoration-none fw-semibold"),
+                Strong("Curriculum Coverage", cls="fs-6 text-dark"),
+                A("View all", href="/app/curriculum", cls="small text-brand text-decoration-none fw-semibold"),
                 cls="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom",
             ),
-            proposals_body,
+            Div(
+                P("Pre-Nursery through SSS 3 active and seeded with standard national learning objectives.", cls="text-muted small mb-3"),
+                A(
+                    Icon("journal-bookmark", cls="bi me-1"),
+                    "Explore Curriculum",
+                    href="/app/curriculum",
+                    cls="btn btn-sm btn-outline-secondary d-inline-block",
+                ),
+                cls="py-2",
+            ),
             cls="p-3 h-100 shadow-sm border-0",
         )
 

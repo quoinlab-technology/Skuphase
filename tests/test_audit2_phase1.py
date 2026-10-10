@@ -311,21 +311,25 @@ def test_poll_fragment_has_time_expectation_and_aria_live(client, monkeypatch):
     assert 'aria-live="polite"' in r.text
 
 
-def test_proposals_empty_state_explains_workflow(client, monkeypatch):
-    """Zero-proposal schools see a workflow explainer (audit fix-list #4)."""
+def test_proposals_endpoint_gone_stub(client, monkeypatch):
+    """Zero-proposal schools see a workflow explainer (audit fix-list #4).
+
+    Proposals route is retired and replaced with a 410 Gone stub; old
+    clients fail loudly instead of silently queuing.
+    """
     _login(client, monkeypatch)
     stub = ApiStub([
-        ("GET", "/exams/generation-proposals", FakeResp(200, {"proposals": [], "total": 0})),
+        ("GET", "/exams/generation-proposals", FakeResp(410, {})),
     ])
     monkeypatch.setattr("app.frontend.routes.proposals.call_api", stub)
     r = client.get("/app/proposals")
-    assert r.status_code == 200
-    assert "How proposals work" in r.text
-    assert "Teachers describe the exam they need" in r.text
+    assert r.status_code == 410
+    assert "How proposals work" not in r.text
+    assert "Teachers describe the exam they need" not in r.text
 
 
 def test_teacher_under_review_helper_copy(client, monkeypatch):
-    """Teachers see waiting-for-admin copy on final_submitted_by_teacher exams (audit fix-list #7)."""
+    """Teachers see finalization copy on final_submitted_by_teacher exams."""
     _login(client, monkeypatch, role="teacher")
     stub = ApiStub([
         ("GET", "/exams/exam-002", FakeResp(200, {
@@ -337,7 +341,7 @@ def test_teacher_under_review_helper_copy(client, monkeypatch):
     monkeypatch.setattr("app.frontend.routes.exams.call_api", stub)
     r = client.get("/app/exams/exam-002")
     assert r.status_code == 200
-    assert "with your school admin for approval" in r.text
+    assert "ready for export" in r.text
 
 
 def test_non_teacher_no_waiting_copy(client, monkeypatch):

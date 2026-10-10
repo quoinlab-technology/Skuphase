@@ -15,7 +15,7 @@ from sqlalchemy import select, and_, func, update
 from app.core.dependencies import get_current_user
 from app.core.security import verify_token
 from app.services.auth_service import AuthService
-from app.core.permissions import require_llm_permission, is_workspace_admin
+from app.core.permissions import require_llm_permission, allows_llm_actions, can_modify_exam, is_workspace_admin
 from app.core.workflow import (
     MUTABLE_STATUSES,
     REFINABLE_STATES,
@@ -345,11 +345,12 @@ async def generate_exam(
         202 Accepted with exam ID and polling endpoint
     """
     try:
-        # Only workspace admins trigger LLM generation calls (cost control).
-        if not is_workspace_admin(current_user):
+        # Teachers and school administrators trigger generation (costs stay
+        # bounded by per-school rate limits + per-exam LLM budgets).
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can generate exams",
+                detail="Only teachers and school administrators can generate exams",
             )
 
         warnings: List[str] = []
@@ -412,7 +413,8 @@ async def generate_exam(
                         + ". Review coverage before using this paper."
                     )
 
-        # Check rate limit (10 exams per day per school)
+        # Mechanical cost controls replace the retired human proposal gate.
+        # Keep both school-wide and teacher-level limits configurable.
         from datetime import datetime, timedelta
 
         one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
@@ -425,11 +427,35 @@ async def generate_exam(
         rate_limit_result = await db.execute(rate_limit_query)
         daily_count = rate_limit_result.scalar()
 
-        if daily_count >= 10:
+        if daily_count >= settings.max_daily_exams_per_school:
             raise HTTPException(
                 status_code=429,
-                detail="Daily exam generation limit reached (10 exams/day). Please try again tomorrow.",
+                detail=(
+                    "Daily school exam generation limit reached "
+                    f"({settings.max_daily_exams_per_school} exams/day). Please try again tomorrow."
+                ),
             )
+
+        if current_user.role == "teacher":
+            teacher_count_result = await db.execute(
+                select(func.count()).where(
+                    and_(
+                        Exam.school_id == current_user.school_id,
+                        Exam.created_by_user_id == current_user.user_id,
+                        Exam.created_at >= one_day_ago,
+                    )
+                )
+            )
+            teacher_count = teacher_count_result.scalar() or 0
+            if teacher_count >= settings.max_daily_exams_per_teacher:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        "Your daily exam generation limit has been reached "
+                        f"({settings.max_daily_exams_per_teacher} exams/day). "
+                        "Please try again tomorrow or contact your school administrator."
+                    ),
+                )
 
         # Create draft exam record
         exam_id = uuid.uuid4()
@@ -875,10 +901,10 @@ async def import_questions_from_bank(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """Import selected bank questions directly into a specific section of an exam."""
-    if not is_workspace_admin(current_user):
+    if not allows_llm_actions(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Only workspace administrators can import questions into exams",
+            detail="Only teachers and school administrators can import questions into exams",
         )
 
     exam_result = await db.execute(
@@ -973,233 +999,61 @@ async def import_questions_from_bank(
 
 
 # ============================================================================
-# GENERATION PROPOSAL ENDPOINTS
+# GENERATION PROPOSAL ENDPOINTS — RETIRED
+# Teacher autonomy: teachers generate directly via POST /exams/generate.
+# These routes return 410 Gone so old clients fail loudly instead of
+# silently queuing into a workflow nobody reviews.
 # ============================================================================
 
 @router.post(
     "/generation-proposals",
-    response_model=ExamGenerationProposalResponse,
-    summary="Submit exam generation proposal",
-    description="Teacher/auditor submits exam intent and resources for admin approval.",
+    summary="(Retired) Submit exam generation proposal",
+    description="Retired. Teachers generate exams directly from Exams.",
     tags=["Exams"],
 )
-async def create_generation_proposal(
-    request: ExamGenerationProposalCreateRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> ExamGenerationProposalResponse:
-    """Create teacher/auditor proposal without triggering LLM call."""
-    if not _can_submit_proposal(current_user.role):
-        raise HTTPException(status_code=403, detail="You are not allowed to submit proposals")
-
-    proposal = ExamGenerationProposal(
-        school_id=current_user.school_id,
-        requested_by_user_id=current_user.user_id,
-        subject=request.subject,
-        grade_level=request.grade_level,
-        term=request.term,
-        selected_weeks=request.selected_weeks or [],
-        desired_outcomes=request.desired_outcomes,
-        custom_instructions=request.custom_instructions,
-        draft_questions=request.draft_questions,
-        status="open",
+async def create_generation_proposal_retired():
+    """Retired endpoint stub."""
+    raise HTTPException(
+        status_code=410,
+        detail="Generation proposals are retired. Teachers can now generate exams directly from Exams.",
     )
-    db.add(proposal)
-    await db.commit()
-    await db.refresh(proposal)
-    return proposal
 
 
 @router.get(
     "/generation-proposals",
-    response_model=list[ExamGenerationProposalResponse],
-    summary="List generation proposals",
-    description="List school proposals; optionally include used/rejected items.",
+    summary="(Retired) List generation proposals",
+    description="Retired.",
     tags=["Exams"],
 )
-async def list_generation_proposals(
-    include_closed: bool = Query(False, description="Include used/rejected proposals"),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> list[ExamGenerationProposalResponse]:
-    """List proposals in current school scope."""
-    if not _can_submit_proposal(current_user.role):
-        raise HTTPException(status_code=403, detail="You are not allowed to view proposals")
-
-    query = select(ExamGenerationProposal).where(
-        ExamGenerationProposal.school_id == current_user.school_id
-    )
-    if not include_closed:
-        query = query.where(ExamGenerationProposal.status == "open")
-    query = query.order_by(ExamGenerationProposal.created_at.desc())
-
-    result = await db.execute(query)
-    return list(result.scalars().all())
-
+async def list_generation_proposals_retired(
+    include_closed: bool = Query(False),
+):
+    """Retired endpoint stub."""
+    raise HTTPException(status_code=410, detail="Generation proposals are retired.")
 
 @router.post(
     "/generation-proposals/{proposal_id}/generate",
-    response_model=ExamGenerationResponse,
-    status_code=202,
-    summary="Generate exam from proposal (admin)",
-    description="Admin converts a teacher/auditor proposal into a standardized exam generation job.",
+    summary="(Retired) Generate exam from proposal",
+    description="Retired. Generate exams directly.",
     tags=["Exams"],
 )
-async def generate_exam_from_proposal(
-    proposal_id: uuid.UUID,
-    request: GenerateFromProposalRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> ExamGenerationResponse:
-    """Create draft exam and durable generation job from queued proposal."""
-    if not is_workspace_admin(current_user):
-        raise HTTPException(
-            status_code=403,
-            detail="Only school administrators or individual teachers can generate exams from proposals",
-        )
-
-    proposal_result = await db.execute(
-        select(ExamGenerationProposal).where(
-            and_(
-                ExamGenerationProposal.id == proposal_id,
-                ExamGenerationProposal.school_id == current_user.school_id,
-            )
-        )
-    )
-    proposal = proposal_result.scalar_one_or_none()
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Proposal not found")
-    if proposal.status != "open":
-        raise HTTPException(status_code=400, detail="Proposal is not open")
-
-    # Curriculum-first alignment: admin override wins, else fall back to the
-    # teacher's proposal values. getattr() keeps older callers/tests that build
-    # requests without these fields working.
-    effective_term = getattr(request, "term", None) or getattr(proposal, "term", None)
-    raw_weeks = getattr(request, "selected_weeks", None) or getattr(
-        proposal, "selected_weeks", None
-    )
-    effective_weeks = [int(w) for w in raw_weeks] if raw_weeks else None
-
-    from datetime import timedelta
-
-    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
-    rate_limit_query = select(func.count()).where(
-        and_(
-            Exam.school_id == current_user.school_id,
-            Exam.created_at >= one_day_ago,
-        )
-    )
-    rate_limit_result = await db.execute(rate_limit_query)
-    daily_count = rate_limit_result.scalar()
-    if daily_count >= 10:
-        raise HTTPException(
-            status_code=429,
-            detail="Daily exam generation limit reached (10 exams/day). Please try again tomorrow.",
-        )
-
-    teacher_feedback = [f"Teacher desired outcomes:\n{proposal.desired_outcomes}"]
-    if proposal.custom_instructions:
-        teacher_feedback.append(f"Teacher custom instructions:\n{proposal.custom_instructions}")
-    if proposal.draft_questions:
-        teacher_feedback.append(f"Teacher draft question ideas:\n{proposal.draft_questions}")
-    if request.additional_admin_instructions:
-        teacher_feedback.append(
-            f"Admin standardization instructions:\n{request.additional_admin_instructions}"
-        )
-
-    generation_request = ExamGenerationRequest(
-        subject=proposal.subject,
-        grade_level=proposal.grade_level,
-        term=effective_term,
-        selected_weeks=effective_weeks,
-        sections=request.sections,
-        duration_minutes=request.duration_minutes,
-        custom_instructions="\n\n".join(teacher_feedback),
-        include_diagrams=request.include_diagrams,
-    )
-
-    exam_id = uuid.uuid4()
-    exam = Exam(
-        id=exam_id,
-        school_id=current_user.school_id,
-        created_by_user_id=current_user.user_id,
-        subject=generation_request.subject,
-        grade_level=generation_request.grade_level,
-        status="draft",
-        workflow_state="generation_requested",
-        llm_call_count=1,
-        llm_call_limit=3,
-        total_marks=0,
-        duration_minutes=generation_request.duration_minutes,
-    )
-    db.add(exam)
-
-    proposal.status = "used"
-    proposal.used_by_user_id = current_user.user_id
-    proposal.used_at = datetime.now(timezone.utc)
-
-    # Exam + proposal flip + job enqueue commit atomically via the
-    # request-scoped db dependency (no orphaned drafts on crash).
-    await enqueue_generation_job(
-        session=db,
-        exam_id=exam_id,
-        request_data=generation_request.model_dump(mode="json"),
-        school_id=current_user.school_id,
-        created_by_user_id=current_user.user_id,
-    )
-
-    return ExamGenerationResponse(
-        message="Exam generation from proposal queued",
-        exam_id=exam_id,
-        status="generating",
-        poll_endpoint=f"/api/v1/exams/{exam_id}",
-        estimated_time_seconds=30,
+async def generate_exam_from_proposal_retired(proposal_id: uuid.UUID):
+    """Retired endpoint stub."""
+    raise HTTPException(
+        status_code=410,
+        detail="Generation proposals are retired. Generate exams directly.",
     )
 
 
 @router.post(
     "/generation-proposals/{proposal_id}/reject",
-    response_model=ExamGenerationProposalResponse,
-    summary="Reject generation proposal (admin)",
-    description=(
-        "Admin declines a teacher/auditor proposal without generating an exam. "
-        "The proposal status becomes 'rejected' and can no longer be generated."
-    ),
+    summary="(Retired) Reject generation proposal",
+    description="Retired.",
     tags=["Exams"],
 )
-async def reject_generation_proposal(
-    proposal_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> ExamGenerationProposal:
-    """Mark an open proposal as rejected (audit #5: this endpoint did not
-    exist, so the modal's Reject button posted to the generate route and
-    silently generated an exam instead)."""
-    if not is_workspace_admin(current_user):
-        raise HTTPException(
-            status_code=403,
-            detail="Only school administrators or individual teachers can reject proposals",
-        )
-
-    proposal_result = await db.execute(
-        select(ExamGenerationProposal).where(
-            and_(
-                ExamGenerationProposal.id == proposal_id,
-                ExamGenerationProposal.school_id == current_user.school_id,
-            )
-        )
-    )
-    proposal = proposal_result.scalar_one_or_none()
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Proposal not found")
-    if proposal.status not in {"open", "accepted"}:
-        raise HTTPException(status_code=400, detail="Proposal is not open for rejection")
-
-    proposal.status = "rejected"
-    await db.commit()
-    await db.refresh(proposal)
-    return proposal
+async def reject_generation_proposal_retired(proposal_id: uuid.UUID):
+    """Retired endpoint stub."""
+    raise HTTPException(status_code=410, detail="Generation proposals are retired.")
 
 
 # ============================================================================
@@ -1544,10 +1398,10 @@ async def update_exam(
     """
     try:
         # Verify user is a workspace admin
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can update exams",
+                detail="Only teachers and school administrators can update exams",
             )
 
         # Get exam with school isolation
@@ -1669,10 +1523,10 @@ async def update_exam_question(
 ) -> QuestionResponse:
     """Manually update an individual exam question."""
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only workspace administrators can edit exam questions",
+                detail="Only teachers and school administrators can edit exam questions",
             )
 
         # Get exam with school data isolation
@@ -1836,10 +1690,10 @@ async def delete_exam_question(
 ) -> dict:
     """Delete a single question from an unapproved exam, renumbering the rest."""
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only workspace administrators can delete exam questions",
+                detail="Only teachers and school administrators can delete exam questions",
             )
 
         exam_result = await db.execute(
@@ -2128,7 +1982,7 @@ async def exam_preflight(
     "/{exam_id}/submit-final",
     response_model=dict,
     summary="Submit exam final draft (teacher)",
-    description="Teacher marks exam as final and ready for admin approval.",
+    description="Teacher marks an exam as final and locks it for export.",
     tags=["Exams"],
 )
 async def submit_exam_final(
@@ -2136,7 +1990,7 @@ async def submit_exam_final(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Move exam into final teacher-submitted state before admin approval."""
+    """Move an exam into its final, export-ready state."""
     if current_user.role not in {"teacher", "school_admin"}:
         raise HTTPException(
             status_code=403,
@@ -2164,11 +2018,7 @@ async def submit_exam_final(
             ),
         )
 
-    if current_user.role == "teacher" and exam.created_by_user_id != current_user.user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Teachers can only submit exams they created",
-        )
+    # Teacher autonomy: any teacher in the school may advance a school exam.
 
     preflight = await _run_exam_preflight(db=db, exam=exam)
     if not preflight["passed"]:
@@ -2185,7 +2035,7 @@ async def submit_exam_final(
     await db.commit()
 
     return {
-        "message": "Exam submitted for admin approval",
+        "message": "Exam finalized and ready for export",
         "exam_id": str(exam_id),
         "workflow_state": exam.workflow_state,
     }
@@ -2212,10 +2062,10 @@ async def refine_exam(
     Refine selected questions (or all exam questions) and persist history.
     """
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can refine exams",
+                detail="Only teachers and school administrators can refine exams",
             )
 
         exam_result = await db.execute(
@@ -2297,10 +2147,10 @@ async def refine_exam_from_comments(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """Batch review comments and send one combined refinement prompt to LLM."""
-    if not is_workspace_admin(current_user):
+    if not allows_llm_actions(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Only school administrators or individual teachers can refine exams from comments",
+            detail="Only teachers and school administrators can refine exams from comments",
         )
 
     exam_result = await db.execute(
@@ -2419,10 +2269,10 @@ async def approve_exam(
     Approve an exam that belongs to the current school.
     """
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can approve exams",
+                detail="Only teachers and school administrators can approve exams",
             )
 
         result = await db.execute(
@@ -2503,10 +2353,10 @@ async def reject_exam(
 ) -> dict:
     """Send a submitted exam back to teacher_review (governed transition)."""
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can reject exams",
+                detail="Only teachers and school administrators can reject exams",
             )
 
         result = await db.execute(
@@ -2586,10 +2436,10 @@ async def export_exam(
     Export exam to PDF (MVP).
     """
     try:
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can export exams",
+                detail="Only teachers and school administrators can export exams",
             )
 
         if request.format.lower() != "pdf":
@@ -2832,10 +2682,10 @@ async def delete_exam(
     """
     try:
         # Verify user is a workspace admin
-        if not is_workspace_admin(current_user):
+        if not allows_llm_actions(current_user):
             raise HTTPException(
                 status_code=403,
-                detail="Only school administrators or individual teachers can delete exams",
+                detail="Only teachers and school administrators can delete exams",
             )
         
         # Get exam with school isolation

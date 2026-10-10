@@ -54,7 +54,7 @@ class SchoolService:
             school_id=school.id,
             name=school.name,
             contact_email=school.contact_email,
-            contact_phone=school.contact_phone,
+            contact_phone=school.contact_phone or "",
             address=school.address,
             is_active=school.is_active,
             created_at=school.created_at,

@@ -265,13 +265,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                             href=f"/app/exams/new?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}&weeks={w_num}",
                             cls="btn btn-sm btn-outline-success rounded-pill px-3 me-2",
                         ),
-                        A(
-                            Icon("send", cls="bi me-1"),
-                            "Propose",
-                            href=f"/app/proposals/new?grade_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term.title() + ' Term')}&selected_weeks={w_num}&desired_outcomes={quote(topic)}",
-                            cls="btn btn-sm btn-outline-secondary rounded-pill px-2",
-                            title="Propose this week to school admin",
-                        ),
+
                         cls="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0",
                     ),
                     cls="d-flex flex-column flex-md-row align-items-start align-items-md-center w-100",
@@ -326,13 +320,6 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                     cls="btn btn-sm btn-brand text-white rounded-pill px-3 me-2 disabled",
                     style="background-color: #00412E;",
                 ),
-                A(
-                    Icon("send", cls="bi me-1"),
-                    "Submit as Proposal",
-                    id="batch-propose-btn",
-                    href="#",
-                    cls="btn btn-sm btn-outline-dark rounded-pill px-3 disabled",
-                ),
                 cls="d-flex align-items-center mt-2 mt-sm-0",
             ),
             cls="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center p-3",
@@ -353,19 +340,13 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                 const count = weeks.length;
                 const summary = document.getElementById('selected-weeks-summary');
                 const draftBtn = document.getElementById('batch-draft-btn');
-                const proposeBtn = document.getElementById('batch-propose-btn');
                 if (summary) {{
                     summary.textContent = count === 0 ? '0 weeks selected' : count + ' week' + (count > 1 ? 's' : '') + ' selected (Weeks ' + weeks.join(', ') + ')';
                 }}
                 const baseUrl = '/app/exams/new?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}&weeks=' + weeks.join(',');
-                const propUrl = '/app/proposals/new?grade_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term.title() + " Term")}&selected_weeks=' + weeks.join(',') + '&desired_outcomes=' + encodeURIComponent(topics.join('; '));
                 if (draftBtn) {{
                     draftBtn.classList.toggle('disabled', count === 0);
                     draftBtn.href = count > 0 ? baseUrl : '#';
-                }}
-                if (proposeBtn) {{
-                    proposeBtn.classList.toggle('disabled', count === 0);
-                    proposeBtn.href = count > 0 ? propUrl : '#';
                 }}
             }}
             function toggleSelectAllWeeks(select) {{
@@ -508,15 +489,6 @@ def curriculum_routes(app):
                                     variant="success",
                                     size="sm",
                                     cls="rounded-pill px-3 me-2 btn-brand",
-                                ),
-                                Button(
-                                    Icon("send", cls="bi me-1"),
-                                    "Propose",
-                                    as_="a",
-                                    href=f"/app/proposals/new?grade_level={quote(c_lvl)}&subject={quote(s_name)}&term={quote(t_val.title() + ' Term')}&selected_weeks={w_num}&desired_outcomes={quote(topic)}",
-                                    variant="outline-secondary",
-                                    size="sm",
-                                    cls="rounded-pill px-3",
                                 ),
                                 cls="mt-auto d-flex flex-wrap gap-2",
                             ),

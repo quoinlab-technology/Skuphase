@@ -289,8 +289,8 @@ def home():
                     Col(
                         Card(
                             Div("03", cls="fw-bold text-muted-custom fs-3 mb-2", style="color: #94A3B8;"),
-                            Strong("Teacher submit proposal", cls="fs-6 text-dark d-block mb-2"),
-                            P("Teachers submit generation proposals to school admins for review, or generate directly in solo mode.", cls="text-muted small mb-0"),
+                            Strong("Teachers generate directly", cls="fs-6 text-dark d-block mb-2"),
+                            P("Teachers create, refine, and finalize their own lesson and exam materials while school leaders govern settings and usage.", cls="text-muted small mb-0"),
                             cls="p-4 h-100 border-0 shadow-sm rounded-4 bg-white",
                         ),
                         span=12, md=6, lg=4, cls="mb-4",
@@ -437,7 +437,7 @@ def home():
                             ),
                             (
                                 "Who can approve an exam generation?",
-                                "Only school administrators and designated academic directors can approve proposals and finalized exams. Teachers can draft, refine, and submit proposals for approval.",
+                                "Teachers can generate, refine, and finalize their own exams. School administrators govern settings, usage limits, staff, and oversight.",
                             ),
                             (
                                 "How are exam papers and marking schemes formatted?",
@@ -499,8 +499,8 @@ def how_it_works():
             "Define the title, sections, question types, marks and instructions. A teacher can also create a manual paper when questions are already prepared.",
         ),
         (
-            "3. Generation Proposals",
-            "Teachers and auditors submit generation proposals — structured requests describing what kind of exam they need. These include subject, grade level, number of questions per section, question types (MCQ, theory, essay), and special instructions. Proposals are reviewed by the school admin who can accept, decline, or request changes.",
+            "3. Direct generation and oversight",
+            "Teachers generate exams directly from the curriculum, refine them, and finalize them for export. School administrators manage staff, settings, usage limits, and school-wide oversight without acting as a subject-matter approval bottleneck.",
         ),
         (
             "4. Generate From the Curriculum",

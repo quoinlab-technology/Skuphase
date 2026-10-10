@@ -654,6 +654,25 @@ def _is_workspace_admin(user: dict) -> bool:
     return user.get("role") == "school_admin" or user.get("account_type") == "individual_teacher"
 
 
+def _can_work_exam(user: dict, exam: dict | None = None) -> bool:
+    """UI counterpart to the teacher-autonomy permission policy.
+
+    School teachers may work on their own mutable exams; administrators and
+    individual teachers may manage all exams in their workspace.  The API
+    remains authoritative, but keeping this guard aligned prevents controls
+    from disappearing for ordinary teachers.
+    """
+    if _is_workspace_admin(user):
+        return True
+    if user.get("role") != "teacher":
+        return False
+    if not exam:
+        return True
+    creator = exam.get("created_by_user_id") or exam.get("created_by")
+    user_id = user.get("user_id") or user.get("id")
+    return not creator or not user_id or str(creator) == str(user_id)
+
+
 def _render_clean_print_paper(exam: dict, user: dict) -> Div:
     """Standalone, pristine school examination paper optimized for paper printing."""
     school_name = user.get("school_name") or exam.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
@@ -1858,7 +1877,9 @@ def register_page_routes(app):
         user = current_user(req) or {}
         state = _state_of({"workflow_state": form.get("_workflow_state") or "", "status": form.get("_status") or ""})
         editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
-        if not _is_workspace_admin(user) or state not in editable_states:
+        if user.get("role") not in {"teacher", "school_admin"} and user.get("account_type") != "individual_teacher":
+            return show_toast("You cannot edit this question right now.", "danger")
+        if state not in editable_states:
             return show_toast("You cannot edit this question right now.", "danger")
         
         payload = {}
@@ -2255,10 +2276,10 @@ def _exports_history_modal(exam: dict) -> Div:
 
 
 def _teacher_waiting_copy(exam: dict, user: dict):
-    """Helper copy for school-staff teachers viewing an exam awaiting admin approval.
+    """Helper copy for teachers viewing an exam that is ready to finalize.
 
-    Audit fix-list #7: when a teacher's exam is in final_submitted_by_teacher
-    (with the admin), explain why no action buttons are available.
+    Keep this helper for compatibility with older states while avoiding the
+    retired admin-approval language.
     """
     role = (user.get("role") or "").lower()
     if role != "teacher":
@@ -2266,7 +2287,7 @@ def _teacher_waiting_copy(exam: dict, user: dict):
     state = _state_of(exam)
     if state == "final_submitted_by_teacher":
         return P(
-            "Your exam is with your school admin for approval. You'll get a notification when it's reviewed.",
+            "This exam has been submitted as final and is ready for export.",
             cls="text-muted small mt-2",
         )
     return Div()
@@ -2374,7 +2395,7 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
             href=f"/app/exams/new?copy_from={exam_id}",
         ),
     ]
-    if _is_workspace_admin(user):
+    if _can_work_exam(user, exam):
         kebab_items.append(DropdownDivider())
         kebab_items.append(
             DropdownItem(
@@ -2796,7 +2817,7 @@ def _questions_tab(exam: dict, user: dict, show_answers: bool = False):
     exam_id = exam.get("id", "")
     state = _state_of(exam)
     editable_states = {"draft", "teacher_review", "final_submitted_by_teacher"}
-    can_edit = _is_workspace_admin(user) and state in editable_states
+    can_edit = _can_work_exam(user, exam) and state in editable_states
     q_list = exam.get("questions") or []
 
     top_toolbar = Div(
@@ -4109,7 +4130,8 @@ def _wizard_sources(request: Request) -> Div:
     grade = wiz.get("grade_level", "Primary 4")
     term = wiz.get("term", "First Term")
 
-    weeks = getattr(request.state, "wizard_curriculum_weeks", None) or _get_curriculum_weeks_sync(wiz)
+    cached_weeks = getattr(request.state, "wizard_curriculum_weeks", None)
+    weeks = cached_weeks if isinstance(cached_weeks, list) and cached_weeks else _get_curriculum_weeks_sync(wiz)
     if "selected_weeks" in wiz and isinstance(wiz["selected_weeks"], list):
         selected_weeks = [str(w) for w in wiz["selected_weeks"]]
     else:

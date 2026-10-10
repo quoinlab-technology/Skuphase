@@ -47,8 +47,8 @@ NOTIF_PREFS = [
      "Get notified when your exam finishes generating.", True),
     ("new_audit_comments", "New audit comments",
      "Know right away when a reviewer comments on your exam.", True),
-    ("proposal_status_changes", "Proposal status changes",
-     "Follow your proposal from request to generated exam.", True),
+    ("proposal_status_changes", "Exam workflow updates",
+     "Follow generation and review updates for your exams.", True),
     ("document_processing_done", "Document processing completed",
      "Know when an uploaded curriculum or source document is ready.", True),
     ("user_joins_school", "User joins school",
@@ -90,7 +90,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
     """Build the settings navigation and active tab body using native Faststrap components."""
     name = school_data.get("name") or user.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
     email = school_data.get("contact_email") or user.get("email") or ""
-    phone = school_data.get("phone") or "+234 800 000 0000"
+    phone = school_data.get("contact_phone") or school_data.get("phone") or ""
     state = school_data.get("state") or "Lagos"
     active_term = school_settings.get("active_term") or "First Term"
     academic_year = school_settings.get("academic_year") or "2025/2026"
