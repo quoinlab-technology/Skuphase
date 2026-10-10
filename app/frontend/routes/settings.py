@@ -5,6 +5,7 @@ curriculum levels, and exam generation policies.
 """
 
 import secrets
+import logging
 
 from fasthtml.common import (
     A,
@@ -40,6 +41,8 @@ from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
 from app.config.settings import get_settings
 from app.services.school_logo_storage import delete_logo, upload_logo
+
+logger = logging.getLogger(__name__)
 
 
 def _owned_logo_path(school_id: str, path: str | None) -> str | None:
@@ -93,7 +96,14 @@ async def _load_settings_context(req: Request, user: dict):
     return school_data, school_settings, notif_state
 
 
-def _build_settings_content(user: dict, school_data: dict, school_settings: dict, notif_state: dict, active_tab: str = "profile"):
+def _build_settings_content(
+    user: dict,
+    school_data: dict,
+    school_settings: dict,
+    notif_state: dict,
+    active_tab: str = "profile",
+    csrf_token: str | None = None,
+):
     """Build the settings navigation and active tab body using native Faststrap components."""
     name = school_data.get("name") or user.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
     email = school_data.get("contact_email") or user.get("email") or ""
@@ -105,6 +115,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
     address = school_data.get("address") or ""
     logo_url = school_settings.get("logo_url") or ""
     document_style = school_settings.get("document_style") or {}
+    csrf_field = Input(name="csrf_token", value=csrf_token or "", type="hidden") if csrf_token else None
 
     def _tab_link(key: str, label: str, icon_name: str) -> A:
         is_curr = active_tab == key
@@ -161,6 +172,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
     # Tab 1: School Profile
     profile_content = Form(
         Card(
+            csrf_field,
             Strong("School Information", cls="fs-6 text-dark d-block mb-3"),
             Input("name", label="School Name", value=name, required=True),
             Row(
@@ -247,6 +259,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
         ),
         Div(logo_preview, cls="school-logo-preview-wrap mb-3"),
         Form(
+            csrf_field,
             Input("logo_file", input_type="file", accept="image/png,image/jpeg,image/webp", cls="form-control rounded-3", required=True),
             Div(
                 P("PNG, JPG, or WebP · maximum 5 MB", cls="text-muted small mb-0"),
@@ -291,6 +304,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
                 Div(
                     Button("Cancel", type="button", variant="light", cls="rounded-pill px-4 me-2", **{"data-bs-dismiss": "modal"}),
                     Form(
+                        csrf_field,
                         Button("Reset logo", type="submit", variant="danger", cls="rounded-pill px-4"),
                         action="/app/settings/logo-reset",
                         method="post",
@@ -354,6 +368,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
         )
     notifications_content = Form(
         Card(
+            csrf_field,
             Strong("Email & In-App Notifications", cls="fs-6 text-dark d-block mb-1"),
             P("Choose what SkuPhase tells you about. These preferences apply to your account only.",
               cls="text-muted small mb-3"),
@@ -390,6 +405,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
     # Tab 5: Academic Policy
     policy_content = Form(
         Card(
+            csrf_field,
             Strong("Academic Session & Policies", cls="fs-6 text-dark d-block mb-3"),
             Row(
                 Col(
@@ -433,6 +449,7 @@ def _build_settings_content(user: dict, school_data: dict, school_settings: dict
         Card(
             Strong("Change Password", cls="fs-6 text-dark d-block mb-3"),
             Form(
+                csrf_field,
                 Input("old_password", input_type="password", label="Current Password", required=True, placeholder="Enter current password"),
                 Input("new_password", input_type="password", label="New Password", required=True, minlength="8", placeholder="At least 8 characters with uppercase and number"),
                 Input("confirm_password", input_type="password", label="Confirm New Password", required=True, minlength="8", placeholder="Re-enter new password"),
@@ -480,7 +497,7 @@ def register_routes(app):
             return RedirectResponse("/app", status_code=303)
 
         school_data, school_settings, notif_state = await _load_settings_context(req, user)
-        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=tab.lower())
+        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=tab.lower(), csrf_token=req.session.get("csrf"))
         push_url = f"/app/settings?tab={tab.lower()}"
         return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
 
@@ -504,7 +521,7 @@ def register_routes(app):
 
         # Support direct HTMX requests to /app/settings
         if req.headers.get("hx-request") or req.headers.get("HX-Request"):
-            content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab)
+            content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"))
             return HTMLResponse(to_xml(content), headers={"HX-Push-Url": f"/app/settings?tab={active_tab}"})
 
         header = Div(
@@ -512,7 +529,7 @@ def register_routes(app):
             P("Configure school profile, academic sessions, security, and exam quality requirements.", cls="text-muted small mb-4"),
         )
 
-        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab)
+        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"))
 
         return AppShell(
             Title("School Settings — SkuPhase"),
@@ -671,6 +688,7 @@ def register_routes(app):
                 getattr(upload, "content_type", "application/octet-stream"),
             )
         except Exception:
+            logger.exception("School logo upload failed for school_id=%s", school_id)
             push_flash(req, "The logo could not be uploaded to Supabase Storage.", "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
 

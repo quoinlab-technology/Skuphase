@@ -158,6 +158,7 @@ def test_settings_page_renders_for_admin(monkeypatch):
     assert "Greenfield Academy" in resp.text
     assert "Reset school logo" in resp.text
     assert "current.png" in resp.text
+    assert 'name="csrf_token"' in resp.text
 
 
 def test_ops_page_renders_for_admin(monkeypatch):
