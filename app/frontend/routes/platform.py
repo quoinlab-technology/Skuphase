@@ -1,4 +1,4 @@
-"""Private company operations console (platform-membership protected)."""
+﻿"""Private company operations console (platform-membership protected)."""
 
 from fasthtml.common import A, Div, Form, H1, Input, Label, Option, P, Span, Strong, Textarea, Title, Select as HtmlSelect
 from starlette.requests import Request
@@ -32,7 +32,7 @@ def _platform_shell(content, user: dict, active: str, flash=None, crumbs=None, r
     if role:
         shell_user["role"] = role
     return AppShell(
-        Title("Platform Operations — SkuPhase"),
+        Title("Platform Operations â€” SkuPhase"),
         content,
         user=shell_user,
         active=active,
@@ -85,14 +85,14 @@ def register_routes(app):
                     H1("Platform operations", cls="fw-bold fs-2 mb-1 text-dark"),
                     P("A private view of SkuPhase health, adoption, and operating cost.", cls="text-muted mb-0"),
                 ),
-                Badge(f"Live · {data.get('viewer_role', 'platform staff').replace('_', ' ').title()}", variant="success", pill=True),
+                Badge(f"Live Â· {data.get('viewer_role', 'platform staff').replace('_', ' ').title()}", variant="success", pill=True),
                 cls="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4",
             ),
             Row(
                 Col(_metric("Active schools", str(schools.get("active", 0)), f"of {schools.get('total', 0)} total", "building", "icon-green-light"), span=12, sm=6, lg=3),
                 Col(_metric("Active users", str(users.get("active", 0)), f"{users.get('verified', 0)} verified", "people", "icon-blue-light"), span=12, sm=6, lg=3),
-                Col(_metric("Exams · 24 hours", str(exams.get("created_24h", 0)), f"{exams.get('created_30d', 0)} in 30 days", "file-earmark-text", "icon-purple-light"), span=12, sm=6, lg=3),
-                Col(_metric("Failed jobs", str(jobs.get("failed", 0)), f"{jobs.get('pending', 0)} pending · {jobs.get('running', 0)} running", "exclamation-triangle", "icon-red-light"), span=12, sm=6, lg=3),
+                Col(_metric("Exams Â· 24 hours", str(exams.get("created_24h", 0)), f"{exams.get('created_30d', 0)} in 30 days", "file-earmark-text", "icon-purple-light"), span=12, sm=6, lg=3),
+                Col(_metric("Failed jobs", str(jobs.get("failed", 0)), f"{jobs.get('pending', 0)} pending Â· {jobs.get('running', 0)} running", "exclamation-triangle", "icon-red-light"), span=12, sm=6, lg=3),
                 cls="g-3 mb-4",
             ),
             Row(
@@ -117,7 +117,7 @@ def register_routes(app):
                 ),
                 Col(
                     Card(
-                        Strong("AI usage · last 30 days", cls="d-block text-dark mb-3"),
+                        Strong("AI usage Â· last 30 days", cls="d-block text-dark mb-3"),
                         Div(Span(f"{usage.get('tokens', 0):,}", cls="fs-3 fw-bold text-dark"), " tokens", cls="mb-2"),
                         P(f"{usage.get('events', 0):,} recorded usage events", cls="text-muted small mb-1"),
                         P(f"Estimated provider cost: ${usage.get('estimated_cost', 0):,.2f}", cls="text-muted small mb-0"),
@@ -185,12 +185,75 @@ def register_routes(app):
         content = Div(
             Div(
                 Div(H1("Notifications", cls="fw-bold fs-2 mb-1 text-dark"), P(f"{data.get('unread', 0)} unread operational notification(s)", cls="text-muted mb-0")),
-                Form(_csrf(req), Button("Mark all as read", type="submit", variant="light", cls="btn btn-outline-secondary rounded-pill", **{"data-loading-label": "Updating…"}), action="/internal/platform/notifications/read-all", method="post") if data.get("unread", 0) else None,
+                Form(_csrf(req), Button("Mark all as read", type="submit", variant="light", cls="btn btn-outline-secondary rounded-pill", **{"data-loading-label": "Updatingâ€¦"}), action="/internal/platform/notifications/read-all", method="post") if data.get("unread", 0) else None,
                 cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4",
             ),
             Card(*(cards or [EmptyState(title="You are all caught up", description="Assigned support cases and operational alerts will appear here.")]), cls="border-0 shadow-sm rounded-4 p-0 bg-white overflow-hidden"),
         )
         return _platform_shell(content, user, "platform-notifications", pop_flash(req), [("Platform operations", "/internal/platform"), ("Notifications", None)])
+
+    @app.get("/internal/platform/jobs")
+    async def platform_jobs_page(req: Request, status: str = ""):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/platform/jobs", params={"limit": 100, **({"status": status} if status else {})})
+        health_response = await call_api(req, "GET", "/platform/health")
+        health_ok, health = unwrap(health_response)
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(EmptyState(title="Job monitor unavailable", description=data.get("message", "Try again shortly.")), user, "platform-jobs", pop_flash(req), [("Platform operations", "/internal/platform"), ("Jobs & health", None)])
+        counts = data.get("counts", {})
+        rows = [TRow(TCell(item.get("created_at", "")[:16].replace("T", " ")), TCell(item.get("job_id", "")[:8]), TCell(item.get("status", "").title()), TCell(f"{item.get('attempts', 0)}/{item.get('max_attempts', 0)}"), TCell(item.get("last_error") or "—"), TCell(Form(_csrf(req), Button("Retry", type="submit", variant="light", cls="btn btn-sm btn-outline-secondary rounded-pill", **{"data-loading-label": "Retrying…"}), action=f"/internal/platform/jobs/{item['job_id']}/retry", method="post") if item.get("status") == "failed" else Span("—", cls="text-muted"))) for item in data.get("jobs", [])]
+        table = Table(THead(TRow(TCell("Created"), TCell("Job"), TCell("Status"), TCell("Attempts"), TCell("Last error"), TCell("Action"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else EmptyState(title="No jobs found", description="The queue has no jobs matching this filter.")
+        health_status = health.get("status", "unavailable") if health_ok else "unavailable"
+        content = Div(H1("Jobs & health", cls="fw-bold fs-2 mb-1 text-dark"), P("Monitor generation queue state and provider configuration without exposing prompts or credentials.", cls="text-muted mb-4"), Row(Col(_metric("Service health", health_status.title(), "Database and worker checks", "heart-pulse", "icon-green-light" if health_status == "healthy" else "icon-red-light"), span=12, sm=3), Col(_metric("Pending", str(counts.get("pending", 0)), "Waiting to run", "hourglass", "icon-blue-light"), span=12, sm=3), Col(_metric("Running", str(counts.get("running", 0)), "Currently processing", "activity", "icon-purple-light"), span=12, sm=3), Col(_metric("Failed", str(counts.get("failed", 0)), "Requires investigation", "exclamation-triangle", "icon-red-light"), span=12, sm=3), cls="g-3 mb-4"), Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"))
+        return _platform_shell(content, user, "platform-jobs", pop_flash(req), [("Platform operations", "/internal/platform"), ("Jobs & health", None)])
+
+    @app.post("/internal/platform/jobs/{job_id}/retry")
+    async def platform_job_retry_action(req: Request, job_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "POST", f"/platform/jobs/{job_id}/retry")
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Generation job requeued.") if ok else data.get("message", "Could not retry job."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/jobs", status_code=303)
+
+    @app.get("/internal/platform/usage")
+    async def platform_usage_page(req: Request, days: int = 30):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        days = min(max(days, 1), 90)
+        response = await call_api(req, "GET", "/platform/usage", params={"days": days})
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(EmptyState(title="Usage report unavailable", description=data.get("message", "Try again shortly.")), user, "platform-usage", pop_flash(req), [("Platform operations", "/internal/platform"), ("Usage", None)])
+        totals = data.get("totals", {})
+        bars = []
+        for item in data.get("daily", []):
+            percent = min(100, max(2, item.get("tokens", 0) / max(1, totals.get("tokens", 1)) * 100))
+            bars.append(Div(
+                Div(Span(item.get("date"), cls="small text-muted"), Span(f"{item.get('tokens', 0):,} tokens / ${item.get('estimated_cost', 0):,.2f}", cls="small fw-semibold"), cls="d-flex justify-content-between mb-1"),
+                Div(Div(style=f"width:{percent}%; height:10px;", cls="bg-success rounded-pill"), cls="bg-light rounded-pill mb-2"),
+            ))
+        if not bars:
+            bars = [P("No usage recorded for this period.", cls="text-muted small mb-0")]
+        content = Div(
+            H1("Usage", cls="fw-bold fs-2 mb-1 text-dark"),
+            P("Bounded AI usage and estimated cost reporting for the selected period.", cls="text-muted mb-4"),
+            Row(
+                Col(_metric("Tokens", f"{totals.get('tokens', 0):,}", f"Last {days} days", "graph-up", "icon-blue-light"), span=12, sm=4),
+                Col(_metric("Estimated cost", f"${totals.get('estimated_cost', 0):,.2f}", "Provider estimate", "currency-dollar", "icon-green-light"), span=12, sm=4),
+                Col(_metric("Usage events", f"{totals.get('events', 0):,}", "Recorded operations", "activity", "icon-purple-light"), span=12, sm=4),
+                cls="g-3 mb-4",
+            ),
+            Card(Strong("Daily activity", cls="d-block text-dark mb-3"), Div(*bars), cls="border-0 shadow-sm rounded-4 p-4 bg-white"),
+        )
+        return _platform_shell(content, user, "platform-usage", pop_flash(req), [("Platform operations", "/internal/platform"), ("Usage", None)])
 
     @app.post("/internal/platform/notifications/{notification_id}/read")
     async def platform_notification_read_action(req: Request, notification_id: str):
@@ -226,9 +289,9 @@ def register_routes(app):
                 TCell(item.get("created_at", "")[:16].replace("T", " ")),
                 TCell(Strong(item.get("action", "").replace("_", " ").title())),
                 TCell(item.get("actor_role") or "System"),
-                TCell(f"{item.get('target_type') or ''} {item.get('target_id') or ''}".strip() or "—"),
+                TCell(f"{item.get('target_type') or ''} {item.get('target_id') or ''}".strip() or "â€”"),
                 TCell(Badge("Success" if item.get("success") else "Failed", variant="success" if item.get("success") else "danger", pill=True)),
-                TCell(item.get("summary") or "—"),
+                TCell(item.get("summary") or "â€”"),
             )
             for item in data.get("events", [])
         ]
@@ -244,7 +307,7 @@ def register_routes(app):
                     Div(
                         Input("action", label="Action", value=action, placeholder="e.g. platform.support_message_added", cls="mb-0"),
                         HtmlSelect(Option("Any result", value="", selected=not success), Option("Successful", value="true", selected=success == "true"), Option("Failed", value="false", selected=success == "false"), name="success", cls="form-select rounded-3"),
-                        Button("Filter", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Filtering…"}),
+                        Button("Filter", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Filteringâ€¦"}),
                         A("Clear", href="/internal/platform/audit", cls="btn btn-outline-secondary rounded-pill px-4"),
                         cls="d-flex flex-wrap align-items-end gap-2",
                     ),
@@ -285,7 +348,7 @@ def register_routes(app):
         rows = [
             TRow(
                 TCell(A(Strong(item["name"]), href=f"/internal/platform/schools/{item['school_id']}", cls="text-decoration-none text-dark")),
-                TCell(item.get("contact_email") or "—"),
+                TCell(item.get("contact_email") or "â€”"),
                 TCell(str(item.get("staff_count", 0))),
                 TCell(str(item.get("exams_30d", 0))),
                 TCell(Badge("Active" if item.get("is_active") else "Inactive", variant="success" if item.get("is_active") else "secondary", pill=True)),
@@ -293,7 +356,7 @@ def register_routes(app):
             for item in data.get("schools", [])
         ]
         table = Table(
-            THead(TRow(TCell("School"), TCell("Contact"), TCell("Staff"), TCell("Exams · 30d"), TCell("Status"))),
+            THead(TRow(TCell("School"), TCell("Contact"), TCell("Staff"), TCell("Exams Â· 30d"), TCell("Status"))),
             TBody(*rows),
             hover=True,
             cls="app-table mb-0",
@@ -326,9 +389,9 @@ def register_routes(app):
             Div(H1(school.get("name", "School"), cls="fw-bold fs-2 mb-1 text-dark"), P(school.get("contact_email") or "No contact email", cls="text-muted mb-4")),
             Row(
                 Col(_metric("Active staff", str(users.get("active", 0)), f"{users.get('verified', 0)} verified", "people", "icon-blue-light"), span=12, sm=6, lg=3),
-                Col(_metric("Exams · 30d", str(data.get("exams_30d", 0)), "Created by this school", "file-earmark-text", "icon-purple-light"), span=12, sm=6, lg=3),
+                Col(_metric("Exams Â· 30d", str(data.get("exams_30d", 0)), "Created by this school", "file-earmark-text", "icon-purple-light"), span=12, sm=6, lg=3),
                 Col(_metric("Open support", str(data.get("open_support_cases", 0)), "Cases needing attention", "chat-square-text", "icon-red-light"), span=12, sm=6, lg=3),
-                Col(_metric("AI tokens · 30d", f"{usage.get('tokens', 0):,}", f"${usage.get('estimated_cost', 0):,.2f} estimated", "graph-up", "icon-green-light"), span=12, sm=6, lg=3),
+                Col(_metric("AI tokens Â· 30d", f"{usage.get('tokens', 0):,}", f"${usage.get('estimated_cost', 0):,.2f} estimated", "graph-up", "icon-green-light"), span=12, sm=6, lg=3),
                 cls="g-3 mb-4",
             ),
             Card(
@@ -361,7 +424,7 @@ def register_routes(app):
             for item in data.get("users", [])
         ]
         table = Table(THead(TRow(TCell("User"), TCell("Email"), TCell("School"), TCell("Role"), TCell("State"), TCell("Last login"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else EmptyState(title="No users found", description="Try a different name or email.")
-        content = Div(H1("Users", cls="fw-bold fs-2 mb-1 text-dark"), P("Cross-school identity and access visibility without credential exposure.", cls="text-muted mb-4"), Card(Form(Input("q", label="Search name or email", value=q, placeholder="Search users…"), Button("Search", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Searching…"}), action="/internal/platform/users", method="get", cls="d-flex flex-wrap align-items-end gap-2 mb-3"), table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"))
+        content = Div(H1("Users", cls="fw-bold fs-2 mb-1 text-dark"), P("Cross-school identity and access visibility without credential exposure.", cls="text-muted mb-4"), Card(Form(Input("q", label="Search name or email", value=q, placeholder="Search usersâ€¦"), Button("Search", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Searchingâ€¦"}), action="/internal/platform/users", method="get", cls="d-flex flex-wrap align-items-end gap-2 mb-3"), table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"))
         return _platform_shell(content, user, "platform-users", pop_flash(req), [("Platform operations", "/internal/platform"), ("Users", None)])
 
     @app.get("/internal/platform/support")
@@ -467,12 +530,12 @@ def register_routes(app):
                             Label("Assigned to", cls="form-label"),
                             HtmlSelect(
                                 Option("Leave unassigned", value="", selected=not ticket.get("assigned_to_user_id")),
-                                *(Option(f"{member.get('full_name') or member.get('email')} · {member.get('role', '').replace('_', ' ').title()}", value=member["user_id"], selected=member["user_id"] == ticket.get("assigned_to_user_id")) for member in members),
+                                *(Option(f"{member.get('full_name') or member.get('email')} Â· {member.get('role', '').replace('_', ' ').title()}", value=member["user_id"], selected=member["user_id"] == ticket.get("assigned_to_user_id")) for member in members),
                                 name="assigned_to_user_id", cls="form-select rounded-3 mb-3",
                             ),
                             Label("Resolution note", cls="form-label"),
-                            Textarea(name="resolution_note", placeholder="Optional note about the resolution…", rows=4, cls="form-control rounded-3 mb-3", maxlength=5000),
-                            Button("Save status", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Saving…"}),
+                            Textarea(name="resolution_note", placeholder="Optional note about the resolutionâ€¦", rows=4, cls="form-control rounded-3 mb-3", maxlength=5000),
+                            Button("Save status", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Savingâ€¦"}),
                             action=f"/internal/platform/support/{ticket_id}/status", method="post",
                         ),
                         cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-3",
@@ -482,13 +545,13 @@ def register_routes(app):
                         Form(
                             _csrf(req),
                             Label("Message", cls="form-label"),
-                            Textarea(name="body", placeholder="Write a reply to the school…", rows=5, required=True, cls="form-control rounded-3 mb-3"),
+                            Textarea(name="body", placeholder="Write a reply to the schoolâ€¦", rows=5, required=True, cls="form-control rounded-3 mb-3"),
                             Div(
                                 Input(name="is_internal", type="checkbox", value="true", id="internal-note", cls="form-check-input me-2"),
                                 Label("Internal note (not visible to school)", for_="internal-note", cls="form-check-label small"),
                                 cls="form-check mb-3",
                             ),
-                            Button("Send message", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Sending…"}),
+                            Button("Send message", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Sendingâ€¦"}),
                             action=f"/internal/platform/support/{ticket_id}/message", method="post",
                         ),
                         cls="border-0 shadow-sm rounded-4 p-4 bg-white",

@@ -559,6 +559,12 @@ Exit criteria:
 
 ### Phase 1 — Company operations MVP
 
+**Status: COMPLETE for pilot operations (2026-10-11).** The private console now
+has bounded school and user directories, school operational profiles, queue and
+health monitoring, daily usage reporting, audit visibility, and a guarded retry
+action for failed generation jobs. Rich provider telemetry, incident records,
+and advanced charting remain Phase 3/4 enhancements.
+
 Deliver:
 
 - platform staff login and guarded navigation;

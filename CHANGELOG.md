@@ -34,6 +34,9 @@ features, operational changes, security fixes, and important migrations.
 - Added the first Phase 1 operations views: bounded cross-school user directory,
   searchable user table, linked school operational profiles, and school health
   summaries for staff, exams, jobs, support, and AI usage.
+- Completed the Phase 1 pilot operations MVP with generation-job monitoring,
+  dependency health checks, daily bounded usage reporting, and guarded failed-job
+  retry controls.
 
 ### Planned
 

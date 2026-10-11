@@ -308,6 +308,30 @@ def test_platform_directory_and_school_detail_render(monkeypatch):
     assert "Open support" in school.text
 
 
+def test_platform_jobs_and_usage_pages_render(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/jobs":
+            return FakeResp(200, {"counts": {"pending": 2, "running": 1, "failed": 3}, "jobs": [{"job_id": "job-12345678", "status": "failed", "attempts": 2, "max_attempts": 3, "created_at": "2026-10-11T10:00:00+00:00", "last_error": "provider timeout"}]})
+        if path == "/platform/health":
+            return FakeResp(200, {"status": "healthy", "checks": {"database": "healthy"}})
+        if path == "/platform/usage":
+            return FakeResp(200, {"totals": {"tokens": 1200, "estimated_cost": 0.12, "events": 4}, "daily": [{"date": "2026-10-11", "tokens": 1200, "estimated_cost": 0.12, "events": 4}]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    jobs = client.get("/internal/platform/jobs")
+    usage = client.get("/internal/platform/usage")
+    assert jobs.status_code == 200
+    assert "Service health" in jobs.text
+    assert "provider timeout" in jobs.text
+    assert "Retry" in jobs.text
+    assert usage.status_code == 200
+    assert "Daily activity" in usage.text
+    assert "$0.12" in usage.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

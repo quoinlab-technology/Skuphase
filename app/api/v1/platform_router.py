@@ -31,6 +31,7 @@ from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.models.audit import AuditEvent
 from app.services.audit import record_audit_event
+from app.config.settings import get_settings
 
 router = APIRouter()
 
@@ -103,6 +104,75 @@ async def platform_overview(
         },
         "exam_volume_7d": trend,
     }
+
+
+@router.get("/jobs", response_model=dict, tags=["Platform Operations"])
+async def platform_jobs(
+    status: str | None = Query(None, max_length=20),
+    limit: int = Query(50, ge=1, le=100),
+    membership: PlatformMembership = Depends(require_platform_roles(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return bounded generation queue state and sanitized errors."""
+    conditions = [GenerationJob.status == status] if status else []
+    counts_result = await db.execute(select(GenerationJob.status, func.count()).group_by(GenerationJob.status))
+    rows = await db.execute(select(GenerationJob).where(*conditions).order_by(GenerationJob.created_at.desc()).limit(limit))
+    return {
+        "counts": {str(state): int(count) for state, count in counts_result.all()},
+        "jobs": [{"job_id": str(job.id), "exam_id": str(job.exam_id), "school_id": str(job.school_id), "status": job.status, "attempts": job.attempts, "max_attempts": job.max_attempts, "last_error": (job.last_error or "")[:500] or None, "created_at": job.created_at.isoformat(), "run_at": job.run_at.isoformat() if job.run_at else None} for job in rows.scalars().all()],
+    }
+
+
+@router.post("/jobs/{job_id}/retry", response_model=dict, tags=["Platform Operations"])
+async def retry_platform_job(
+    job_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Requeue a failed generation job after operator review."""
+    job = await db.scalar(select(GenerationJob).where(GenerationJob.id == job_id))
+    if job is None:
+        raise HTTPException(status_code=404, detail="Generation job not found")
+    if job.status not in {"failed", "pending"}:
+        raise HTTPException(status_code=409, detail="Only failed or pending jobs can be retried")
+    job.status = "pending"
+    job.run_at = datetime.now(timezone.utc)
+    job.last_error = None
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, school_id=job.school_id, action="platform.job_retried", target_type="generation_job", target_id=job.id, summary="Requeued a generation job for retry.")
+    await db.commit()
+    return {"message": "Generation job requeued.", "job_id": str(job.id), "status": job.status}
+
+
+@router.get("/health", response_model=dict, tags=["Platform Operations"])
+async def platform_health(
+    membership: PlatformMembership = Depends(require_platform_roles(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return platform-scoped dependency and worker health."""
+    checks = {"database": "healthy"}
+    status = "healthy"
+    try:
+        await db.execute(select(1))
+    except Exception:
+        checks["database"] = "unhealthy"
+        status = "degraded"
+    pending = await _count(db, GenerationJob, GenerationJob.status == "pending")
+    running = await _count(db, GenerationJob, GenerationJob.status == "running")
+    failed = await _count(db, GenerationJob, GenerationJob.status == "failed")
+    return {"status": status, "timestamp": datetime.now(timezone.utc).isoformat(), "checks": checks, "queue": {"pending": pending, "running": running, "failed": failed}, "provider_configuration": {"primary": get_settings().primary_llm_provider, "fallback": get_settings().fallback_llm_provider}}
+
+
+@router.get("/usage", response_model=dict, tags=["Platform Operations"])
+async def platform_usage(
+    days: int = Query(30, ge=1, le=90),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return bounded daily usage totals for company reporting."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(select(func.date(UsageLog.created_at), func.sum(UsageLog.tokens_used), func.sum(UsageLog.cost), func.count(UsageLog.id)).where(UsageLog.created_at >= since).group_by(func.date(UsageLog.created_at)).order_by(func.date(UsageLog.created_at)))
+    daily = [{"date": str(day), "tokens": int(tokens or 0), "estimated_cost": float(cost or 0), "events": int(events)} for day, tokens, cost, events in result.all()]
+    return {"days": days, "daily": daily, "totals": {"tokens": sum(item["tokens"] for item in daily), "estimated_cost": sum(item["estimated_cost"] for item in daily), "events": sum(item["events"] for item in daily)}}
 
 
 @router.get("/schools", response_model=dict, tags=["Platform Operations"])
