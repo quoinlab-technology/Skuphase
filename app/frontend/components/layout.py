@@ -399,7 +399,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
                     if bell_count
                     else []
                 ),
-                href="/app/notifications",
+                href="/internal/platform/notifications" if platform else "/app/notifications",
                 cls="app-topbar-bell me-3",
                 title="Notifications",
             ),

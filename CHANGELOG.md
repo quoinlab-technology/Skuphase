@@ -22,6 +22,8 @@ features, operational changes, security fixes, and important migrations.
   Faststrap-based operator forms.
 - Added active platform-member assignment for support cases, including
   assign/unassign controls and a notification to the newly assigned operator.
+- Added a private platform notification inbox with unread state, mark-read, and
+  mark-all-read actions, linked from the platform shell notification bell.
 
 ### Planned
 

@@ -142,6 +142,76 @@ def register_routes(app):
         )
         return _platform_shell(content, user, "platform-overview", pop_flash(req), [("Platform operations", None)], data.get("viewer_role"))
 
+    @app.get("/internal/platform/notifications")
+    async def platform_notifications_page(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/notifications", params={"limit": 100})
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Notifications unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-notifications", pop_flash(req),
+                [("Platform operations", "/internal/platform"), ("Notifications", None)],
+            )
+        items = data.get("notifications", [])
+        cards = []
+        for item in items:
+            target = item.get("target_url") or "/internal/platform/notifications"
+            cards.append(
+                Div(
+                    Div(
+                        Badge(item.get("severity", "info").title(), variant="danger" if item.get("severity") == "critical" else "secondary", pill=True),
+                        Strong(item.get("title", "Notification"), cls="d-block text-dark mt-2"),
+                        P(item.get("body", ""), cls="text-muted small mb-1"),
+                        Span(item.get("created_at", "")[:16].replace("T", " "), cls="text-muted small"),
+                        cls="flex-grow-1",
+                    ),
+                    Div(
+                        A("Open", href=target, cls="btn btn-sm btn-outline-secondary rounded-pill me-2") if target else None,
+                        Form(
+                            _csrf(req),
+                            Button("Mark read", type="submit", variant="light", cls="btn btn-sm rounded-pill")
+                            if not item.get("is_read") else Span("Read", cls="small text-muted"),
+                            action=f"/internal/platform/notifications/{item['notification_id']}/read", method="post",
+                        ) if not item.get("is_read") else None,
+                        cls="d-flex align-items-center flex-shrink-0",
+                    ),
+                    cls="d-flex flex-wrap align-items-center gap-3 p-3 border-bottom" + (" bg-light" if not item.get("is_read") else ""),
+                )
+            )
+        content = Div(
+            Div(
+                Div(H1("Notifications", cls="fw-bold fs-2 mb-1 text-dark"), P(f"{data.get('unread', 0)} unread operational notification(s)", cls="text-muted mb-0")),
+                Form(_csrf(req), Button("Mark all as read", type="submit", variant="light", cls="btn btn-outline-secondary rounded-pill", **{"data-loading-label": "Updating…"}), action="/internal/platform/notifications/read-all", method="post") if data.get("unread", 0) else None,
+                cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4",
+            ),
+            Card(*(cards or [EmptyState(title="You are all caught up", description="Assigned support cases and operational alerts will appear here.")]), cls="border-0 shadow-sm rounded-4 p-0 bg-white overflow-hidden"),
+        )
+        return _platform_shell(content, user, "platform-notifications", pop_flash(req), [("Platform operations", "/internal/platform"), ("Notifications", None)])
+
+    @app.post("/internal/platform/notifications/{notification_id}/read")
+    async def platform_notification_read_action(req: Request, notification_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "POST", f"/notifications/{notification_id}/read")
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Notification marked as read.") if ok else data.get("message", "Could not update notification."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/notifications", status_code=303)
+
+    @app.post("/internal/platform/notifications/read-all")
+    async def platform_notifications_read_all_action(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "POST", "/notifications/read-all")
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Notifications marked as read.") if ok else data.get("message", "Could not update notifications."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/notifications", status_code=303)
+
     @app.get("/internal/platform/schools")
     async def platform_schools_page(req: Request, q: str = ""):
         guard = ensure_login(req)

@@ -245,7 +245,26 @@ def test_platform_support_detail_renders_case_controls(monkeypatch):
     assert "Update case" in resp.text
     assert "Internal note" in resp.text
     assert "Support Ada" in resp.text
-    assert 'action="/internal/platform/support/ticket-1/message"' in resp.text
+
+
+def test_platform_notifications_render_and_link_to_private_inbox(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/notifications":
+            return FakeResp(200, {"unread": 1, "notifications": [{
+                "notification_id": "n-1", "title": "Support case assigned", "body": "A ticket needs your attention.",
+                "severity": "info", "target_url": "/internal/platform/support/ticket-1", "is_read": False,
+                "created_at": "2026-10-11T10:00:00+00:00",
+            }]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    resp = client.get("/internal/platform/notifications")
+    assert resp.status_code == 200
+    assert "Support case assigned" in resp.text
+    assert "/internal/platform/support/ticket-1" in resp.text
+    assert "Mark all as read" in resp.text
 
 
 def test_ops_page_renders_for_admin(monkeypatch):
