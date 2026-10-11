@@ -16,6 +16,10 @@ features, operational changes, security fixes, and important migrations.
   without exposing credentials in the application UI.
 - Added durable school feedback tickets, a user notification inbox, read-state
   actions, and a platform support queue.
+- Added the private platform support-case workflow: linked ticket detail pages,
+  status and resolution updates, internal notes, support replies, and requester
+  notifications. Added the `feedback_messages` persistence migration and
+  Faststrap-based operator forms.
 
 ### Planned
 

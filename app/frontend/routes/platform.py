@@ -1,10 +1,10 @@
 """Private company operations console (platform-membership protected)."""
 
-from fasthtml.common import A, Div, H1, P, Span, Strong, Title
+from fasthtml.common import A, Div, Form, H1, Input, Label, Option, P, Span, Strong, Textarea, Title, Select as HtmlSelect
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from faststrap import Badge, Card, Col, EmptyState, Icon, Row, Table, TBody, TCell, THead, TRow
+from faststrap import Badge, Button, Card, Col, EmptyState, Icon, Row, Table, TBody, TCell, THead, TRow
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
@@ -45,6 +45,15 @@ def _platform_shell(content, user: dict, active: str, flash=None, crumbs=None, r
 def _access_denied(req: Request):
     push_flash(req, "This internal console is restricted to assigned SkuPhase platform staff.", "danger")
     return RedirectResponse("/app", status_code=303)
+
+
+def _csrf(req: Request):
+    token = req.session.get("csrf")
+    return Input(name="csrf_token", value=token or "", type="hidden") if token else None
+
+
+def _support_status_label(value: str) -> str:
+    return value.replace("_", " ").title()
 
 
 def register_routes(app):
@@ -187,7 +196,7 @@ def register_routes(app):
             )
         rows = [
             TRow(
-                TCell(Strong(item["subject"])),
+                TCell(A(Strong(item["subject"]), href=f"/internal/platform/support/{item['ticket_id']}", cls="text-decoration-none text-dark")),
                 TCell(item["category"].replace("_", " ").title()),
                 TCell(Badge(item["severity"].title(), variant="danger" if item["severity"] in {"critical", "high"} else "secondary", pill=True)),
                 TCell(Badge(item["status"].replace("_", " ").title(), variant="warning" if item["status"] not in {"resolved", "closed"} else "success", pill=True)),
@@ -205,3 +214,124 @@ def register_routes(app):
             Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"),
         )
         return _platform_shell(content, user, "platform-support", pop_flash(req), [("Platform operations", "/internal/platform"), ("Support", None)], data.get("viewer_role"))
+
+    @app.get("/internal/platform/support/{ticket_id}")
+    async def platform_support_detail_page(req: Request, ticket_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", f"/platform/feedback/{ticket_id}")
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Support case unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-support", pop_flash(req),
+                [("Platform operations", "/internal/platform"), ("Support", "/internal/platform/support"), ("Case", None)],
+            )
+        ticket = data.get("ticket", {})
+        messages = data.get("messages", [])
+        message_cards = [
+            Card(
+                Div(
+                    Badge("Internal note" if item.get("is_internal") else "Reply", variant="warning" if item.get("is_internal") else "success", pill=True),
+                    Span(item.get("created_at", "")[:16].replace("T", " "), cls="text-muted small ms-2"),
+                    cls="mb-2",
+                ),
+                P(item.get("body", ""), cls="mb-0 text-dark", style="white-space: pre-wrap;"),
+                cls="border rounded-3 p-3 mb-2 bg-light" if item.get("is_internal") else "border rounded-3 p-3 mb-2 bg-white",
+            )
+            for item in messages
+        ]
+        status_options = ["new", "acknowledged", "investigating", "waiting_on_school", "resolved", "closed"]
+        content = Div(
+            Div(
+                A("Back to support", href="/internal/platform/support", cls="text-decoration-none small mb-2 d-inline-block"),
+                H1(ticket.get("subject") or "Support case", cls="fw-bold fs-2 mb-1 text-dark"),
+                P(f"Opened {ticket.get('created_at', '')[:16].replace('T', ' ')}", cls="text-muted mb-0"),
+                cls="mb-4",
+            ),
+            Row(
+                Col(
+                    Card(
+                        Div(
+                            Badge(_support_status_label(ticket.get("status", "new")), variant="success" if ticket.get("status") in {"resolved", "closed"} else "warning", pill=True),
+                            Badge(ticket.get("severity", "normal").title(), variant="danger" if ticket.get("severity") in {"critical", "high"} else "secondary", pill=True),
+                            cls="d-flex flex-wrap gap-2 mb-3",
+                        ),
+                        P(ticket.get("description") or "No description provided.", cls="text-dark", style="white-space: pre-wrap;"),
+                        P(f"Category: {ticket.get('category', 'general').replace('_', ' ').title()}", cls="text-muted small mb-1"),
+                        P(f"Page: {ticket.get('page_url') or 'Not recorded'}", cls="text-muted small mb-0"),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-3",
+                    ),
+                    Card(
+                        Strong("Conversation", cls="d-block text-dark mb-3"),
+                        Div(*(message_cards or [EmptyState(title="No replies yet", description="Add a reply or internal note below.")]), id="support-message-list"),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+                    ),
+                    span=12, lg=7,
+                ),
+                Col(
+                    Card(
+                        Strong("Update case", cls="d-block text-dark mb-3"),
+                        Form(
+                            _csrf(req),
+                            Label("Status", cls="form-label"),
+                            HtmlSelect(*(Option(_support_status_label(value), value=value, selected=value == ticket.get("status")) for value in status_options), name="status", cls="form-select rounded-3 mb-3"),
+                            Label("Resolution note", cls="form-label"),
+                            Textarea(name="resolution_note", placeholder="Optional note about the resolution…", rows=4, cls="form-control rounded-3 mb-3", maxlength=5000),
+                            Button("Save status", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Saving…"}),
+                            action=f"/internal/platform/support/{ticket_id}/status", method="post",
+                        ),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-3",
+                    ),
+                    Card(
+                        Strong("Send a message", cls="d-block text-dark mb-3"),
+                        Form(
+                            _csrf(req),
+                            Label("Message", cls="form-label"),
+                            Textarea(name="body", placeholder="Write a reply to the school…", rows=5, required=True, cls="form-control rounded-3 mb-3"),
+                            Div(
+                                Input(name="is_internal", type="checkbox", value="true", id="internal-note", cls="form-check-input me-2"),
+                                Label("Internal note (not visible to school)", for_="internal-note", cls="form-check-label small"),
+                                cls="form-check mb-3",
+                            ),
+                            Button("Send message", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Sending…"}),
+                            action=f"/internal/platform/support/{ticket_id}/message", method="post",
+                        ),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+                    ),
+                    span=12, lg=5,
+                ),
+                cls="g-3",
+            ),
+        )
+        return _platform_shell(content, user, "platform-support", pop_flash(req), [("Platform operations", "/internal/platform"), ("Support", "/internal/platform/support"), ("Case", None)])
+
+    @app.post("/internal/platform/support/{ticket_id}/status")
+    async def platform_support_status_action(req: Request, ticket_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        response = await call_api(req, "PATCH", f"/platform/feedback/{ticket_id}", json={
+            "status": form.get("status", "new"),
+            "resolution_note": (form.get("resolution_note") or "").strip() or None,
+        })
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Support case updated.") if ok else data.get("message", "Could not update support case."), "success" if ok else "danger")
+        return RedirectResponse(f"/internal/platform/support/{ticket_id}", status_code=303)
+
+    @app.post("/internal/platform/support/{ticket_id}/message")
+    async def platform_support_message_action(req: Request, ticket_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        response = await call_api(req, "POST", f"/platform/feedback/{ticket_id}/messages", json={
+            "body": (form.get("body") or "").strip(),
+            "is_internal": bool(form.get("is_internal")),
+        })
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Message added.") if ok else data.get("message", "Could not add message."), "success" if ok else "danger")
+        return RedirectResponse(f"/internal/platform/support/{ticket_id}", status_code=303)

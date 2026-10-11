@@ -49,3 +49,18 @@ class FeedbackTicket(BaseModel):
     __table_args__ = (
         Index("ix_feedback_tickets_school_status", "school_id", "status", "created_at"),
     )
+
+
+class FeedbackMessage(BaseModel):
+    """A user-visible reply or internal note attached to a support ticket."""
+
+    __tablename__ = "feedback_messages"
+
+    ticket_id = Column(UUID(as_uuid=True), ForeignKey("feedback_tickets.id", ondelete="CASCADE"), nullable=False)
+    author_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body = Column(Text, nullable=False)
+    is_internal = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    __table_args__ = (
+        Index("ix_feedback_messages_ticket_created", "ticket_id", "created_at"),
+    )

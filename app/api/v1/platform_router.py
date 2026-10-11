@@ -7,7 +7,7 @@ aggregate data suitable for the internal console.
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,9 @@ from app.core.permissions import (
     require_platform_roles,
 )
 from app.models.exam import Exam
-from app.models.support import FeedbackTicket
+from app.models.support import FeedbackMessage, FeedbackTicket
+from app.schemas.support import FeedbackMessageCreate, FeedbackStatusUpdate
+from app.services.notifications import create_notification
 from app.models.job import GenerationJob
 from app.models.platform import PlatformMembership
 from app.models.school import School
@@ -163,3 +165,94 @@ async def platform_feedback(
             for item in rows.scalars().all()
         ]
     }
+
+
+@router.get("/feedback/{ticket_id}", response_model=dict, tags=["Platform Operations"])
+async def platform_feedback_detail(
+    ticket_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    ticket = await db.scalar(select(FeedbackTicket).where(FeedbackTicket.id == ticket_id))
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Feedback ticket not found")
+    messages = await db.execute(
+        select(FeedbackMessage).where(FeedbackMessage.ticket_id == ticket.id).order_by(FeedbackMessage.created_at.asc())
+    )
+    return {
+        "ticket": {
+            "ticket_id": str(ticket.id),
+            "school_id": str(ticket.school_id) if ticket.school_id else None,
+            "requester_user_id": str(ticket.requester_user_id) if ticket.requester_user_id else None,
+            "subject": ticket.subject,
+            "description": ticket.description,
+            "category": ticket.category,
+            "severity": ticket.severity,
+            "status": ticket.status,
+            "page_url": ticket.page_url,
+            "created_at": ticket.created_at.isoformat(),
+            "resolution_note": ticket.resolution_note,
+        },
+        "messages": [
+            {"message_id": str(item.id), "body": item.body, "is_internal": item.is_internal, "created_at": item.created_at.isoformat()}
+            for item in messages.scalars().all()
+        ],
+    }
+
+
+@router.patch("/feedback/{ticket_id}", response_model=dict, tags=["Platform Operations"])
+async def update_platform_feedback(
+    ticket_id: str,
+    request: FeedbackStatusUpdate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    ticket = await db.scalar(select(FeedbackTicket).where(FeedbackTicket.id == ticket_id))
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Feedback ticket not found")
+    ticket.status = request.status
+    ticket.resolution_note = request.resolution_note
+    if request.status in {"resolved", "closed"}:
+        from datetime import datetime, timezone
+        ticket.resolved_at = datetime.now(timezone.utc)
+    await db.flush()
+    if ticket.requester_user_id:
+        await create_notification(
+            db,
+            recipient_user_id=ticket.requester_user_id,
+            school_id=ticket.school_id,
+            kind="support_ticket_updated",
+            title="Feedback update",
+            body=f"Your report '{ticket.subject}' is now {request.status.replace('_', ' ')}.",
+            target_url="/app/feedback",
+            payload={"ticket_id": str(ticket.id), "status": request.status},
+        )
+    await db.commit()
+    return {"message": "Support ticket updated.", "status": ticket.status}
+
+
+@router.post("/feedback/{ticket_id}/messages", response_model=dict, tags=["Platform Operations"])
+async def add_platform_feedback_message(
+    ticket_id: str,
+    request: FeedbackMessageCreate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    ticket = await db.scalar(select(FeedbackTicket).where(FeedbackTicket.id == ticket_id))
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Feedback ticket not found")
+    message = FeedbackMessage(ticket_id=ticket.id, author_user_id=membership.user_id, body=request.body, is_internal=request.is_internal)
+    db.add(message)
+    if not request.is_internal and ticket.requester_user_id:
+        await create_notification(
+            db,
+            recipient_user_id=ticket.requester_user_id,
+            school_id=ticket.school_id,
+            kind="support_ticket_reply",
+            title="Support replied to your feedback",
+            body=request.body[:240],
+            target_url="/app/feedback",
+            payload={"ticket_id": str(ticket.id)},
+        )
+    await db.commit()
+    return {"message": "Support message added."}

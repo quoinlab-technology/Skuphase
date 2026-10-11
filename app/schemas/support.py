@@ -21,6 +21,11 @@ class FeedbackStatusUpdate(BaseModel):
     resolution_note: str | None = Field(default=None, max_length=5000)
 
 
+class FeedbackMessageCreate(BaseModel):
+    body: str = Field(..., min_length=1, max_length=10000)
+    is_internal: bool = False
+
+
 class NotificationResponse(BaseModel):
     notification_id: UUID
     kind: str

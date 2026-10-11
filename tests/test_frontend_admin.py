@@ -224,6 +224,27 @@ def test_feedback_and_notification_pages_render(monkeypatch):
     assert "Feedback received" in notifications.text
 
 
+def test_platform_support_detail_renders_case_controls(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/feedback/ticket-1":
+            return FakeResp(200, {"ticket": {
+                "ticket_id": "ticket-1", "subject": "Exam export is slow", "description": "The PDF takes several minutes.",
+                "category": "export", "severity": "high", "status": "investigating",
+                "created_at": "2026-10-11T10:00:00+00:00", "page_url": "/app/exams",
+            }, "messages": [{"body": "We are checking the export worker.", "is_internal": True, "created_at": "2026-10-11T10:30:00+00:00"}]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    resp = client.get("/internal/platform/support/ticket-1")
+    assert resp.status_code == 200
+    assert "Exam export is slow" in resp.text
+    assert "Update case" in resp.text
+    assert "Internal note" in resp.text
+    assert 'action="/internal/platform/support/ticket-1/message"' in resp.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 
