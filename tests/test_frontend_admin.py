@@ -288,6 +288,26 @@ def test_platform_audit_page_renders_read_only_events(monkeypatch):
     assert "Filter" in resp.text
 
 
+def test_platform_directory_and_school_detail_render(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/users":
+            return FakeResp(200, {"users": [{"full_name": "Support Ada", "email": "ada@skuphase.com", "school_name": "Greenfield Academy", "role": "teacher", "is_active": True, "last_login": None}]})
+        if path == "/platform/schools/s1":
+            return FakeResp(200, {"school": {"name": "Greenfield Academy", "contact_email": "admin@greenfield.edu.ng", "contact_phone": "+234 801 000 0000", "created_at": "2026-10-01T00:00:00+00:00"}, "users": {"active": 4, "verified": 3}, "exams_30d": 12, "open_support_cases": 1, "failed_jobs": 2, "usage_30d": {"tokens": 1200, "estimated_cost": 0.12}})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    users = client.get("/internal/platform/users")
+    school = client.get("/internal/platform/schools/s1")
+    assert users.status_code == 200
+    assert "Support Ada" in users.text
+    assert school.status_code == 200
+    assert "Greenfield Academy" in school.text
+    assert "Open support" in school.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

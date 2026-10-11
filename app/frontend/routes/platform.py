@@ -284,7 +284,7 @@ def register_routes(app):
             )
         rows = [
             TRow(
-                TCell(Strong(item["name"])),
+                TCell(A(Strong(item["name"]), href=f"/internal/platform/schools/{item['school_id']}", cls="text-decoration-none text-dark")),
                 TCell(item.get("contact_email") or "—"),
                 TCell(str(item.get("staff_count", 0))),
                 TCell(str(item.get("exams_30d", 0))),
@@ -304,6 +304,65 @@ def register_routes(app):
             Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"),
         )
         return _platform_shell(content, user, "platform-schools", pop_flash(req), [("Platform operations", "/internal/platform"), ("Schools", None)])
+
+    @app.get("/internal/platform/schools/{school_id}")
+    async def platform_school_detail_page(req: Request, school_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", f"/platform/schools/{school_id}")
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="School profile unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-schools", pop_flash(req), [("Platform operations", "/internal/platform"), ("Schools", "/internal/platform/schools"), ("School", None)],
+            )
+        school = data.get("school", {})
+        users = data.get("users", {})
+        usage = data.get("usage_30d", {})
+        content = Div(
+            A("Back to schools", href="/internal/platform/schools", cls="text-decoration-none small mb-2 d-inline-block"),
+            Div(H1(school.get("name", "School"), cls="fw-bold fs-2 mb-1 text-dark"), P(school.get("contact_email") or "No contact email", cls="text-muted mb-4")),
+            Row(
+                Col(_metric("Active staff", str(users.get("active", 0)), f"{users.get('verified', 0)} verified", "people", "icon-blue-light"), span=12, sm=6, lg=3),
+                Col(_metric("Exams · 30d", str(data.get("exams_30d", 0)), "Created by this school", "file-earmark-text", "icon-purple-light"), span=12, sm=6, lg=3),
+                Col(_metric("Open support", str(data.get("open_support_cases", 0)), "Cases needing attention", "chat-square-text", "icon-red-light"), span=12, sm=6, lg=3),
+                Col(_metric("AI tokens · 30d", f"{usage.get('tokens', 0):,}", f"${usage.get('estimated_cost', 0):,.2f} estimated", "graph-up", "icon-green-light"), span=12, sm=6, lg=3),
+                cls="g-3 mb-4",
+            ),
+            Card(
+                Strong("Operational profile", cls="d-block text-dark mb-3"),
+                P(f"Contact phone: {school.get('contact_phone') or 'Not recorded'}", cls="text-muted mb-1"),
+                P(f"Created: {school.get('created_at', '')[:10]}", cls="text-muted mb-1"),
+                P(f"Failed generation jobs: {data.get('failed_jobs', 0)}", cls="text-muted mb-0"),
+                cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+            ),
+        )
+        return _platform_shell(content, user, "platform-schools", pop_flash(req), [("Platform operations", "/internal/platform"), ("Schools", "/internal/platform/schools"), (school.get("name", "School"), None)])
+
+    @app.get("/internal/platform/users")
+    async def platform_users_page(req: Request, q: str = "", active: str = ""):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        params = {"limit": 100}
+        if q:
+            params["q"] = q
+        if active in {"true", "false"}:
+            params["active"] = active
+        response = await call_api(req, "GET", "/platform/users", params=params)
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(EmptyState(title="User directory unavailable", description=data.get("message", "Try again shortly.")), user, "platform-users", pop_flash(req), [("Platform operations", "/internal/platform"), ("Users", None)])
+        rows = [
+            TRow(TCell(Strong(item.get("full_name") or item.get("email"))), TCell(item.get("email")), TCell(item.get("school_name")), TCell(item.get("role", "").replace("_", " ").title()), TCell(Badge("Active" if item.get("is_active") else "Suspended", variant="success" if item.get("is_active") else "danger", pill=True)), TCell(item.get("last_login", "Never")[:10] if item.get("last_login") else "Never"))
+            for item in data.get("users", [])
+        ]
+        table = Table(THead(TRow(TCell("User"), TCell("Email"), TCell("School"), TCell("Role"), TCell("State"), TCell("Last login"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else EmptyState(title="No users found", description="Try a different name or email.")
+        content = Div(H1("Users", cls="fw-bold fs-2 mb-1 text-dark"), P("Cross-school identity and access visibility without credential exposure.", cls="text-muted mb-4"), Card(Form(Input("q", label="Search name or email", value=q, placeholder="Search users…"), Button("Search", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Searching…"}), action="/internal/platform/users", method="get", cls="d-flex flex-wrap align-items-end gap-2 mb-3"), table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"))
+        return _platform_shell(content, user, "platform-users", pop_flash(req), [("Platform operations", "/internal/platform"), ("Users", None)])
 
     @app.get("/internal/platform/support")
     async def platform_support_page(req: Request):

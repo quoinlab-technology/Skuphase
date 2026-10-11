@@ -141,6 +141,68 @@ async def platform_schools(
     return {"total": int(total or 0), "offset": offset, "limit": limit, "schools": schools}
 
 
+@router.get("/schools/{school_id}", response_model=dict, tags=["Platform Operations"])
+async def platform_school_detail(
+    school_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return a bounded operational profile for one school."""
+    school = await db.scalar(select(School).where(School.id == school_id))
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    since_30d = datetime.now(timezone.utc) - timedelta(days=30)
+    staff_total = await _count(db, User, User.school_id == school.id)
+    active_staff = await _count(db, User, User.school_id == school.id, User.is_active.is_(True))
+    verified_staff = await _count(db, User, User.school_id == school.id, User.is_verified.is_(True))
+    exams_30d = await _count(db, Exam, Exam.school_id == school.id, Exam.created_at >= since_30d)
+    failed_jobs = await _count(db, GenerationJob, GenerationJob.school_id == school.id, GenerationJob.status == "failed")
+    open_tickets = await _count(db, FeedbackTicket, FeedbackTicket.school_id == school.id, FeedbackTicket.status.not_in({"resolved", "closed"}))
+    usage = await db.execute(
+        select(func.coalesce(func.sum(UsageLog.tokens_used), 0), func.coalesce(func.sum(UsageLog.cost), 0.0), func.count(UsageLog.id))
+        .where(UsageLog.school_id == school.id, UsageLog.created_at >= since_30d)
+    )
+    tokens, cost, usage_events = usage.one()
+    return {
+        "school": {"school_id": str(school.id), "name": school.name, "contact_email": school.contact_email, "contact_phone": school.contact_phone, "is_active": school.is_active, "created_at": school.created_at.isoformat()},
+        "users": {"total": staff_total, "active": active_staff, "verified": verified_staff},
+        "exams_30d": exams_30d,
+        "failed_jobs": failed_jobs,
+        "open_support_cases": open_tickets,
+        "usage_30d": {"tokens": int(tokens or 0), "estimated_cost": float(cost or 0), "events": int(usage_events or 0)},
+    }
+
+
+@router.get("/users", response_model=dict, tags=["Platform Operations"])
+async def platform_users(
+    q: str | None = Query(None, max_length=100),
+    school_id: str | None = Query(None, max_length=80),
+    active: bool | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return a bounded cross-school user directory without credentials."""
+    conditions = []
+    if q:
+        needle = f"%{q.strip()}%"
+        conditions.append((User.full_name.ilike(needle)) | (User.email.ilike(needle)))
+    if school_id:
+        conditions.append(User.school_id == school_id)
+    if active is not None:
+        conditions.append(User.is_active.is_(active))
+    total = await db.scalar(select(func.count()).select_from(User).where(*conditions))
+    rows = await db.execute(
+        select(User, School.name).join(School, School.id == User.school_id).where(*conditions)
+        .order_by(User.created_at.desc()).offset(offset).limit(limit)
+    )
+    return {"total": int(total or 0), "offset": offset, "limit": limit, "users": [
+        {"user_id": str(user.id), "full_name": user.full_name, "email": user.email, "school_id": str(user.school_id), "school_name": school_name, "role": user.role, "is_active": user.is_active, "is_verified": user.is_verified, "last_login": user.last_login.isoformat() if user.last_login else None}
+        for user, school_name in rows.all()
+    ]}
+
+
 @router.get("/feedback", response_model=dict, tags=["Platform Operations"])
 async def platform_feedback(
     status: str | None = Query(None, max_length=30),

@@ -31,6 +31,9 @@ features, operational changes, security fixes, and important migrations.
   platform API and Faststrap audit page.
 - Added audit coverage for school feedback submission and documented the Phase
   0 platform access, retention, and redaction contract.
+- Added the first Phase 1 operations views: bounded cross-school user directory,
+  searchable user table, linked school operational profiles, and school health
+  summaries for staff, exams, jobs, support, and AI usage.
 
 ### Planned
 
