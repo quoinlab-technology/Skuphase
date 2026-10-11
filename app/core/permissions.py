@@ -9,8 +9,12 @@ Access model (teacher autonomy):
 """
 
 from fastapi import Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
+from app.core.database import get_db_session
 from app.models.user import User
+from app.models.platform import PlatformMembership
 
 ROLE_TEACHER = "teacher"
 ROLE_SCHOOL_ADMIN = "school_admin"
@@ -18,6 +22,19 @@ ROLE_PARENT = "parent"
 ROLE_AUDITOR = "auditor"
 
 ACCOUNT_INDIVIDUAL_TEACHER = "individual_teacher"
+
+PLATFORM_OWNER = "platform_owner"
+PLATFORM_ADMIN = "platform_admin"
+PLATFORM_SUPPORT = "support_agent"
+PLATFORM_ANALYST = "analyst"
+PLATFORM_CONTENT_OPERATOR = "content_operator"
+PLATFORM_ROLES = {
+    PLATFORM_OWNER,
+    PLATFORM_ADMIN,
+    PLATFORM_SUPPORT,
+    PLATFORM_ANALYST,
+    PLATFORM_CONTENT_OPERATOR,
+}
 
 
 def is_workspace_admin(user: User) -> bool:
@@ -90,6 +107,45 @@ def require_roles(*roles: str):
                 detail=f"This action requires role: {' or '.join(roles)}",
             )
         return current_user
+
+    return _dep
+
+
+async def get_current_platform_membership(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> PlatformMembership:
+    """Require an explicit active company-platform membership.
+
+    This intentionally does not infer platform access from school ownership,
+    email domain, or the user's school role.
+    """
+    membership = await db.scalar(
+        select(PlatformMembership).where(
+            PlatformMembership.user_id == current_user.user_id,
+            PlatformMembership.is_active.is_(True),
+        )
+    )
+    if membership is None or membership.role not in PLATFORM_ROLES:
+        raise HTTPException(status_code=403, detail="Platform access is not enabled for this account")
+    return membership
+
+
+def require_platform_roles(*roles: str):
+    """Dependency factory for private platform endpoints."""
+    invalid = set(roles) - PLATFORM_ROLES
+    if invalid:
+        raise ValueError(f"Unknown platform role(s): {', '.join(sorted(invalid))}")
+
+    async def _dep(
+        membership: PlatformMembership = Depends(get_current_platform_membership),
+    ) -> PlatformMembership:
+        if roles and membership.role not in roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This action requires platform role: {' or '.join(roles)}",
+            )
+        return membership
 
     return _dep
 

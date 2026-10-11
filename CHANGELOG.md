@@ -9,6 +9,7 @@ features, operational changes, security fixes, and important migrations.
 
 - Company operations-layer implementation plan covering platform access,
   monitoring, support, notifications, auditability, and phased delivery.
+- Initial explicit platform-membership model and role dependency foundation.
 
 ### Planned
 

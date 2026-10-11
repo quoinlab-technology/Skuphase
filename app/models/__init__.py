@@ -16,6 +16,7 @@ from app.models.job import GenerationJob
 from app.models.login_attempt import LoginAttempt
 from app.models.api_key import ApiKey
 from app.models.lesson_plan import LessonPlan, WeeklyExercise, SyllabusCoverage
+from app.models.platform import PlatformMembership
 
 __all__ = [
     "BaseModel",
@@ -43,4 +44,5 @@ __all__ = [
     "LessonPlan",
     "WeeklyExercise",
     "SyllabusCoverage",
+    "PlatformMembership",
 ]
