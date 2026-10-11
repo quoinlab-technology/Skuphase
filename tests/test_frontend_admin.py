@@ -267,6 +267,26 @@ def test_platform_notifications_render_and_link_to_private_inbox(monkeypatch):
     assert "Mark all as read" in resp.text
 
 
+def test_platform_audit_page_renders_read_only_events(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/audit-events":
+            return FakeResp(200, {"events": [{
+                "event_id": "event-1", "action": "platform.support_message_added", "actor_role": "support_agent",
+                "target_type": "feedback_ticket", "target_id": "ticket-1", "success": True,
+                "summary": "Sent a support reply.", "created_at": "2026-10-11T10:00:00+00:00",
+            }]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    resp = client.get("/internal/platform/audit")
+    assert resp.status_code == 200
+    assert "Audit events" in resp.text
+    assert "Support Message Added" in resp.text
+    assert "Sent a support reply." in resp.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

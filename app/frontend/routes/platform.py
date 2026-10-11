@@ -202,6 +202,42 @@ def register_routes(app):
         push_flash(req, data.get("message", "Notification marked as read.") if ok else data.get("message", "Could not update notification."), "success" if ok else "danger")
         return RedirectResponse("/internal/platform/notifications", status_code=303)
 
+    @app.get("/internal/platform/audit")
+    async def platform_audit_page(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/platform/audit-events", params={"limit": 100})
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Audit stream unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-audit", pop_flash(req),
+                [("Platform operations", "/internal/platform"), ("Audit", None)],
+            )
+        rows = [
+            TRow(
+                TCell(item.get("created_at", "")[:16].replace("T", " ")),
+                TCell(Strong(item.get("action", "").replace("_", " ").title())),
+                TCell(item.get("actor_role") or "System"),
+                TCell(f"{item.get('target_type') or ''} {item.get('target_id') or ''}".strip() or "—"),
+                TCell(Badge("Success" if item.get("success") else "Failed", variant="success" if item.get("success") else "danger", pill=True)),
+                TCell(item.get("summary") or "—"),
+            )
+            for item in data.get("events", [])
+        ]
+        table = Table(
+            THead(TRow(TCell("Time"), TCell("Action"), TCell("Actor"), TCell("Target"), TCell("Result"), TCell("Summary"))),
+            TBody(*rows), hover=True, cls="app-table mb-0",
+        ) if rows else EmptyState(title="No audit events yet", description="Sensitive platform actions will appear here.")
+        content = Div(
+            H1("Audit events", cls="fw-bold fs-2 mb-1 text-dark"),
+            P("Read-only history of sensitive company operations. Secrets and private prompts are excluded.", cls="text-muted mb-4"),
+            Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"),
+        )
+        return _platform_shell(content, user, "platform-audit", pop_flash(req), [("Platform operations", "/internal/platform"), ("Audit", None)])
+
     @app.post("/internal/platform/notifications/read-all")
     async def platform_notifications_read_all_action(req: Request):
         guard = ensure_login(req)

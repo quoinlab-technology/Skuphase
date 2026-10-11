@@ -24,6 +24,9 @@ features, operational changes, security fixes, and important migrations.
   assign/unassign controls and a notification to the newly assigned operator.
 - Added a private platform notification inbox with unread state, mark-read, and
   mark-all-read actions, linked from the platform shell notification bell.
+- Added the Phase 0 audit-event foundation: append-only sanitized event storage,
+  request correlation IDs, platform audit API, and a read-only Faststrap audit
+  viewer for permitted platform roles.
 
 ### Planned
 

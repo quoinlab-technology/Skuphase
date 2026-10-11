@@ -29,6 +29,8 @@ from app.models.platform import PlatformMembership
 from app.models.school import School
 from app.models.usage_log import UsageLog
 from app.models.user import User
+from app.models.audit import AuditEvent
+from app.services.audit import record_audit_event
 
 router = APIRouter()
 
@@ -187,6 +189,27 @@ async def platform_members(
     }
 
 
+@router.get("/audit-events", response_model=dict, tags=["Platform Operations"])
+async def platform_audit_events(
+    action: str | None = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return bounded, sanitized audit events for internal investigation."""
+    conditions = [AuditEvent.action == action] if action else []
+    rows = await db.execute(select(AuditEvent).where(*conditions).order_by(AuditEvent.created_at.desc()).offset(offset).limit(limit))
+    return {
+        "offset": offset, "limit": limit,
+        "events": [{
+            "event_id": str(item.id), "action": item.action, "target_type": item.target_type,
+            "target_id": item.target_id, "success": item.success, "actor_role": item.actor_role,
+            "request_id": item.request_id, "summary": item.summary, "created_at": item.created_at.isoformat(),
+        } for item in rows.scalars().all()],
+    }
+
+
 @router.get("/feedback/{ticket_id}", response_model=dict, tags=["Platform Operations"])
 async def platform_feedback_detail(
     ticket_id: str,
@@ -262,6 +285,13 @@ async def update_platform_feedback(
         from datetime import datetime, timezone
         ticket.resolved_at = datetime.now(timezone.utc)
     await db.flush()
+    await record_audit_event(
+        db, actor_user_id=membership.user_id, actor_role=membership.role,
+        school_id=ticket.school_id, action="platform.support_status_updated",
+        target_type="feedback_ticket", target_id=ticket.id,
+        summary=f"Updated support case status to {request.status}.",
+        metadata={"status": request.status},
+    )
     if ticket.requester_user_id:
         await create_notification(
             db,
@@ -289,6 +319,13 @@ async def add_platform_feedback_message(
         raise HTTPException(status_code=404, detail="Feedback ticket not found")
     message = FeedbackMessage(ticket_id=ticket.id, author_user_id=membership.user_id, body=request.body, is_internal=request.is_internal)
     db.add(message)
+    await record_audit_event(
+        db, actor_user_id=membership.user_id, actor_role=membership.role,
+        school_id=ticket.school_id, action="platform.support_message_added",
+        target_type="feedback_ticket", target_id=ticket.id,
+        summary="Added an internal support note." if request.is_internal else "Sent a support reply.",
+        metadata={"is_internal": request.is_internal},
+    )
     if not request.is_internal and ticket.requester_user_id:
         await create_notification(
             db,
