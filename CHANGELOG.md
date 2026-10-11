@@ -12,6 +12,8 @@ features, operational changes, security fixes, and important migrations.
 - Initial explicit platform-membership model and role dependency foundation.
 - Private platform operations shell with protected overview and school-directory
   routes, including cross-school health, queue, usage, and activity summaries.
+- Added a trusted operator script for granting or revoking platform memberships
+  without exposing credentials in the application UI.
 
 ### Planned
 

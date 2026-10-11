@@ -103,6 +103,11 @@ The first platform roles should be:
 
 These are not school roles. A platform staff member should not be forced into a school tenant to gain access to company tooling.
 
+During the pilot foundation, access is granted to an existing verified user with
+the trusted operator command `scripts/grant_platform_membership.py`. This keeps
+the first bootstrap path out of the public UI. A later platform-owner UI can
+delegate memberships with the same permission and audit rules.
+
 ### Recommended data model direction
 
 For the first implementation, a platform role may be introduced with an explicit migration and a nullable school relationship. The safer long-term model is:
