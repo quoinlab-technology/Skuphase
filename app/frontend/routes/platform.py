@@ -231,6 +231,9 @@ def register_routes(app):
             )
         ticket = data.get("ticket", {})
         messages = data.get("messages", [])
+        members_response = await call_api(req, "GET", "/platform/members")
+        members_ok, members_data = unwrap(members_response)
+        members = members_data.get("members", []) if members_ok else []
         message_cards = [
             Card(
                 Div(
@@ -278,6 +281,12 @@ def register_routes(app):
                             _csrf(req),
                             Label("Status", cls="form-label"),
                             HtmlSelect(*(Option(_support_status_label(value), value=value, selected=value == ticket.get("status")) for value in status_options), name="status", cls="form-select rounded-3 mb-3"),
+                            Label("Assigned to", cls="form-label"),
+                            HtmlSelect(
+                                Option("Leave unassigned", value="", selected=not ticket.get("assigned_to_user_id")),
+                                *(Option(f"{member.get('full_name') or member.get('email')} · {member.get('role', '').replace('_', ' ').title()}", value=member["user_id"], selected=member["user_id"] == ticket.get("assigned_to_user_id")) for member in members),
+                                name="assigned_to_user_id", cls="form-select rounded-3 mb-3",
+                            ),
                             Label("Resolution note", cls="form-label"),
                             Textarea(name="resolution_note", placeholder="Optional note about the resolution…", rows=4, cls="form-control rounded-3 mb-3", maxlength=5000),
                             Button("Save status", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Saving…"}),
@@ -317,6 +326,7 @@ def register_routes(app):
         response = await call_api(req, "PATCH", f"/platform/feedback/{ticket_id}", json={
             "status": form.get("status", "new"),
             "resolution_note": (form.get("resolution_note") or "").strip() or None,
+            "assigned_to_user_id": (form.get("assigned_to_user_id") or "").strip() or None,
         })
         ok, data = unwrap(response)
         push_flash(req, data.get("message", "Support case updated.") if ok else data.get("message", "Could not update support case."), "success" if ok else "danger")

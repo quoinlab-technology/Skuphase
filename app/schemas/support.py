@@ -19,6 +19,7 @@ class FeedbackCreate(BaseModel):
 class FeedbackStatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(new|acknowledged|investigating|waiting_on_school|resolved|closed)$")
     resolution_note: str | None = Field(default=None, max_length=5000)
+    assigned_to_user_id: UUID | None = None
 
 
 class FeedbackMessageCreate(BaseModel):

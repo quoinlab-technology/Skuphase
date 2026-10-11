@@ -167,6 +167,26 @@ async def platform_feedback(
     }
 
 
+@router.get("/members", response_model=dict, tags=["Platform Operations"])
+async def platform_members(
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return active platform staff who can own support cases."""
+    rows = await db.execute(
+        select(User, PlatformMembership.role)
+        .join(PlatformMembership, PlatformMembership.user_id == User.id)
+        .where(PlatformMembership.is_active.is_(True))
+        .order_by(User.full_name.asc(), User.email.asc())
+    )
+    return {
+        "members": [
+            {"user_id": str(user.id), "full_name": user.full_name, "email": user.email, "role": role}
+            for user, role in rows.all()
+        ]
+    }
+
+
 @router.get("/feedback/{ticket_id}", response_model=dict, tags=["Platform Operations"])
 async def platform_feedback_detail(
     ticket_id: str,
@@ -179,6 +199,7 @@ async def platform_feedback_detail(
     messages = await db.execute(
         select(FeedbackMessage).where(FeedbackMessage.ticket_id == ticket.id).order_by(FeedbackMessage.created_at.asc())
     )
+    assigned_user = await db.scalar(select(User).where(User.id == ticket.assigned_to_user_id)) if ticket.assigned_to_user_id else None
     return {
         "ticket": {
             "ticket_id": str(ticket.id),
@@ -192,6 +213,8 @@ async def platform_feedback_detail(
             "page_url": ticket.page_url,
             "created_at": ticket.created_at.isoformat(),
             "resolution_note": ticket.resolution_note,
+            "assigned_to_user_id": str(ticket.assigned_to_user_id) if ticket.assigned_to_user_id else None,
+            "assigned_to_name": assigned_user.full_name if assigned_user else None,
         },
         "messages": [
             {"message_id": str(item.id), "body": item.body, "is_internal": item.is_internal, "created_at": item.created_at.isoformat()}
@@ -212,6 +235,29 @@ async def update_platform_feedback(
         raise HTTPException(status_code=404, detail="Feedback ticket not found")
     ticket.status = request.status
     ticket.resolution_note = request.resolution_note
+    if "assigned_to_user_id" in request.model_fields_set:
+        assignee = None
+        if request.assigned_to_user_id is not None:
+            assignee = await db.scalar(
+                select(User).join(PlatformMembership, PlatformMembership.user_id == User.id).where(
+                    User.id == request.assigned_to_user_id,
+                    PlatformMembership.is_active.is_(True),
+                )
+            )
+            if assignee is None:
+                raise HTTPException(status_code=400, detail="Assignee is not an active platform member")
+        previous_assignee = ticket.assigned_to_user_id
+        ticket.assigned_to_user_id = assignee.id if assignee else None
+        if assignee and previous_assignee != assignee.id:
+            await create_notification(
+                db,
+                recipient_user_id=assignee.id,
+                kind="support_ticket_assigned",
+                title="Support case assigned",
+                body=f"'{ticket.subject}' has been assigned to you.",
+                target_url=f"/internal/platform/support/{ticket.id}",
+                payload={"ticket_id": str(ticket.id)},
+            )
     if request.status in {"resolved", "closed"}:
         from datetime import datetime, timezone
         ticket.resolved_at = datetime.now(timezone.utc)

@@ -20,6 +20,8 @@ features, operational changes, security fixes, and important migrations.
   status and resolution updates, internal notes, support replies, and requester
   notifications. Added the `feedback_messages` persistence migration and
   Faststrap-based operator forms.
+- Added active platform-member assignment for support cases, including
+  assign/unassign controls and a notification to the newly assigned operator.
 
 ### Planned
 

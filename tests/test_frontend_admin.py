@@ -234,6 +234,8 @@ def test_platform_support_detail_renders_case_controls(monkeypatch):
                 "category": "export", "severity": "high", "status": "investigating",
                 "created_at": "2026-10-11T10:00:00+00:00", "page_url": "/app/exams",
             }, "messages": [{"body": "We are checking the export worker.", "is_internal": True, "created_at": "2026-10-11T10:30:00+00:00"}]})
+        if path == "/platform/members":
+            return FakeResp(200, {"members": [{"user_id": "operator-1", "full_name": "Support Ada", "email": "ada@skuphase.com", "role": "support_agent"}]})
         return FakeResp(404, {})
 
     monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
@@ -242,6 +244,7 @@ def test_platform_support_detail_renders_case_controls(monkeypatch):
     assert "Exam export is slow" in resp.text
     assert "Update case" in resp.text
     assert "Internal note" in resp.text
+    assert "Support Ada" in resp.text
     assert 'action="/internal/platform/support/ticket-1/message"' in resp.text
 
 
