@@ -196,6 +196,34 @@ def test_platform_overview_renders_for_platform_membership(monkeypatch):
     assert "12,000" in resp.text
 
 
+def test_feedback_and_notification_pages_render(monkeypatch):
+    client = _logged_in_client(monkeypatch, _teacher_tokens())
+
+    async def support_call(req, method, path, **kwargs):
+        if path == "/feedback/mine":
+            return FakeResp(200, {"tickets": []})
+        if path == "/notifications":
+            return FakeResp(200, {"unread": 1, "notifications": [{
+                "notification_id": "n1",
+                "title": "Feedback received",
+                "body": "Your report was recorded.",
+                "kind": "feedback_received",
+                "severity": "info",
+                "target_url": "/app/feedback",
+                "is_read": False,
+                "created_at": "2026-10-11T10:00:00+00:00",
+            }]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.support.call_api", support_call)
+    feedback = client.get("/app/feedback")
+    notifications = client.get("/app/notifications")
+    assert feedback.status_code == 200
+    assert "Report a problem" in feedback.text
+    assert notifications.status_code == 200
+    assert "Feedback received" in notifications.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

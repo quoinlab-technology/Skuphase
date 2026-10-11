@@ -17,6 +17,7 @@ from app.models.login_attempt import LoginAttempt
 from app.models.api_key import ApiKey
 from app.models.lesson_plan import LessonPlan, WeeklyExercise, SyllabusCoverage
 from app.models.platform import PlatformMembership
+from app.models.support import FeedbackTicket, Notification
 
 __all__ = [
     "BaseModel",
@@ -45,4 +46,6 @@ __all__ = [
     "WeeklyExercise",
     "SyllabusCoverage",
     "PlatformMembership",
+    "FeedbackTicket",
+    "Notification",
 ]

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import get_settings
 from app.core.database import init_db
 from app.api.v1 import auth_router, users_router, schools_router
-from app.api.v1 import exams_router, ops_router, curriculum_router, library_router, partner_router, assessment_router, copilot_router, lesson_plans_router, platform_router
+from app.api.v1 import exams_router, ops_router, curriculum_router, library_router, partner_router, assessment_router, copilot_router, lesson_plans_router, platform_router, notifications_router, feedback_router
 from app.core.observability import RequestCorrelationMiddleware
 
 
@@ -70,6 +70,8 @@ app.include_router(schools_router.router, prefix="/api/v1/schools", tags=["Schoo
 app.include_router(exams_router.router, prefix="/api/v1/exams", tags=["Exams"])
 app.include_router(ops_router.router, prefix="/api/v1/ops", tags=["Operations"])
 app.include_router(platform_router.router, prefix="/api/v1/platform", tags=["Platform Operations"])
+app.include_router(notifications_router.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(feedback_router.router, prefix="/api/v1/feedback", tags=["Feedback"])
 app.include_router(curriculum_router.router, prefix="/api/v1/curriculum", tags=["Curriculum"])
 app.include_router(library_router.router, prefix="/api/v1/library", tags=["Library"])
 app.include_router(partner_router.router, prefix="/api/v1/partner", tags=["Partner API"])

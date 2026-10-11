@@ -21,6 +21,7 @@ from app.core.permissions import (
     require_platform_roles,
 )
 from app.models.exam import Exam
+from app.models.support import FeedbackTicket
 from app.models.job import GenerationJob
 from app.models.platform import PlatformMembership
 from app.models.school import School
@@ -134,3 +135,31 @@ async def platform_schools(
             "exams_30d": exam_count,
         })
     return {"total": int(total or 0), "offset": offset, "limit": limit, "schools": schools}
+
+
+@router.get("/feedback", response_model=dict, tags=["Platform Operations"])
+async def platform_feedback(
+    status: str | None = Query(None, max_length=30),
+    limit: int = Query(50, ge=1, le=100),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return the bounded support queue for platform operators."""
+    conditions = [FeedbackTicket.status == status] if status else []
+    rows = await db.execute(
+        select(FeedbackTicket).where(*conditions).order_by(FeedbackTicket.created_at.desc()).limit(limit)
+    )
+    return {
+        "tickets": [
+            {
+                "ticket_id": str(item.id),
+                "school_id": str(item.school_id) if item.school_id else None,
+                "subject": item.subject,
+                "category": item.category,
+                "severity": item.severity,
+                "status": item.status,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in rows.scalars().all()
+        ]
+    }

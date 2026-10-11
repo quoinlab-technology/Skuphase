@@ -295,6 +295,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         if is_school_staff:
             pass
 
+        nav_items.append(("Help & feedback", "/app/feedback", "support", "chat-square-text"))
         nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
 
         if is_school_admin:
@@ -398,9 +399,9 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
                     if bell_count
                     else []
                 ),
-                href="/app/exams",
+                href="/app/notifications",
                 cls="app-topbar-bell me-3",
-                title="Exams and generation status",
+                title="Notifications",
             ),
             Div(
                 HtmlButton(

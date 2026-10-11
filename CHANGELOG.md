@@ -14,6 +14,8 @@ features, operational changes, security fixes, and important migrations.
   routes, including cross-school health, queue, usage, and activity summaries.
 - Added a trusted operator script for granting or revoking platform memberships
   without exposing credentials in the application UI.
+- Added durable school feedback tickets, a user notification inbox, read-state
+  actions, and a platform support queue.
 
 ### Planned
 

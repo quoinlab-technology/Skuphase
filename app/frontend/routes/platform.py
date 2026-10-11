@@ -171,3 +171,37 @@ def register_routes(app):
             Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"),
         )
         return _platform_shell(content, user, "platform-schools", pop_flash(req), [("Platform operations", "/internal/platform"), ("Schools", None)])
+
+    @app.get("/internal/platform/support")
+    async def platform_support_page(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/platform/feedback", params={"limit": 50})
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Support queue unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-support", pop_flash(req), [("Platform operations", "/internal/platform"), ("Support", None)],
+            )
+        rows = [
+            TRow(
+                TCell(Strong(item["subject"])),
+                TCell(item["category"].replace("_", " ").title()),
+                TCell(Badge(item["severity"].title(), variant="danger" if item["severity"] in {"critical", "high"} else "secondary", pill=True)),
+                TCell(Badge(item["status"].replace("_", " ").title(), variant="warning" if item["status"] not in {"resolved", "closed"} else "success", pill=True)),
+                TCell(item["created_at"][:10]),
+            )
+            for item in data.get("tickets", [])
+        ]
+        table = Table(
+            THead(TRow(TCell("Subject"), TCell("Category"), TCell("Severity"), TCell("Status"), TCell("Date"))),
+            TBody(*rows), hover=True, cls="app-table mb-0",
+        ) if rows else EmptyState(title="No support cases", description="New school feedback will appear here.")
+        content = Div(
+            H1("Support queue", cls="fw-bold fs-2 mb-1 text-dark"),
+            P("Review feedback from pilot schools and identify recurring platform issues.", cls="text-muted mb-4"),
+            Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white"),
+        )
+        return _platform_shell(content, user, "platform-support", pop_flash(req), [("Platform operations", "/internal/platform"), ("Support", None)], data.get("viewer_role"))
