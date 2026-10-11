@@ -285,6 +285,7 @@ def test_platform_audit_page_renders_read_only_events(monkeypatch):
     assert "Audit events" in resp.text
     assert "Support Message Added" in resp.text
     assert "Sent a support reply." in resp.text
+    assert "Filter" in resp.text
 
 
 def test_ops_page_renders_for_admin(monkeypatch):

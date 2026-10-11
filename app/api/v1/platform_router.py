@@ -192,6 +192,10 @@ async def platform_members(
 @router.get("/audit-events", response_model=dict, tags=["Platform Operations"])
 async def platform_audit_events(
     action: str | None = Query(None, max_length=100),
+    actor_user_id: str | None = Query(None, max_length=80),
+    success: bool | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
@@ -199,6 +203,14 @@ async def platform_audit_events(
 ) -> dict:
     """Return bounded, sanitized audit events for internal investigation."""
     conditions = [AuditEvent.action == action] if action else []
+    if actor_user_id:
+        conditions.append(AuditEvent.actor_user_id == actor_user_id)
+    if success is not None:
+        conditions.append(AuditEvent.success.is_(success))
+    if date_from:
+        conditions.append(AuditEvent.created_at >= date_from)
+    if date_to:
+        conditions.append(AuditEvent.created_at <= date_to)
     rows = await db.execute(select(AuditEvent).where(*conditions).order_by(AuditEvent.created_at.desc()).offset(offset).limit(limit))
     return {
         "offset": offset, "limit": limit,

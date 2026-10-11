@@ -27,6 +27,8 @@ features, operational changes, security fixes, and important migrations.
 - Added the Phase 0 audit-event foundation: append-only sanitized event storage,
   request correlation IDs, platform audit API, and a read-only Faststrap audit
   viewer for permitted platform roles.
+- Added bounded audit investigation filters for action and success result in the
+  platform API and Faststrap audit page.
 
 ### Planned
 

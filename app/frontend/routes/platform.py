@@ -203,12 +203,17 @@ def register_routes(app):
         return RedirectResponse("/internal/platform/notifications", status_code=303)
 
     @app.get("/internal/platform/audit")
-    async def platform_audit_page(req: Request):
+    async def platform_audit_page(req: Request, action: str = "", success: str = ""):
         guard = ensure_login(req)
         if guard:
             return guard
         user = current_user(req) or {}
-        response = await call_api(req, "GET", "/platform/audit-events", params={"limit": 100})
+        audit_params = {"limit": 100}
+        if action:
+            audit_params["action"] = action
+        if success in {"true", "false"}:
+            audit_params["success"] = success
+        response = await call_api(req, "GET", "/platform/audit-events", params=audit_params)
         ok, data = unwrap(response)
         if not ok:
             return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
@@ -234,6 +239,19 @@ def register_routes(app):
         content = Div(
             H1("Audit events", cls="fw-bold fs-2 mb-1 text-dark"),
             P("Read-only history of sensitive company operations. Secrets and private prompts are excluded.", cls="text-muted mb-4"),
+            Card(
+                Form(
+                    Div(
+                        Input("action", label="Action", value=action, placeholder="e.g. platform.support_message_added", cls="mb-0"),
+                        HtmlSelect(Option("Any result", value="", selected=not success), Option("Successful", value="true", selected=success == "true"), Option("Failed", value="false", selected=success == "false"), name="success", cls="form-select rounded-3"),
+                        Button("Filter", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Filtering…"}),
+                        A("Clear", href="/internal/platform/audit", cls="btn btn-outline-secondary rounded-pill px-4"),
+                        cls="d-flex flex-wrap align-items-end gap-2",
+                    ),
+                    action="/internal/platform/audit", method="get",
+                ),
+                cls="border-0 shadow-sm rounded-4 p-3 bg-white mb-3",
+            ),
             Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"),
         )
         return _platform_shell(content, user, "platform-audit", pop_flash(req), [("Platform operations", "/internal/platform"), ("Audit", None)])
