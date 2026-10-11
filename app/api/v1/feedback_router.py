@@ -10,6 +10,7 @@ from app.models.support import FeedbackTicket
 from app.schemas.auth import CurrentUser
 from app.schemas.support import FeedbackCreate
 from app.services.notifications import create_notification
+from app.services.audit import record_audit_event
 
 router = APIRouter()
 
@@ -32,6 +33,17 @@ async def create_feedback(
     )
     db.add(ticket)
     await db.flush()
+    await record_audit_event(
+        db,
+        actor_user_id=current_user.user_id,
+        actor_role=current_user.role,
+        school_id=current_user.school_id,
+        action="feedback.ticket_created",
+        target_type="feedback_ticket",
+        target_id=ticket.id,
+        summary="Submitted a support ticket.",
+        metadata={"category": request.category, "severity": request.severity},
+    )
     # Notify the submitter so the event is visible in the durable inbox even
     # before the platform support queue is implemented in the UI.
     await create_notification(

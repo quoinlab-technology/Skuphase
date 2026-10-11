@@ -532,6 +532,13 @@ The notification bell and support entry point should be part of the shared authe
 
 ### Phase 0 — Operating-layer foundation and threat model
 
+**Status: COMPLETE for pilot foundation (2026-10-11).** The platform
+membership boundary, correlation-aware append-only audit stream, redaction
+contract, bounded audit API/viewer, support-event hooks, and permission tests
+are implemented. Additional low-risk event hooks (such as every export and
+school-setting mutation) remain a tracked extension of the same service and do
+not block Phase 1 delivery.
+
 Deliver:
 
 - platform-role decision and permission matrix;

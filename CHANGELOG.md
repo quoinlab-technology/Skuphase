@@ -29,6 +29,8 @@ features, operational changes, security fixes, and important migrations.
   viewer for permitted platform roles.
 - Added bounded audit investigation filters for action and success result in the
   platform API and Faststrap audit page.
+- Added audit coverage for school feedback submission and documented the Phase
+  0 platform access, retention, and redaction contract.
 
 ### Planned
 
