@@ -70,7 +70,7 @@ def _password_input_group(
     )
 
 
-def _login_form(email: str = ""):
+def _login_form(email: str = "", *, action: str = "/login", heading: str = "Sign in to SkuPhase", description: str = "Enter your credentials to access your workspace.", public_links: bool = True):
     script = Script("""
     (function() {
       function init() {
@@ -94,8 +94,8 @@ def _login_form(email: str = ""):
     """)
     return Div(
         A("← Back to home", href="/", cls="text-decoration-none small text-muted mb-3 d-inline-block"),
-        H1("Sign in to SkuPhase", cls="fw-bold text-dark mb-1", style="font-size: 1.85rem; letter-spacing: -0.02em;"),
-        P("Enter your credentials to access your workspace.", cls="text-muted small mb-4"),
+        H1(heading, cls="fw-bold text-dark mb-1", style="font-size: 1.85rem; letter-spacing: -0.02em;"),
+        P(description, cls="text-muted small mb-4"),
         Form(
             Div(
                 Label("Email address", cls="form-label text-muted small fw-medium mb-1", **{"for": "login-email"}),
@@ -122,7 +122,7 @@ def _login_form(email: str = ""):
                 cls="btn btn-brand w-100 rounded-pill py-3 fw-semibold text-white shadow-sm mt-2",
                 style="background-color: #00412E !important; border-color: #00412E !important; font-size: 0.95rem;",
             ),
-            action="/login",
+            action=action,
             method="post",
         ),
         P(
@@ -136,6 +136,17 @@ def _login_form(email: str = ""):
 
 
 # ---------------------------------------------------------------- login
+
+
+def _internal_login_form(email: str = ""):
+    """Dedicated entry form for assigned SkuPhase company operators."""
+    return _login_form(
+        email,
+        action="/internal/login",
+        heading="Platform operations",
+        description="Private access for assigned SkuPhase platform staff.",
+        public_links=False,
+    )
 
 
 def register_session_routes(app):
@@ -167,6 +178,45 @@ def register_session_routes(app):
         store_auth(req.session, data)
         return RedirectResponse("/app", status_code=303)
 
+    @app.get("/internal/login")
+    def internal_login_page(req: Request, expired: str = ""):
+        flash = Flash("Your platform session expired — please sign in again.", "info") if expired else None
+        return AuthShell(flash, _internal_login_form(), title="Platform operations — SkuPhase")
+
+    @app.post("/internal/login")
+    async def internal_login_submit(req: Request):
+        form = await req.form()
+        email = _field(form, "email")
+        password = form.get("password") or ""
+
+        resp = await call_api(req, "POST", "/auth/login", json={"email": email, "password": password})
+        ok, data = unwrap(resp)
+        if not ok:
+            return AuthShell(
+                Flash(data["message"], "danger"),
+                _internal_login_form(email=email),
+                title="Platform operations — SkuPhase",
+            )
+
+        # Authentication is shared with school accounts, but entry to the
+        # company console is a second, explicit authorization boundary.
+        store_auth(req.session, data)
+        access = await call_api(req, "GET", "/platform/overview")
+        access_ok, access_data = unwrap(access)
+        if not access_ok:
+            clear_auth(req.session)
+            message = (
+                "This account does not have platform operations access. Use the school sign-in page instead."
+                if access.status_code in (401, 403)
+                else access_data.get("message", "Platform sign-in is temporarily unavailable. Try again shortly.")
+            )
+            return AuthShell(
+                Flash(message, "danger"),
+                _internal_login_form(email=email),
+                title="Platform operations — SkuPhase",
+            )
+        return RedirectResponse("/internal/platform", status_code=303)
+
     async def _do_logout(req: Request):
         # Server-side refresh-token revocation (auth_router.logout); safe to
         # attempt even when the token is already dead.
@@ -174,7 +224,8 @@ def register_session_routes(app):
             await call_api(req, "POST", "/auth/logout")
         clear_auth(req.session)
         set_flash(req.session, "info", "Signed out.")
-        return RedirectResponse("/login", status_code=303)
+        destination = "/internal/login" if req.url.path.startswith("/internal") else "/login"
+        return RedirectResponse(destination, status_code=303)
 
     @app.post("/logout")
     async def logout_submit(req: Request):

@@ -37,6 +37,9 @@ features, operational changes, security fixes, and important migrations.
 - Completed the Phase 1 pilot operations MVP with generation-job monitoring,
   dependency health checks, daily bounded usage reporting, and guarded failed-job
   retry controls.
+- Started Phase 2 with a dedicated `/internal/login` entry point for company
+  operators. It reuses secure session authentication, then checks platform
+  membership before allowing access to the private operations console.
 
 ### Planned
 

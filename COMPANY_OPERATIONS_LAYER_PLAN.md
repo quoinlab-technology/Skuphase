@@ -585,6 +585,12 @@ Exit criteria:
 
 ### Phase 2 — Feedback, support, and notifications
 
+**Status: IN PROGRESS.** A dedicated `/internal/login` entry point is now in
+place. It shares account authentication with SkuPhase but checks active
+platform membership before opening the private company console; school users
+are rejected and their session is cleared. Remaining work covers feedback
+capture, notification preferences, and delivery reliability polish.
+
 Deliver:
 
 - feedback button in the authenticated shell;

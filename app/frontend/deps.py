@@ -48,10 +48,11 @@ def ensure_login(request: Request) -> Optional[RedirectResponse]:
         request.headers.get("hx-request") == "true"
         or request.headers.get("HX-Request") == "true"
     )
+    login_path = "/internal/login?expired=1" if request.url.path.startswith("/internal") else "/login?expired=1"
     if is_htmx:
         from starlette.responses import Response
-        return Response(status_code=200, headers={"HX-Redirect": "/login?expired=1"})
-    return RedirectResponse("/login?expired=1", status_code=303)
+        return Response(status_code=200, headers={"HX-Redirect": login_path})
+    return RedirectResponse(login_path, status_code=303)
 
 
 def require_role(request: Request, *roles: str) -> Optional[RedirectResponse]:

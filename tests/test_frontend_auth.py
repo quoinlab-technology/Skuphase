@@ -209,6 +209,44 @@ def test_login_rate_limited(client, mock_api):
     assert "Too many failed attempts" in r.text
 
 
+def test_internal_login_page_is_separate_from_school_login(client):
+    r = client.get("/internal/login")
+    assert r.status_code == 200
+    assert "Platform operations" in r.text
+    assert 'action="/internal/login"' in r.text
+    assert "Private access for assigned SkuPhase platform staff." in r.text
+
+
+def test_internal_login_requires_platform_membership(client, monkeypatch):
+    async def fake_call(req, method, path, **kwargs):
+        if path == "/auth/login":
+            return FakeResp(200, _tokens())
+        if path == "/platform/overview":
+            return FakeResp(403, {"detail": "Platform access is not enabled"})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.auth.call_api", fake_call)
+    r = client.post("/internal/login", data={"email": "a@b.com", "password": "password123"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "does not have platform operations access" in r.text
+    assert _session_json(client).get("access_token") is None
+
+
+def test_internal_login_redirects_platform_member(client, monkeypatch):
+    async def fake_call(req, method, path, **kwargs):
+        if path == "/auth/login":
+            return FakeResp(200, _tokens())
+        if path == "/platform/overview":
+            return FakeResp(200, {"viewer_role": "platform_admin"})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.auth.call_api", fake_call)
+    r = client.post("/internal/login", data={"email": "ops@skuphase.com", "password": "password123"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers.get("location") == "/internal/platform"
+    assert _session_json(client).get("access_token") == "access-token-123"
+
+
 # ------------------------------------------------------------ registration
 
 
