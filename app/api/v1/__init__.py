@@ -12,6 +12,7 @@ from . import (
     assessment_router,
     copilot_router,
     lesson_plans_router,
+    platform_router,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "assessment_router",
     "copilot_router",
     "lesson_plans_router",
+    "platform_router",
 ]

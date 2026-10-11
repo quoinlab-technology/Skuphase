@@ -10,6 +10,8 @@ features, operational changes, security fixes, and important migrations.
 - Company operations-layer implementation plan covering platform access,
   monitoring, support, notifications, auditability, and phased delivery.
 - Initial explicit platform-membership model and role dependency foundation.
+- Private platform operations shell with protected overview and school-directory
+  routes, including cross-school health, queue, usage, and activity summaries.
 
 ### Planned
 

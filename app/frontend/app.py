@@ -30,6 +30,7 @@ from app.frontend.routes import public as public_routes
 from app.frontend.routes import settings as settings_routes
 from app.frontend.routes import staff as staff_routes
 from app.frontend.routes import teaching as teaching_routes
+from app.frontend.routes import platform as platform_routes
 from app.frontend.routes import guided as guided_routes
 from app.frontend.middleware import register_middlewares
 
@@ -297,3 +298,4 @@ staff_routes.register_routes(frontend_app)
 settings_routes.register_routes(frontend_app)
 ops_routes.register_routes(frontend_app)
 teaching_routes.teaching_routes(frontend_app)
+platform_routes.register_routes(frontend_app)

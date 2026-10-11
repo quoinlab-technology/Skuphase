@@ -255,7 +255,7 @@ def AuthShell(*content, title: str = "Sign in"):
     )
 
 
-def AppShell(*content, user: dict | None = None, active: str = "", flash=None, crumbs=None, bell_count: int | None = None):
+def AppShell(*content, user: dict | None = None, active: str = "", flash=None, crumbs=None, bell_count: int | None = None, platform: bool = False):
     """Authenticated app shell — sidebar + topbar per FRONTEND_SPEC sec 3.3/3.5
     (visual reference: ``UI_design/Exams.png``).
 
@@ -275,20 +275,30 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
     app_version = get_settings().app_version
 
     # Role-filtered navigation (FRONTEND_SPEC.md §3.3)
-    nav_items = [
-        ("Start here", "/app/start", "start", "compass"),
-        ("Dashboard", "/app", "dashboard", "grid-fill"),
-        ("Exams", "/app/exams", "exams", "file-earmark-text"),
-        ("Curriculum", "/app/curriculum", "curriculum", "compass"),
-        ("Teaching", "/app/teaching", "teaching", "journal-bookmark"),
-    ]
-    if is_school_staff:
-        pass
+    if platform:
+        nav_items = [
+            ("Overview", "/internal/platform", "platform-overview", "speedometer2"),
+            ("Schools", "/internal/platform/schools", "platform-schools", "building"),
+            ("Users", "/internal/platform/users", "platform-users", "people"),
+            ("Jobs & health", "/internal/platform/jobs", "platform-jobs", "activity"),
+            ("Usage", "/internal/platform/usage", "platform-usage", "graph-up"),
+            ("Support", "/internal/platform/support", "platform-support", "chat-square-text"),
+        ]
+    else:
+        nav_items = [
+            ("Start here", "/app/start", "start", "compass"),
+            ("Dashboard", "/app", "dashboard", "grid-fill"),
+            ("Exams", "/app/exams", "exams", "file-earmark-text"),
+            ("Curriculum", "/app/curriculum", "curriculum", "compass"),
+            ("Teaching", "/app/teaching", "teaching", "journal-bookmark"),
+        ]
+        if is_school_staff:
+            pass
 
-    nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
+        nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
 
-    if is_school_admin:
-        nav_items.append(("Administration", "/app/admin", "admin", "sliders"))
+        if is_school_admin:
+            nav_items.append(("Administration", "/app/admin", "admin", "sliders"))
 
     def _nav_link(label, href, key, icon):
         return A(
@@ -326,7 +336,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
             cls="flex-column gap-1 px-2",
         ),
         Div(
-            Span((role if role != "school_admin" else "SCHOOL ADMIN").upper(), cls="app-sidebar-role app-sidebar-label"),
+            Span(("PLATFORM " + role if platform else (role if role != "school_admin" else "SCHOOL ADMIN")).upper(), cls="app-sidebar-role app-sidebar-label"),
             Span(f"v{app_version}", cls="app-sidebar-version app-sidebar-label", title="Application version"),
             cls="mt-auto px-3 pb-3",
         ),

@@ -161,6 +161,41 @@ def test_settings_page_renders_for_admin(monkeypatch):
     assert 'name="csrf_token"' in resp.text
 
 
+def test_platform_console_is_not_available_to_school_admin(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def denied_platform_call(req, method, path, **kwargs):
+        return FakeResp(403, {"detail": "Platform access is not enabled for this account"})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", denied_platform_call)
+    resp = client.get("/internal/platform", follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    assert resp.headers.get("location") == "/app"
+
+
+def test_platform_overview_renders_for_platform_membership(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        return FakeResp(200, {
+            "viewer_role": "platform_admin",
+            "schools": {"total": 4, "active": 3},
+            "users": {"active": 18, "verified": 16},
+            "exams": {"created_24h": 7, "created_30d": 42, "failed_24h": 1},
+            "jobs": {"pending": 2, "running": 1, "failed": 1},
+            "usage_30d": {"tokens": 12000, "estimated_cost": 1.25, "events": 40},
+            "exam_volume_7d": [{"date": "2026-10-11", "count": 3}],
+        })
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    resp = client.get("/internal/platform")
+    assert resp.status_code == 200
+    assert "Platform operations" in resp.text
+    assert "Active schools" in resp.text
+    assert "platform_admin" in resp.text or "Platform Admin" in resp.text
+    assert "12,000" in resp.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 
