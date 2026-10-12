@@ -46,6 +46,8 @@ features, operational changes, security fixes, and important migrations.
 - Added durable notification email delivery tracking: important support events
   are queued after the in-app notification commit, retried with bounded
   backoff, and surfaced as pending or failed counts in platform health views.
+- Added a private platform email-delivery monitor with recipient/status/error
+  visibility and a guarded retry action for terminal notification failures.
 
 ### Planned
 

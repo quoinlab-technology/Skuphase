@@ -188,12 +188,70 @@ def register_routes(app):
         content = Div(
             Div(
                 Div(H1("Notifications", cls="fw-bold fs-2 mb-1 text-dark"), P(f"{data.get('unread', 0)} unread operational notification(s)", cls="text-muted mb-0")),
-                Form(_csrf(req), Button("Mark all as read", type="submit", variant="light", cls="btn btn-outline-secondary rounded-pill", **{"data-loading-label": "Updatingâ€¦"}), action="/internal/platform/notifications/read-all", method="post") if data.get("unread", 0) else None,
+                Div(
+                    A("Email delivery", href="/internal/platform/notifications/delivery", cls="btn btn-outline-secondary rounded-pill me-2"),
+                    Form(_csrf(req), Button("Mark all as read", type="submit", variant="light", cls="btn btn-outline-secondary rounded-pill", **{"data-loading-label": "Updatingâ€¦"}), action="/internal/platform/notifications/read-all", method="post") if data.get("unread", 0) else None,
+                    cls="d-flex flex-wrap align-items-center",
+                ),
                 cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4",
             ),
             Card(*(cards or [EmptyState(title="You are all caught up", description="Assigned support cases and operational alerts will appear here.")]), cls="border-0 shadow-sm rounded-4 p-0 bg-white overflow-hidden"),
         )
         return _platform_shell(content, user, "platform-notifications", pop_flash(req), [("Platform operations", "/internal/platform"), ("Notifications", None)])
+
+    @app.get("/internal/platform/notifications/delivery")
+    async def platform_notification_delivery_page(req: Request, status: str = ""):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        params = {"limit": 100, **({"status": status} if status else {})}
+        response = await call_api(req, "GET", "/platform/notifications/delivery", params=params)
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Email delivery unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-notifications", pop_flash(req),
+                [("Platform operations", "/internal/platform"), ("Notifications", "/internal/platform/notifications"), ("Email delivery", None)],
+            )
+        counts = data.get("counts", {})
+        rows = [
+            TRow(
+                TCell(item.get("created_at", "")[:16].replace("T", " ")),
+                TCell(item.get("recipient_email", "—")),
+                TCell(Strong(item.get("title", "Notification"))),
+                TCell(Badge(item.get("status", "").title(), variant="success" if item.get("status") == "sent" else "danger" if item.get("status") == "failed" else "warning", pill=True)),
+                TCell(f"{item.get('attempts', 0)}"),
+                TCell(item.get("last_error") or "—"),
+                TCell(
+                    Form(
+                        _csrf(req),
+                        Button("Retry", type="submit", variant="light", cls="btn btn-sm btn-outline-secondary rounded-pill", **{"data-loading-label": "Retrying…"}),
+                        action=f"/internal/platform/notifications/delivery/{item['notification_id']}/retry", method="post",
+                    ) if item.get("status") == "failed" else Span("—", cls="text-muted")
+                ),
+            )
+            for item in data.get("deliveries", [])
+        ]
+        table = Table(
+            THead(TRow(TCell("Created"), TCell("Recipient"), TCell("Notification"), TCell("Status"), TCell("Attempts"), TCell("Last error"), TCell("Action"))),
+            TBody(*rows), hover=True, cls="app-table mb-0",
+        ) if rows else EmptyState(title="No queued email deliveries", description="Important notification emails will appear here when delivery is requested.")
+        content = Div(
+            Div(
+                Div(H1("Email delivery", cls="fw-bold fs-2 mb-1 text-dark"), P("Track queued notification emails and retry terminal failures without affecting the in-app inbox.", cls="text-muted mb-0")),
+                A("Back to notifications", href="/internal/platform/notifications", cls="btn btn-outline-secondary rounded-pill"),
+                cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4",
+            ),
+            Row(
+                Col(_metric("Pending", str(counts.get("pending", 0) + counts.get("sending", 0)), "Queued or sending", "hourglass", "icon-blue-light"), span=12, sm=4),
+                Col(_metric("Sent", str(counts.get("sent", 0)), "Delivered successfully", "check-circle", "icon-green-light"), span=12, sm=4),
+                Col(_metric("Failed", str(counts.get("failed", 0)), "Requires retry or review", "exclamation-triangle", "icon-red-light"), span=12, sm=4),
+                cls="g-3 mb-4",
+            ),
+            Card(table, cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"),
+        )
+        return _platform_shell(content, user, "platform-notifications", pop_flash(req), [("Platform operations", "/internal/platform"), ("Notifications", "/internal/platform/notifications"), ("Email delivery", None)])
 
     @app.get("/internal/platform/jobs")
     async def platform_jobs_page(req: Request, status: str = ""):
@@ -267,6 +325,16 @@ def register_routes(app):
         ok, data = unwrap(response)
         push_flash(req, data.get("message", "Notification marked as read.") if ok else data.get("message", "Could not update notification."), "success" if ok else "danger")
         return RedirectResponse("/internal/platform/notifications", status_code=303)
+
+    @app.post("/internal/platform/notifications/delivery/{notification_id}/retry")
+    async def platform_notification_delivery_retry_action(req: Request, notification_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "POST", f"/platform/notifications/delivery/{notification_id}/retry")
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Notification email requeued.") if ok else data.get("message", "Could not retry notification email."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/notifications/delivery", status_code=303)
 
     @app.get("/internal/platform/audit")
     async def platform_audit_page(req: Request, action: str = "", success: str = ""):

@@ -306,6 +306,77 @@ async def platform_feedback(
     }
 
 
+@router.get("/notifications/delivery", response_model=dict, tags=["Platform Operations"])
+async def platform_notification_delivery(
+    status: str | None = Query(None, max_length=20),
+    limit: int = Query(50, ge=1, le=100),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return bounded notification-email delivery state for operator recovery."""
+    conditions = [Notification.email_status != "not_requested"]
+    if status:
+        conditions.append(Notification.email_status == status)
+    counts_result = await db.execute(
+        select(Notification.email_status, func.count())
+        .where(Notification.email_status != "not_requested")
+        .group_by(Notification.email_status)
+    )
+    rows = await db.execute(
+        select(Notification, User.email)
+        .join(User, User.id == Notification.recipient_user_id)
+        .where(*conditions)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+    )
+    return {
+        "counts": {str(state): int(count) for state, count in counts_result.all()},
+        "deliveries": [
+            {
+                "notification_id": str(item.id),
+                "recipient_email": email,
+                "title": item.title,
+                "status": item.email_status,
+                "attempts": item.email_attempts,
+                "last_error": (item.email_last_error or "")[:500] or None,
+                "run_at": item.email_run_at.isoformat() if item.email_run_at else None,
+                "sent_at": item.email_sent_at.isoformat() if item.email_sent_at else None,
+                "created_at": item.created_at.isoformat(),
+            }
+            for item, email in rows.all()
+        ],
+    }
+
+
+@router.post("/notifications/delivery/{notification_id}/retry", response_model=dict, tags=["Platform Operations"])
+async def retry_notification_delivery(
+    notification_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Requeue a terminal notification email failure for immediate delivery."""
+    item = await db.scalar(select(Notification).where(Notification.id == notification_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Notification delivery not found")
+    if item.email_status != "failed":
+        raise HTTPException(status_code=409, detail="Only failed notification emails can be retried")
+    item.email_status = "pending"
+    item.email_run_at = datetime.now(timezone.utc)
+    item.email_last_error = None
+    await record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        actor_role=membership.role,
+        school_id=item.school_id,
+        action="platform.notification_email_retried",
+        target_type="notification",
+        target_id=item.id,
+        summary="Requeued a failed notification email.",
+    )
+    await db.commit()
+    return {"message": "Notification email requeued.", "notification_id": str(item.id), "status": item.email_status}
+
+
 @router.get("/members", response_model=dict, tags=["Platform Operations"])
 async def platform_members(
     membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),

@@ -287,6 +287,26 @@ def test_platform_notifications_render_and_link_to_private_inbox(monkeypatch):
     assert "Mark all as read" in resp.text
 
 
+def test_platform_notification_delivery_monitor_renders_retry(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/notifications/delivery":
+            return FakeResp(200, {"counts": {"pending": 1, "sent": 2, "failed": 1}, "deliveries": [{
+                "notification_id": "n-failed", "recipient_email": "teacher@greenfield.edu.ng",
+                "title": "Support replied", "status": "failed", "attempts": 3,
+                "last_error": "SMTP unavailable", "created_at": "2026-10-12T10:00:00+00:00",
+            }]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    resp = client.get("/internal/platform/notifications/delivery")
+    assert resp.status_code == 200
+    assert "Email delivery" in resp.text
+    assert "SMTP unavailable" in resp.text
+    assert "Retry" in resp.text
+
+
 def test_platform_audit_page_renders_read_only_events(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

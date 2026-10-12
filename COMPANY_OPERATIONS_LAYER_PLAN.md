@@ -618,6 +618,9 @@ worker retries provider failures without deleting the in-app record, and the
 platform overview/health endpoints expose pending and terminally failed email
 counts for operator follow-up.
 
+Operators can now inspect individual queued deliveries and requeue a terminal
+failure from the private console; each retry is recorded in the audit stream.
+
 ### Phase 3 — Usage, AI cost, and product intelligence
 
 Deliver:
