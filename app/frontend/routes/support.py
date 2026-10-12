@@ -32,7 +32,7 @@ def register_routes(app):
         ok, data = unwrap(response)
         tickets = data.get("tickets", []) if ok else []
         rows = [
-            TRow(TCell(item["subject"]), TCell(item["category"].replace("_", " ").title()), TCell(Badge(item["status"].replace("_", " ").title(), variant="secondary", pill=True)), TCell(item["created_at"][:10]))
+            TRow(TCell(A(item["subject"], href=f"/app/feedback/{item['ticket_id']}", cls="text-decoration-none text-dark fw-semibold")), TCell(item["category"].replace("_", " ").title()), TCell(Badge(item["status"].replace("_", " ").title(), variant="secondary", pill=True)), TCell(item["created_at"][:10]))
             for item in tickets
         ]
         history = Table(
@@ -76,6 +76,60 @@ def register_routes(app):
             ),
         )
         return _shell(content, user, "support", pop_flash(req), [("Help & feedback", None)])
+
+    @app.get("/app/feedback/{ticket_id}")
+    async def feedback_detail_page(req: Request, ticket_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", f"/feedback/{ticket_id}")
+        ok, data = unwrap(response)
+        if not ok:
+            push_flash(req, data.get("message", "This feedback report is no longer available."), "danger")
+            return RedirectResponse("/app/feedback", status_code=303)
+        ticket = data.get("ticket", {})
+        messages = data.get("messages", [])
+        message_cards = [
+            Card(
+                Div(Strong("SkuPhase support", cls="text-dark"), Span(item.get("created_at", "")[:16].replace("T", " "), cls="text-muted small ms-2"), cls="mb-2"),
+                P(item.get("body", ""), cls="mb-0 text-dark", style="white-space: pre-wrap;"),
+                cls="border rounded-3 p-3 mb-2 bg-white",
+            )
+            for item in messages
+        ]
+        status = (ticket.get("status") or "new").replace("_", " ").title()
+        content = Div(
+            A("← Back to help & feedback", href="/app/feedback", cls="text-decoration-none small mb-3 d-inline-block"),
+            H1(ticket.get("subject") or "Feedback report", cls="fw-bold fs-2 mb-1 text-dark"),
+            P(f"Submitted {ticket.get('created_at', '')[:16].replace('T', ' ')}", cls="text-muted mb-4"),
+            Row(
+                Col(
+                    Card(
+                        Div(Badge(status, variant="success" if ticket.get("status") in {"resolved", "closed"} else "warning", pill=True), Badge((ticket.get("severity") or "normal").title(), variant="secondary", pill=True), cls="d-flex flex-wrap gap-2 mb-3"),
+                        P(ticket.get("description") or "No description provided.", cls="text-dark", style="white-space: pre-wrap;"),
+                        P(f"Category: {(ticket.get('category') or 'general').replace('_', ' ').title()}", cls="text-muted small mb-1"),
+                        P(f"Status: {status}", cls="text-muted small mb-0"),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-3",
+                    ),
+                    Card(
+                        Strong("Conversation", cls="d-block text-dark mb-3"),
+                        Div(*(message_cards or [EmptyState(title="No reply yet", description="The SkuPhase team will post updates here.")]), id="feedback-message-list"),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+                    ),
+                    span=12, lg=8,
+                ),
+                Col(
+                    Card(
+                        Strong("What happens next", cls="d-block text-dark mb-2"),
+                        P("We review every report and will post any response or resolution here. You can safely return to your work while we investigate.", cls="text-muted small mb-0"),
+                        cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+                    ), span=12, lg=4,
+                ),
+                cls="g-3",
+            ),
+        )
+        return _shell(content, user, "support", pop_flash(req), [("Help & feedback", "/app/feedback"), ("Report", None)])
 
     @app.post("/app/feedback")
     async def submit_feedback(req: Request):

@@ -224,6 +224,26 @@ def test_feedback_and_notification_pages_render(monkeypatch):
     assert "Feedback received" in notifications.text
 
 
+def test_school_feedback_detail_shows_public_replies(monkeypatch):
+    client = _logged_in_client(monkeypatch, _teacher_tokens())
+
+    async def support_call(req, method, path, **kwargs):
+        if path == "/feedback/mine":
+            return FakeResp(200, {"tickets": [{"ticket_id": "ticket-1", "subject": "Export is slow", "category": "export", "status": "investigating", "created_at": "2026-10-11T10:00:00+00:00"}]})
+        if path == "/feedback/ticket-1":
+            return FakeResp(200, {"ticket": {"ticket_id": "ticket-1", "subject": "Export is slow", "description": "The PDF takes too long.", "category": "export", "severity": "high", "status": "investigating", "created_at": "2026-10-11T10:00:00+00:00"}, "messages": [{"body": "We are checking the export worker.", "created_at": "2026-10-11T10:30:00+00:00"}]})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.support.call_api", support_call)
+    listing = client.get("/app/feedback")
+    detail = client.get("/app/feedback/ticket-1")
+    assert listing.status_code == 200
+    assert "/app/feedback/ticket-1" in listing.text
+    assert detail.status_code == 200
+    assert "We are checking the export worker." in detail.text
+    assert "What happens next" in detail.text
+
+
 def test_platform_support_detail_renders_case_controls(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

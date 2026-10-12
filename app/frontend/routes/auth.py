@@ -92,6 +92,12 @@ def _login_form(email: str = "", *, action: str = "/login", heading: str = "Sign
       if (document.readyState !== 'loading') { init(); } else { document.addEventListener('DOMContentLoaded', init); }
     })();
     """)
+    footer = P(
+        A("Forgot password?", href="/forgot-password", cls="text-muted text-decoration-none"),
+        *( [" · ", A("Create an account", href="/register", cls="fw-semibold text-decoration-none", style="color: #00412E;")] if public_links else [] ),
+        *( [] if public_links else [A("School account sign in", href="/login", cls="fw-semibold text-decoration-none", style="color: #00412E;")] ),
+        cls="small text-center mt-4 mb-0",
+    )
     return Div(
         A("← Back to home", href="/", cls="text-decoration-none small text-muted mb-3 d-inline-block"),
         H1(heading, cls="fw-bold text-dark mb-1", style="font-size: 1.85rem; letter-spacing: -0.02em;"),
@@ -125,12 +131,7 @@ def _login_form(email: str = "", *, action: str = "/login", heading: str = "Sign
             action=action,
             method="post",
         ),
-        P(
-            A("Forgot password?", href="/forgot-password", cls="text-muted text-decoration-none"),
-            " · ",
-            A("Create an account", href="/register", cls="fw-semibold text-decoration-none", style="color: #00412E;"),
-            cls="small text-center mt-4 mb-0",
-        ),
+        footer,
         script,
     )
 

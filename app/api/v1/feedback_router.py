@@ -1,12 +1,12 @@
 """School-user feedback submission and personal ticket history."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
-from app.models.support import FeedbackTicket
+from app.models.support import FeedbackMessage, FeedbackTicket
 from app.schemas.auth import CurrentUser
 from app.schemas.support import FeedbackCreate
 from app.services.notifications import create_notification
@@ -53,7 +53,7 @@ async def create_feedback(
         kind="feedback_received",
         title="Feedback received",
         body="Your feedback has been recorded. The SkuPhase team will review it.",
-        target_url="/app/feedback",
+        target_url=f"/app/feedback/{ticket.id}",
         payload={"ticket_id": str(ticket.id)},
     )
     await db.commit()
@@ -77,4 +77,43 @@ async def list_my_feedback(
             {"ticket_id": str(item.id), "subject": item.subject, "category": item.category, "severity": item.severity, "status": item.status, "created_at": item.created_at.isoformat()}
             for item in rows.scalars().all()
         ]
+    }
+
+
+@router.get("/{ticket_id}", response_model=dict, tags=["Feedback"])
+async def get_my_feedback(
+    ticket_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return one caller-owned ticket and its public support conversation."""
+    ticket = await db.scalar(
+        select(FeedbackTicket).where(
+            FeedbackTicket.id == ticket_id,
+            FeedbackTicket.requester_user_id == current_user.user_id,
+        )
+    )
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Feedback ticket not found")
+    messages = await db.execute(
+        select(FeedbackMessage)
+        .where(FeedbackMessage.ticket_id == ticket.id, FeedbackMessage.is_internal.is_(False))
+        .order_by(FeedbackMessage.created_at.asc())
+    )
+    return {
+        "ticket": {
+            "ticket_id": str(ticket.id),
+            "subject": ticket.subject,
+            "description": ticket.description,
+            "category": ticket.category,
+            "severity": ticket.severity,
+            "status": ticket.status,
+            "page_url": ticket.page_url,
+            "created_at": ticket.created_at.isoformat(),
+            "resolution_note": ticket.resolution_note,
+        },
+        "messages": [
+            {"message_id": str(item.id), "body": item.body, "created_at": item.created_at.isoformat()}
+            for item in messages.scalars().all()
+        ],
     }

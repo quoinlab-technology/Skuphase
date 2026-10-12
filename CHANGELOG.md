@@ -40,6 +40,9 @@ features, operational changes, security fixes, and important migrations.
 - Started Phase 2 with a dedicated `/internal/login` entry point for company
   operators. It reuses secure session authentication, then checks platform
   membership before allowing access to the private operations console.
+- Added school-facing feedback report detail pages with public support replies,
+  status context, and direct links from the report history and notifications.
+  Internal support notes remain hidden from school users.
 
 ### Planned
 

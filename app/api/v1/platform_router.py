@@ -444,7 +444,7 @@ async def update_platform_feedback(
             kind="support_ticket_updated",
             title="Feedback update",
             body=f"Your report '{ticket.subject}' is now {request.status.replace('_', ' ')}.",
-            target_url="/app/feedback",
+            target_url=f"/app/feedback/{ticket.id}",
             payload={"ticket_id": str(ticket.id), "status": request.status},
         )
     await db.commit()
@@ -478,7 +478,7 @@ async def add_platform_feedback_message(
             kind="support_ticket_reply",
             title="Support replied to your feedback",
             body=request.body[:240],
-            target_url="/app/feedback",
+            target_url=f"/app/feedback/{ticket.id}",
             payload={"ticket_id": str(ticket.id)},
         )
     await db.commit()
