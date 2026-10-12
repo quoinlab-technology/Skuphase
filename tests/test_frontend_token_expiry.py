@@ -40,6 +40,12 @@ def _request(session):
     })
 
 
+def _internal_request(session):
+    scope = _request(session).scope
+    scope["path"] = "/internal/platform"
+    return Request(scope)
+
+
 @pytest.mark.asyncio
 async def test_expired_jwt_clears_session_and_redirects(monkeypatch):
     session = {
@@ -70,3 +76,18 @@ async def test_opaque_tokens_are_not_treated_as_expired(monkeypatch):
 
     assert response.status_code == 401
     assert session["access_token"] == "opaque-access-token"
+
+
+@pytest.mark.asyncio
+async def test_platform_expiry_returns_to_platform_login(monkeypatch):
+    session = {
+        "access_token": "header.payload.signature",
+        "refresh_token": "expired-refresh-token",
+        "user": {"role": "school_admin"},
+    }
+    monkeypatch.setattr(api, "_get_client", lambda: _Client())
+
+    with pytest.raises(HTTPException) as caught:
+        await api.call_api(_internal_request(session), "GET", "/platform/overview")
+
+    assert caught.value.headers["Location"] == "/internal/login?expired=1"

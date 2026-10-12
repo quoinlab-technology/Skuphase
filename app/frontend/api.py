@@ -122,10 +122,11 @@ async def call_api(
                 # Stop the current action immediately. Returning the original
                 # 401 lets individual route handlers render a misleading
                 # action error; an expired browser session belongs at login.
+                login_path = "/internal/login?expired=1" if request.url.path.startswith("/internal") else "/login?expired=1"
                 raise HTTPException(
                     status_code=303,
                     detail="Your session expired. Please sign in again.",
-                    headers={"Location": "/login?expired=1"},
+                    headers={"Location": login_path},
                 )
 
     return resp

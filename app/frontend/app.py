@@ -44,9 +44,10 @@ def _session_expired_handler(req, exc):
     HTMX requests need an explicit client-side redirect; normal browser
     requests use a standard 303 so no protected action remains on screen.
     """
+    login_path = "/internal/login?expired=1" if req.url.path.startswith("/internal") else "/login?expired=1"
     if req.headers.get("hx-request", "").lower() == "true":
-        return Response(status_code=200, headers={"HX-Redirect": "/login?expired=1"})
-    return RedirectResponse("/login?expired=1", status_code=303)
+        return Response(status_code=200, headers={"HX-Redirect": login_path})
+    return RedirectResponse(login_path, status_code=303)
 
 frontend_app = FastHTML(
     secret_key=settings.jwt_secret_key,
