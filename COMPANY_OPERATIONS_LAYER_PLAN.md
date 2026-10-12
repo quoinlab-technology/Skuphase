@@ -629,6 +629,23 @@ failure from the private console; each retry is recorded in the audit stream.
 
 ### Phase 3 — Usage, AI cost, and product intelligence
 
+**Status: COMPLETE for pilot operations (2026-10-12).** The private console now
+includes a bounded Product insights view at `/internal/platform/insights`, backed
+by aggregate-only reporting. It covers provider/action spend, manual-versus-AI
+adoption, subject-level generation failures, quality snapshot status, generation
+queue latency, and active-school onboarding health. The view supports a 7–90 day
+window and optional school/user identifiers, while excluding prompts, answers,
+question text, and other private exam content.
+
+Metric definitions are explicit: usage and estimated cost come from `UsageLog`
+grouped by action/provider; AI adoption counts generation and refinement actions
+while manual adoption counts `manual_exam_submission`; generation latency is the
+elapsed time from queue creation to a succeeded or failed terminal job (with
+average and p95); quality metrics are persisted `ExamQualitySnapshot` aggregates;
+and a school is inactive for the selected window when it has no exam created
+during that period. These definitions make reports reproducible for pilot
+decisions rather than billing claims.
+
 Deliver:
 
 - provider usage and cost reports;

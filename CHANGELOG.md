@@ -51,6 +51,10 @@ features, operational changes, security fixes, and important migrations.
 - Completed the Phase 2 pilot operations scope: private operator access,
   school feedback conversations, durable notifications, preferences, queued
   email retries, and delivery recovery visibility.
+- Completed Phase 3 pilot product intelligence: aggregate provider/action cost,
+  manual-versus-AI adoption, generation latency, subject failure trends,
+  quality snapshots, and school onboarding health with bounded filters at
+  `/internal/platform/insights`.
 
 ### Planned
 

@@ -8,7 +8,7 @@ aggregate data suitable for the internal console.
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, cast, Float, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
@@ -21,6 +21,7 @@ from app.core.permissions import (
     require_platform_roles,
 )
 from app.models.exam import Exam
+from app.models.quality import ExamQualitySnapshot
 from app.models.support import FeedbackMessage, FeedbackTicket, Notification
 from app.schemas.support import FeedbackMessageCreate, FeedbackStatusUpdate
 from app.services.notifications import create_notification
@@ -178,6 +179,82 @@ async def platform_usage(
     result = await db.execute(select(func.date(UsageLog.created_at), func.sum(UsageLog.tokens_used), func.sum(UsageLog.cost), func.count(UsageLog.id)).where(UsageLog.created_at >= since).group_by(func.date(UsageLog.created_at)).order_by(func.date(UsageLog.created_at)))
     daily = [{"date": str(day), "tokens": int(tokens or 0), "estimated_cost": float(cost or 0), "events": int(events)} for day, tokens, cost, events in result.all()]
     return {"days": days, "daily": daily, "totals": {"tokens": sum(item["tokens"] for item in daily), "estimated_cost": sum(item["estimated_cost"] for item in daily), "events": sum(item["events"] for item in daily)}}
+
+
+@router.get("/insights", response_model=dict, tags=["Platform Operations"])
+async def platform_insights(
+    days: int = Query(30, ge=7, le=90),
+    school_id: str | None = Query(None, max_length=80),
+    user_id: str | None = Query(None, max_length=80),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return reproducible, bounded product-intelligence aggregates."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    usage_conditions = [UsageLog.created_at >= since]
+    if school_id:
+        usage_conditions.append(UsageLog.school_id == school_id)
+    if user_id:
+        usage_conditions.append(UsageLog.user_id == user_id)
+    usage_rows = await db.execute(
+        select(UsageLog.action, UsageLog.provider, func.sum(UsageLog.tokens_used), func.sum(UsageLog.cost), func.count(UsageLog.id))
+        .where(*usage_conditions)
+        .group_by(UsageLog.action, UsageLog.provider)
+        .order_by(func.sum(UsageLog.cost).desc())
+    )
+    usage_by_action = [
+        {"action": action, "provider": provider or "unknown", "tokens": int(tokens or 0), "cost": float(cost or 0), "events": int(events)}
+        for action, provider, tokens, cost, events in usage_rows.all()
+    ]
+    manual_events = sum(item["events"] for item in usage_by_action if item["action"] == "manual_exam_submission")
+    ai_events = sum(item["events"] for item in usage_by_action if item["action"] in {"exam_generation", "exam_refinement", "exam_refinement_from_comments"})
+
+    exam_conditions = [Exam.created_at >= since]
+    if school_id:
+        exam_conditions.append(Exam.school_id == school_id)
+    if user_id:
+        exam_conditions.append(Exam.created_by_user_id == user_id)
+    failure_rows = await db.execute(
+        select(Exam.subject, func.count()).where(*exam_conditions, Exam.status == "failed").group_by(Exam.subject).order_by(func.count().desc()).limit(20)
+    )
+    failures_by_subject = [{"subject": subject, "failed": int(count)} for subject, count in failure_rows.all()]
+    quality_conditions = [ExamQualitySnapshot.created_at >= since]
+    if school_id:
+        quality_conditions.append(ExamQualitySnapshot.school_id == school_id)
+    quality_rows = await db.execute(
+        select(ExamQualitySnapshot.quality_status, func.count(), func.avg(cast(ExamQualitySnapshot.overall_score, Float)))
+        .where(*quality_conditions)
+        .group_by(ExamQualitySnapshot.quality_status)
+    )
+    quality = [{"status": status, "snapshots": int(count), "average_score": round(float(avg or 0), 2)} for status, count, avg in quality_rows.all()]
+    job_conditions = [GenerationJob.created_at >= since]
+    if school_id:
+        job_conditions.append(GenerationJob.school_id == school_id)
+    job_rows = await db.execute(select(GenerationJob.created_at, GenerationJob.updated_at, GenerationJob.status).where(*job_conditions).order_by(GenerationJob.created_at.desc()).limit(500))
+    durations = [(updated - created).total_seconds() for created, updated, status in job_rows.all() if updated and status in {"succeeded", "failed"} and updated >= created]
+    latency = {"completed_jobs": len(durations), "average_seconds": round(sum(durations) / len(durations), 2) if durations else 0, "p95_seconds": round(sorted(durations)[max(0, int(len(durations) * 0.95) - 1)], 2) if durations else 0}
+    onboarding_rows = await db.execute(
+        select(School.id, School.name, School.created_at, School.contact_email, func.count(User.id))
+        .outerjoin(User, User.school_id == School.id)
+        .where(School.is_active.is_(True))
+        .group_by(School.id, School.name, School.created_at, School.contact_email)
+        .order_by(School.created_at.desc())
+        .limit(100)
+    )
+    onboarding = []
+    for sid, name, created_at, contact_email, user_count in onboarding_rows.all():
+        exam_count = await _count(db, Exam, Exam.school_id == sid, Exam.created_at >= since)
+        onboarding.append({"school_id": str(sid), "school": name, "contact_email": contact_email, "staff": int(user_count), "exams": exam_count, "active": bool(exam_count), "created_at": created_at.isoformat()})
+    return {
+        "days": days,
+        "filters": {"school_id": school_id, "user_id": user_id},
+        "usage_by_action": usage_by_action,
+        "adoption": {"manual_events": manual_events, "ai_events": ai_events, "total_exam_events": manual_events + ai_events},
+        "failures_by_subject": failures_by_subject,
+        "quality": quality,
+        "generation_latency": latency,
+        "onboarding": onboarding,
+    }
 
 
 @router.get("/schools", response_model=dict, tags=["Platform Operations"])

@@ -372,6 +372,33 @@ def test_platform_jobs_and_usage_pages_render(monkeypatch):
     assert "$0.12" in usage.text
 
 
+def test_platform_insights_page_renders_aggregate_metrics(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/insights":
+            return FakeResp(200, {
+                "days": 30,
+                "usage_by_action": [{"action": "exam_generation", "provider": "gemini", "events": 3, "tokens": 900, "cost": 0.09}],
+                "adoption": {"manual_events": 2, "ai_events": 3, "total_exam_events": 5},
+                "failures_by_subject": [{"subject": "Physics", "failed": 2}],
+                "quality": [{"status": "passed", "snapshots": 4, "average_score": 87.5}],
+                "generation_latency": {"completed_jobs": 4, "average_seconds": 8.2, "p95_seconds": 15.4},
+                "onboarding": [{"school": "Greenfield Academy", "staff": 4, "exams": 0, "active": False}],
+            })
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    response = client.get("/internal/platform/insights")
+    assert response.status_code == 200
+    assert "Product insights" in response.text
+    assert "Exam Generation" in response.text
+    assert "$0.09" in response.text
+    assert "Physics" in response.text
+    assert "Greenfield Academy" in response.text
+    assert "No recent activity" in response.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 

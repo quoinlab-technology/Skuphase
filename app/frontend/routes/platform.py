@@ -316,6 +316,86 @@ def register_routes(app):
         )
         return _platform_shell(content, user, "platform-usage", pop_flash(req), [("Platform operations", "/internal/platform"), ("Usage", None)])
 
+    @app.get("/internal/platform/insights")
+    async def platform_insights_page(req: Request, days: int = 30, school_id: str = "", user_id: str = ""):
+        """Render bounded, aggregate product intelligence for pilot decisions."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        days = min(max(days, 7), 90)
+        params = {"days": days}
+        if school_id:
+            params["school_id"] = school_id.strip()
+        if user_id:
+            params["user_id"] = user_id.strip()
+        response = await call_api(req, "GET", "/platform/insights", params=params)
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(
+                EmptyState(title="Product insights unavailable", description=data.get("message", "Try again shortly.")),
+                user, "platform-insights", pop_flash(req),
+                [("Platform operations", "/internal/platform"), ("Insights", None)],
+            )
+
+        usage = data.get("usage_by_action", [])
+        adoption = data.get("adoption", {})
+        latency = data.get("generation_latency", {})
+        failures = data.get("failures_by_subject", [])
+        quality = data.get("quality", [])
+        onboarding = data.get("onboarding", [])
+        total_cost = sum(float(item.get("cost", 0) or 0) for item in usage)
+        inactive = sum(1 for item in onboarding if not item.get("active"))
+        usage_rows = [
+            TRow(TCell(item.get("action", "").replace("_", " ").title()), TCell(item.get("provider", "unknown")),
+                 TCell(f"{item.get('events', 0):,}"), TCell(f"{item.get('tokens', 0):,}"), TCell(f"${float(item.get('cost', 0) or 0):,.2f}"))
+            for item in usage
+        ]
+        failure_rows = [TRow(TCell(item.get("subject", "Unknown")), TCell(str(item.get("failed", 0)))) for item in failures]
+        quality_rows = [
+            TRow(TCell(Badge(item.get("status", "unknown").replace("_", " ").title(), variant="success" if item.get("status") in {"green", "passed", "approved"} else "danger" if item.get("status") in {"red", "failed", "rejected"} else "warning", pill=True)), TCell(str(item.get("snapshots", 0))), TCell(f"{float(item.get('average_score', 0) or 0):.2f}"))
+            for item in quality
+        ]
+        onboarding_rows = [
+            TRow(TCell(Strong(item.get("school", "Unknown"))), TCell(str(item.get("staff", 0))), TCell(str(item.get("exams", 0))), TCell(Badge("Active" if item.get("active") else "No recent activity", variant="success" if item.get("active") else "warning", pill=True)))
+            for item in onboarding
+        ]
+        content = Div(
+            Div(
+                Div(H1("Product insights", cls="fw-bold fs-2 mb-1 text-dark"), P("Aggregate signals for cost, reliability, adoption, and pilot health. Exam prompts and question content are never shown here.", cls="text-muted mb-0")),
+                Badge(f"Last {days} days", variant="secondary", pill=True),
+                cls="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4",
+            ),
+            Card(
+                Form(
+                    Div(Label("Reporting window", cls="form-label"), HtmlSelect(*[Option(f"Last {value} days", value=str(value), selected=days == value) for value in (7, 30, 60, 90)], name="days", cls="form-select rounded-3"), cls="flex-grow-1"),
+                    Div(Label("School ID (optional)", cls="form-label"), Input(name="school_id", value=school_id, placeholder="Filter by school UUID", cls="form-control rounded-3"), cls="flex-grow-1"),
+                    Div(Label("User ID (optional)", cls="form-label"), Input(name="user_id", value=user_id, placeholder="Filter by user UUID", cls="form-control rounded-3"), cls="flex-grow-1"),
+                    Button("Apply filters", type="submit", variant="primary", cls="btn-brand rounded-pill align-self-end", **{"data-loading-label": "Loading…"}),
+                    action="/internal/platform/insights", method="get", cls="d-flex flex-wrap align-items-end gap-3",
+                ),
+                cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-4",
+            ),
+            Row(
+                Col(_metric("AI generation events", f"{adoption.get('ai_events', 0):,}", "Generation and refinement", "stars", "icon-purple-light"), span=12, sm=6, lg=3),
+                Col(_metric("Manual exam events", f"{adoption.get('manual_events', 0):,}", "Teacher-created submissions", "pencil-square", "icon-blue-light"), span=12, sm=6, lg=3),
+                Col(_metric("Estimated AI cost", f"${total_cost:,.2f}", "Selected reporting window", "currency-dollar", "icon-green-light"), span=12, sm=6, lg=3),
+                Col(_metric("Generation p95", f"{latency.get('p95_seconds', 0):,.1f}s", f"{latency.get('completed_jobs', 0)} completed jobs", "speedometer2", "icon-orange-light"), span=12, sm=6, lg=3),
+                cls="g-3 mb-4",
+            ),
+            Row(
+                Col(Card(Strong("Usage by action and provider", cls="d-block text-dark mb-3"), Table(THead(TRow(TCell("Action"), TCell("Provider"), TCell("Events"), TCell("Tokens"), TCell("Cost"))), TBody(*usage_rows), hover=True, cls="app-table mb-0") if usage_rows else EmptyState(title="No usage recorded", description="No provider events match this reporting window."), cls="border-0 shadow-sm rounded-4 p-4 bg-white h-100 overflow-auto"), span=12, lg=7),
+                Col(Card(Strong("Reliability signals", cls="d-block text-dark mb-3"), P(f"{len(failures)} subject(s) have failed exams; {inactive} active school(s) have no exam activity in this window.", cls="text-muted small"), Table(THead(TRow(TCell("Subject"), TCell("Failed"))), TBody(*failure_rows), hover=True, cls="app-table mb-0") if failure_rows else P("No failed exams recorded.", cls="text-muted small mb-0"), cls="border-0 shadow-sm rounded-4 p-4 bg-white h-100 overflow-auto"), span=12, lg=5),
+                cls="g-3 mb-4",
+            ),
+            Row(
+                Col(Card(Strong("Quality and preflight", cls="d-block text-dark mb-3"), Table(THead(TRow(TCell("Status"), TCell("Snapshots"), TCell("Average score"))), TBody(*quality_rows), hover=True, cls="app-table mb-0") if quality_rows else P("No quality snapshots recorded.", cls="text-muted small mb-0"), cls="border-0 shadow-sm rounded-4 p-4 bg-white h-100 overflow-auto"), span=12, lg=5),
+                Col(Card(Strong("School onboarding health", cls="d-block text-dark mb-3"), Table(THead(TRow(TCell("School"), TCell("Staff"), TCell("Exams"), TCell("Activity"))), TBody(*onboarding_rows), hover=True, cls="app-table mb-0") if onboarding_rows else P("No active schools found.", cls="text-muted small mb-0"), cls="border-0 shadow-sm rounded-4 p-4 bg-white h-100 overflow-auto"), span=12, lg=7),
+                cls="g-3",
+            ),
+        )
+        return _platform_shell(content, user, "platform-insights", pop_flash(req), [("Platform operations", "/internal/platform"), ("Insights", None)])
+
     @app.post("/internal/platform/notifications/{notification_id}/read")
     async def platform_notification_read_action(req: Request, notification_id: str):
         guard = ensure_login(req)

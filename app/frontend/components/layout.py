@@ -282,6 +282,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
             ("Users", "/internal/platform/users", "platform-users", "people"),
             ("Jobs & health", "/internal/platform/jobs", "platform-jobs", "activity"),
             ("Usage", "/internal/platform/usage", "platform-usage", "graph-up"),
+            ("Insights", "/internal/platform/insights", "platform-insights", "bar-chart-line"),
             ("Support", "/internal/platform/support", "platform-support", "chat-square-text"),
             ("Audit", "/internal/platform/audit", "platform-audit", "shield-check"),
         ]
