@@ -55,6 +55,10 @@ features, operational changes, security fixes, and important migrations.
   manual-versus-AI adoption, generation latency, subject failure trends,
   quality snapshots, and school onboarding health with bounded filters at
   `/internal/platform/insights`.
+- Completed Phase 4 pilot governance: incident lifecycle tracking, audited
+  time-limited support-access grants, curriculum version validation/publish/
+  rollback records, sanitized audit CSV export, retention reporting, and
+  owner-only audit purge controls.
 
 ### Planned
 

@@ -2,7 +2,7 @@
 
 from fasthtml.common import A, Div, Form, H1, Input, Label, Option, P, Span, Strong, Textarea, Title, Select as HtmlSelect
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from faststrap import Badge, Button, Card, Col, EmptyState, Icon, Row, Table, TBody, TCell, THead, TRow
 
@@ -396,6 +396,174 @@ def register_routes(app):
         )
         return _platform_shell(content, user, "platform-insights", pop_flash(req), [("Platform operations", "/internal/platform"), ("Insights", None)])
 
+    @app.get("/internal/platform/incidents")
+    async def platform_incidents_page(req: Request, status: str = ""):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/platform/incidents", params={"limit": 100, **({"status": status} if status else {})})
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(EmptyState(title="Incident register unavailable", description=data.get("message", "Try again shortly.")), user, "platform-incidents", pop_flash(req), [("Platform operations", "/internal/platform"), ("Incidents", None)])
+        rows = []
+        for item in data.get("incidents", []):
+            status_options = ("open", "acknowledged", "investigating", "monitoring", "resolved")
+            rows.append(TRow(
+                TCell(Strong(item.get("title", "Incident"))),
+                TCell(item.get("service", "")),
+                TCell(Badge(item.get("severity", "minor").title(), variant="danger" if item.get("severity") == "critical" else "warning" if item.get("severity") == "major" else "secondary", pill=True)),
+                TCell(Badge(item.get("status", "open").replace("_", " ").title(), variant="success" if item.get("status") == "resolved" else "warning", pill=True)),
+                TCell(item.get("created_at", "")[:10]),
+                TCell(Form(_csrf(req), HtmlSelect(*(Option(value.replace("_", " ").title(), value=value, selected=value == item.get("status")) for value in status_options), name="status", cls="form-select form-select-sm rounded-3"), Button("Save", type="submit", variant="light", cls="btn btn-sm rounded-pill mt-1", **{"data-loading-label": "Saving…"}), action=f"/internal/platform/incidents/{item['incident_id']}", method="post")),
+            ))
+        content = Div(
+            Div(Div(H1("Incident register", cls="fw-bold fs-2 mb-1 text-dark"), P("Track service and security incidents from acknowledgement through resolution.", cls="text-muted mb-0")), A("Audit stream", href="/internal/platform/audit", cls="btn btn-outline-secondary rounded-pill"), cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4"),
+            Card(Form(_csrf(req), Div(Label("Title", cls="form-label"), Input(name="title", required=True, placeholder="e.g. Generation provider outage", cls="form-control rounded-3"), cls="flex-grow-1"), Div(Label("Service", cls="form-label"), Input(name="service", required=True, placeholder="e.g. generation", cls="form-control rounded-3"), cls="flex-grow-1"), Div(Label("Severity", cls="form-label"), HtmlSelect(Option("Minor", value="minor"), Option("Major", value="major"), Option("Critical", value="critical"), name="severity", cls="form-select rounded-3"), cls="flex-grow-1"), Div(Label("Summary", cls="form-label"), Textarea(name="summary", required=True, rows=2, cls="form-control rounded-3"), cls="w-100"), Button("Create incident", type="submit", variant="primary", cls="btn-brand rounded-pill", **{"data-loading-label": "Creating…"}), action="/internal/platform/incidents", method="post", cls="d-flex flex-wrap align-items-end gap-3"), cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-4"),
+            Card(Table(THead(TRow(TCell("Incident"), TCell("Service"), TCell("Severity"), TCell("Status"), TCell("Opened"), TCell("Update"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else EmptyState(title="No incidents recorded", description="Operational incidents will remain visible here until resolved."), cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"),
+        )
+        return _platform_shell(content, user, "platform-incidents", pop_flash(req), [("Platform operations", "/internal/platform"), ("Incidents", None)])
+
+    @app.post("/internal/platform/incidents")
+    async def platform_incident_create_action(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        response = await call_api(req, "POST", "/platform/incidents", json={"title": (form.get("title") or "").strip(), "service": (form.get("service") or "").strip(), "severity": form.get("severity", "minor"), "summary": (form.get("summary") or "").strip()})
+        ok, data = unwrap(response)
+        push_flash(req, "Incident created." if ok else data.get("message", "Could not create incident."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/incidents", status_code=303)
+
+    @app.post("/internal/platform/incidents/{incident_id}")
+    async def platform_incident_update_action(req: Request, incident_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        response = await call_api(req, "PATCH", f"/platform/incidents/{incident_id}", json={"status": form.get("status", "open"), "resolution": (form.get("resolution") or "").strip() or None})
+        ok, data = unwrap(response)
+        push_flash(req, "Incident updated." if ok else data.get("message", "Could not update incident."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/incidents", status_code=303)
+
+    @app.get("/internal/platform/curriculum")
+    async def platform_curriculum_page(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        response = await call_api(req, "GET", "/platform/curriculum/versions")
+        ok, data = unwrap(response)
+        if not ok:
+            return _access_denied(req) if response.status_code in (401, 403) else _platform_shell(EmptyState(title="Curriculum operations unavailable", description=data.get("message", "Try again shortly.")), user, "platform-curriculum", pop_flash(req), [("Platform operations", "/internal/platform"), ("Curriculum ops", None)])
+        rows = []
+        for item in data.get("versions", []):
+            action = Div(
+                Form(_csrf(req), Button("Validate", type="submit", variant="light", cls="btn btn-sm rounded-pill me-1", **{"data-loading-label": "Checking…"}), action=f"/internal/platform/curriculum/{item['version_id']}/validate", method="post") if item.get("status") == "draft" else None,
+                Form(_csrf(req), Button("Publish", type="submit", variant="light", cls="btn btn-sm rounded-pill me-1", **{"data-loading-label": "Publishing…"}), action=f"/internal/platform/curriculum/{item['version_id']}/publish", method="post") if item.get("status") == "validated" else None,
+                Form(_csrf(req), Button("Rollback", type="submit", variant="light", cls="btn btn-sm btn-outline-danger rounded-pill", **{"data-loading-label": "Rolling back…"}), action=f"/internal/platform/curriculum/{item['version_id']}/rollback", method="post") if item.get("status") == "published" else None,
+                cls="d-flex flex-wrap",
+            )
+            rows.append(TRow(TCell(Strong(item.get("version", ""))), TCell(item.get("board", "")), TCell(Badge(item.get("status", "").title(), variant="success" if item.get("status") == "published" else "warning" if item.get("status") in {"validated", "draft"} else "danger", pill=True)), TCell(str((item.get("manifest") or {}).get("curriculum_count", "—"))), TCell(action)))
+        content = Div(
+            Div(Div(H1("Curriculum operations", cls="fw-bold fs-2 mb-1 text-dark"), P("Version, validate, publish, and roll back curriculum imports without untracked global edits.", cls="text-muted mb-0")), A("Audit events", href="/internal/platform/audit", cls="btn btn-outline-secondary rounded-pill"), cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4"),
+            Card(Form(_csrf(req), Div(Label("Version", cls="form-label"), Input(name="version", required=True, placeholder="e.g. NERDC-2025.1", cls="form-control rounded-3"), cls="flex-grow-1"), Div(Label("Board", cls="form-label"), Input(name="board", value="NERDC", cls="form-control rounded-3"), cls="flex-grow-1"), Div(Label("Source document", cls="form-label"), Input(name="source_document", placeholder="Path or provenance URL", cls="form-control rounded-3"), cls="flex-grow-1"), Div(Label("Manifest counts", cls="form-label"), Input(name="curriculum_count", type="number", min="0", placeholder="Curricula", cls="form-control rounded-3"), Input(name="scheme_count", type="number", min="0", placeholder="Scheme weeks", cls="form-control rounded-3 mt-2"), cls="flex-grow-1"), Button("Register version", type="submit", variant="primary", cls="btn-brand rounded-pill align-self-end", **{"data-loading-label": "Registering…"}), action="/internal/platform/curriculum", method="post", cls="d-flex flex-wrap align-items-end gap-3"), cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-4"),
+            Card(Table(THead(TRow(TCell("Version"), TCell("Board"), TCell("Status"), TCell("Curricula"), TCell("Actions"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else EmptyState(title="No curriculum versions", description="Register an imported source before validation and publication."), cls="border-0 shadow-sm rounded-4 p-3 bg-white overflow-auto"),
+        )
+        return _platform_shell(content, user, "platform-curriculum", pop_flash(req), [("Platform operations", "/internal/platform"), ("Curriculum ops", None)])
+
+    @app.post("/internal/platform/curriculum")
+    async def platform_curriculum_create_action(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        manifest = {"curriculum_count": int(form.get("curriculum_count") or 0), "scheme_count": int(form.get("scheme_count") or 0)}
+        response = await call_api(req, "POST", "/platform/curriculum/versions", json={"version": (form.get("version") or "").strip(), "board": (form.get("board") or "NERDC").strip(), "source_document": (form.get("source_document") or "").strip() or None, "manifest": manifest})
+        ok, data = unwrap(response)
+        push_flash(req, "Curriculum version registered." if ok else data.get("message", "Could not register version."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/curriculum", status_code=303)
+
+    @app.post("/internal/platform/curriculum/{version_id}/{action}")
+    async def platform_curriculum_version_action(req: Request, version_id: str, action: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        if action not in {"validate", "publish", "rollback"}:
+            return RedirectResponse("/internal/platform/curriculum", status_code=303)
+        response = await call_api(req, "POST", f"/platform/curriculum/versions/{version_id}/{action}")
+        ok, data = unwrap(response)
+        labels = {"validate": "validated", "publish": "published", "rollback": "rolled back"}
+        push_flash(req, data.get("message", f"Curriculum version {labels[action]}." ) if ok else data.get("message", f"Could not {action} curriculum version."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/curriculum", status_code=303)
+
+    @app.get("/internal/platform/security")
+    async def platform_security_page(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        grants_response = await call_api(req, "GET", "/platform/support-access")
+        retention_response = await call_api(req, "GET", "/platform/retention")
+        overview_response = await call_api(req, "GET", "/platform/overview")
+        schools_response = await call_api(req, "GET", "/platform/schools", params={"limit": 100})
+        members_response = await call_api(req, "GET", "/platform/members")
+        grants_ok, grants_data = unwrap(grants_response)
+        retention_ok, retention = unwrap(retention_response)
+        overview_ok, overview = unwrap(overview_response)
+        schools_ok, schools_data = unwrap(schools_response)
+        members_ok, members_data = unwrap(members_response)
+        if not grants_ok and grants_response.status_code in (401, 403):
+            return _access_denied(req)
+        grants = grants_data.get("grants", []) if grants_ok else []
+        viewer_role = overview.get("viewer_role", "") if overview_ok else ""
+        rows = [TRow(TCell(item.get("school", "")), TCell(item.get("operator_email", "")), TCell(item.get("reason", "")), TCell(Badge("Active" if item.get("active") else "Expired/revoked", variant="success" if item.get("active") else "secondary", pill=True)), TCell(item.get("expires_at", "")[:16].replace("T", " ")), TCell(Form(_csrf(req), Button("Revoke", type="submit", variant="light", cls="btn btn-sm btn-outline-danger rounded-pill", **{"data-loading-label": "Revoking…"}), action=f"/internal/platform/security/access/{item['grant_id']}/revoke", method="post") if item.get("active") and viewer_role in {"platform_owner", "platform_admin"} else Span("—", cls="text-muted"))) for item in grants]
+        access_form = Card(
+            Strong("Grant temporary support access", cls="d-block text-dark mb-3"),
+            P("Use only for a documented support task. The grant expires automatically and every action remains attributable.", cls="text-muted small"),
+            Form(_csrf(req), Div(Label("School", cls="form-label"), HtmlSelect(Option("Choose a school", value="", selected=True), *(Option(item.get("name", ""), value=item.get("school_id")) for item in schools_data.get("schools", [])), name="school_id", required=True, cls="form-select rounded-3"), cls="flex-grow-1"), Div(Label("Operator", cls="form-label"), HtmlSelect(Option("Choose an operator", value="", selected=True), *(Option(f"{item.get('full_name') or item.get('email')} · {item.get('role', '').replace('_', ' ').title()}", value=item.get("user_id")) for item in members_data.get("members", [])), name="operator_user_id", required=True, cls="form-select rounded-3"), cls="flex-grow-1"), Div(Label("Duration", cls="form-label"), HtmlSelect(Option("1 hour", value="1"), Option("4 hours", value="4", selected=True), Option("12 hours", value="12"), Option("24 hours", value="24"), name="duration_hours", cls="form-select rounded-3"), cls="flex-grow-1"), Div(Label("Reason", cls="form-label"), Textarea(name="reason", required=True, rows=2, placeholder="What support task requires access?", cls="form-control rounded-3"), cls="w-100"), Button("Grant access", type="submit", variant="primary", cls="btn-brand rounded-pill", **{"data-loading-label": "Granting…"}), action="/internal/platform/security/access", method="post", cls="d-flex flex-wrap align-items-end gap-3"),
+            cls="border-0 shadow-sm rounded-4 p-4 bg-white mb-4",
+        ) if viewer_role in {"platform_owner", "platform_admin"} and schools_ok and members_ok else None
+        content = Div(
+            Div(Div(H1("Security & retention", cls="fw-bold fs-2 mb-1 text-dark"), P("Explicit, time-limited support access and controlled audit retention.", cls="text-muted mb-0")), A("Export audit CSV", href="/internal/platform/security/export", cls="btn btn-outline-secondary rounded-pill"), cls="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4"),
+            Row(Col(_metric("Eligible audit events", str(retention.get("eligible_audit_events", 0) if retention_ok else "—"), "Older than 365 days", "archive", "icon-blue-light"), span=12, sm=6), Col(_metric("Retention policy", "365 days", "Owner-approved purge only", "shield-check", "icon-green-light"), span=12, sm=6), cls="g-3 mb-4"),
+            access_form,
+            Card(Strong("Support access approvals", cls="d-block text-dark mb-3"), P("A grant authorizes support work for a school but never impersonates a school user. Every grant expires automatically and is audited.", cls="text-muted small"), Table(THead(TRow(TCell("School"), TCell("Operator"), TCell("Reason"), TCell("State"), TCell("Expires"), TCell("Action"))), TBody(*rows), hover=True, cls="app-table mb-0") if rows else P("No support access grants.", cls="text-muted small mb-0"), cls="border-0 shadow-sm rounded-4 p-4 bg-white"),
+        )
+        return _platform_shell(content, user, "platform-security", pop_flash(req), [("Platform operations", "/internal/platform"), ("Security", None)])
+
+    @app.get("/internal/platform/security/export")
+    async def platform_security_export(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "GET", "/platform/audit-events/export")
+        if not response.is_success:
+            push_flash(req, "Audit export is unavailable.", "danger")
+            return RedirectResponse("/internal/platform/security", status_code=303)
+        return Response(response.content, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=skuphase-audit-export.csv"})
+
+    @app.post("/internal/platform/security/access")
+    async def platform_security_access_create(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        form = await req.form()
+        response = await call_api(req, "POST", "/platform/support-access", json={"school_id": form.get("school_id", ""), "operator_user_id": form.get("operator_user_id", ""), "reason": (form.get("reason") or "").strip(), "duration_hours": int(form.get("duration_hours") or 4)})
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Support access granted.") if ok else data.get("message", "Could not grant support access."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/security", status_code=303)
+
+    @app.post("/internal/platform/security/access/{grant_id}/revoke")
+    async def platform_security_access_revoke(req: Request, grant_id: str):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "POST", f"/platform/support-access/{grant_id}/revoke")
+        ok, data = unwrap(response)
+        push_flash(req, data.get("message", "Support access revoked.") if ok else data.get("message", "Could not revoke support access."), "success" if ok else "danger")
+        return RedirectResponse("/internal/platform/security", status_code=303)
+
     @app.post("/internal/platform/notifications/{notification_id}/read")
     async def platform_notification_read_action(req: Request, notification_id: str):
         guard = ensure_login(req)
@@ -417,7 +585,7 @@ def register_routes(app):
         return RedirectResponse("/internal/platform/notifications/delivery", status_code=303)
 
     @app.get("/internal/platform/audit")
-    async def platform_audit_page(req: Request, action: str = "", success: str = ""):
+    async def platform_audit_page(req: Request, action: str = "", success: str = "", actor_user_id: str = "", school_id: str = "", target_type: str = "", target_id: str = ""):
         guard = ensure_login(req)
         if guard:
             return guard
@@ -425,6 +593,9 @@ def register_routes(app):
         audit_params = {"limit": 100}
         if action:
             audit_params["action"] = action
+        for key, value in (("actor_user_id", actor_user_id), ("school_id", school_id), ("target_type", target_type), ("target_id", target_id)):
+            if value:
+                audit_params[key] = value
         if success in {"true", "false"}:
             audit_params["success"] = success
         response = await call_api(req, "GET", "/platform/audit-events", params=audit_params)
@@ -456,7 +627,11 @@ def register_routes(app):
             Card(
                 Form(
                     Div(
-                        Input("action", label="Action", value=action, placeholder="e.g. platform.support_message_added", cls="mb-0"),
+                Input("action", label="Action", value=action, placeholder="e.g. platform.support_message_added", cls="mb-0"),
+                        Input("actor_user_id", label="Actor ID", value=actor_user_id, placeholder="User UUID", cls="mb-0"),
+                        Input("school_id", label="School ID", value=school_id, placeholder="School UUID", cls="mb-0"),
+                        Input("target_type", label="Target type", value=target_type, placeholder="e.g. incident", cls="mb-0"),
+                        Input("target_id", label="Target ID", value=target_id, placeholder="Target ID", cls="mb-0"),
                         HtmlSelect(Option("Any result", value="", selected=not success), Option("Successful", value="true", selected=success == "true"), Option("Failed", value="false", selected=success == "false"), name="success", cls="form-select rounded-3"),
                         Button("Filter", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Filteringâ€¦"}),
                         A("Clear", href="/internal/platform/audit", cls="btn btn-outline-secondary rounded-pill px-4"),

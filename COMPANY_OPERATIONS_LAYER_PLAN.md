@@ -665,6 +665,21 @@ Exit criteria:
 
 ### Phase 4 — Governance, security, and curriculum operations
 
+**Status: COMPLETE for pilot operations (2026-10-12).** Phase 4 now provides
+an incident register with acknowledgement and resolution states, explicit
+time-limited support-access grants (never silent impersonation), versioned
+curriculum import metadata with validation/publish/rollback transitions, a
+sanitized CSV audit export, and owner-controlled audit retention reporting and
+purge. All mutating actions are role-gated and recorded in the append-only audit
+stream. The internal console exposes Incidents, Curriculum ops, and Security
+views using the same Faststrap shell as the earlier operations phases.
+
+The curriculum version record is intentionally provenance-first: it stores the
+source document/hash and validated manifest counts before publication. It does
+not pretend to replace the existing curriculum ingestion pipeline or mutate
+shared curriculum rows directly. A future importer can attach its parsed
+artifacts to this lifecycle without changing the governance boundary.
+
 Deliver:
 
 - full audit centre;

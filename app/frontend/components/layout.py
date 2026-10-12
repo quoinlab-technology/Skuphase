@@ -283,6 +283,9 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
             ("Jobs & health", "/internal/platform/jobs", "platform-jobs", "activity"),
             ("Usage", "/internal/platform/usage", "platform-usage", "graph-up"),
             ("Insights", "/internal/platform/insights", "platform-insights", "bar-chart-line"),
+            ("Incidents", "/internal/platform/incidents", "platform-incidents", "exclamation-octagon"),
+            ("Curriculum ops", "/internal/platform/curriculum", "platform-curriculum", "journal-check"),
+            ("Security", "/internal/platform/security", "platform-security", "lock"),
             ("Support", "/internal/platform/support", "platform-support", "chat-square-text"),
             ("Audit", "/internal/platform/audit", "platform-audit", "shield-check"),
         ]

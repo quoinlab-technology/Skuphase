@@ -19,6 +19,7 @@ from app.models.lesson_plan import LessonPlan, WeeklyExercise, SyllabusCoverage
 from app.models.platform import PlatformMembership
 from app.models.support import FeedbackMessage, FeedbackTicket, Notification
 from app.models.audit import AuditEvent
+from app.models.governance import IncidentRecord, SupportAccessGrant, CurriculumVersion
 
 __all__ = [
     "BaseModel",
@@ -51,4 +52,7 @@ __all__ = [
     "FeedbackMessage",
     "Notification",
     "AuditEvent",
+    "IncidentRecord",
+    "SupportAccessGrant",
+    "CurriculumVersion",
 ]

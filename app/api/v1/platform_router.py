@@ -8,7 +8,11 @@ aggregate data suitable for the internal console.
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, cast, Float, func, select
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
+import csv
+from io import StringIO
+from sqlalchemy import and_, cast, Float, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
@@ -31,6 +35,7 @@ from app.models.school import School
 from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.models.audit import AuditEvent
+from app.models.governance import CurriculumVersion, IncidentRecord, SupportAccessGrant
 from app.services.audit import record_audit_event
 from app.config.settings import get_settings
 
@@ -43,6 +48,49 @@ READ_ROLES = (
     PLATFORM_ANALYST,
     PLATFORM_CONTENT_OPERATOR,
 )
+
+
+class IncidentCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=180)
+    service: str = Field(min_length=2, max_length=60)
+    severity: str = Field(default="minor", pattern="^(minor|major|critical)$")
+    summary: str = Field(min_length=3, max_length=10000)
+    impact: str | None = Field(default=None, max_length=10000)
+    public_message: str | None = Field(default=None, max_length=5000)
+
+
+class IncidentUpdate(BaseModel):
+    status: str = Field(pattern="^(open|acknowledged|investigating|monitoring|resolved)$")
+    resolution: str | None = Field(default=None, max_length=10000)
+    public_message: str | None = Field(default=None, max_length=5000)
+
+
+class SupportAccessCreate(BaseModel):
+    school_id: str
+    operator_user_id: str
+    reason: str = Field(min_length=10, max_length=2000)
+    duration_hours: int = Field(default=4, ge=1, le=24)
+
+
+class CurriculumVersionCreate(BaseModel):
+    version: str = Field(min_length=1, max_length=80)
+    board: str = Field(default="NERDC", min_length=2, max_length=50)
+    source_document: str | None = Field(default=None, max_length=500)
+    source_hash: str | None = Field(default=None, max_length=128)
+    notes: str | None = Field(default=None, max_length=10000)
+    manifest: dict = Field(default_factory=dict)
+
+
+def _incident_dict(item: IncidentRecord) -> dict:
+    return {
+        "incident_id": str(item.id), "title": item.title, "service": item.service,
+        "severity": item.severity, "status": item.status, "summary": item.summary,
+        "impact": item.impact, "public_message": item.public_message,
+        "owner_user_id": str(item.owner_user_id) if item.owner_user_id else None,
+        "created_by_user_id": str(item.created_by_user_id) if item.created_by_user_id else None,
+        "created_at": item.created_at.isoformat(), "acknowledged_at": item.acknowledged_at.isoformat() if item.acknowledged_at else None,
+        "resolved_at": item.resolved_at.isoformat() if item.resolved_at else None, "resolution": item.resolution,
+    }
 
 
 async def _count(db: AsyncSession, model, *conditions) -> int:
@@ -255,6 +303,210 @@ async def platform_insights(
         "generation_latency": latency,
         "onboarding": onboarding,
     }
+
+
+@router.get("/incidents", response_model=dict, tags=["Platform Governance"])
+async def list_platform_incidents(
+    status: str | None = Query(None, max_length=30),
+    limit: int = Query(50, ge=1, le=100),
+    membership: PlatformMembership = Depends(require_platform_roles(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return the bounded incident register for acknowledgement and follow-up."""
+    conditions = [IncidentRecord.status == status] if status else []
+    rows = await db.execute(select(IncidentRecord).where(*conditions).order_by(IncidentRecord.created_at.desc()).limit(limit))
+    return {"incidents": [_incident_dict(item) for item in rows.scalars().all()]}
+
+
+@router.post("/incidents", response_model=dict, tags=["Platform Governance"])
+async def create_platform_incident(
+    request: IncidentCreate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    item = IncidentRecord(**request.model_dump(), created_by_user_id=membership.user_id)
+    db.add(item)
+    await db.flush()
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.incident_created", target_type="incident", target_id=item.id, summary="Created a platform incident record.", metadata={"severity": item.severity, "service": item.service})
+    await db.commit()
+    return {"incident": _incident_dict(item)}
+
+
+@router.patch("/incidents/{incident_id}", response_model=dict, tags=["Platform Governance"])
+async def update_platform_incident(
+    incident_id: str,
+    request: IncidentUpdate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    item = await db.scalar(select(IncidentRecord).where(IncidentRecord.id == incident_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    now = datetime.now(timezone.utc)
+    item.status = request.status
+    item.resolution = request.resolution
+    item.public_message = request.public_message
+    if request.status != "open" and item.acknowledged_at is None:
+        item.acknowledged_at = now
+    if request.status == "resolved":
+        item.resolved_at = item.resolved_at or now
+    else:
+        item.resolved_at = None
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.incident_updated", target_type="incident", target_id=item.id, summary=f"Incident moved to {request.status}.", metadata={"status": request.status})
+    await db.commit()
+    return {"incident": _incident_dict(item)}
+
+
+@router.get("/support-access", response_model=dict, tags=["Platform Governance"])
+async def list_support_access_grants(
+    school_id: str | None = Query(None, max_length=80),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_SUPPORT)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    conditions = [SupportAccessGrant.school_id == school_id] if school_id else []
+    rows = await db.execute(select(SupportAccessGrant, User.email, School.name).join(User, User.id == SupportAccessGrant.operator_user_id).join(School, School.id == SupportAccessGrant.school_id).where(*conditions).order_by(SupportAccessGrant.created_at.desc()).limit(100))
+    now = datetime.now(timezone.utc)
+    grants = [{"grant_id": str(item.id), "school_id": str(item.school_id), "school": school_name, "operator_user_id": str(item.operator_user_id), "operator_email": email, "reason": item.reason, "expires_at": item.expires_at.isoformat(), "revoked_at": item.revoked_at.isoformat() if item.revoked_at else None, "active": bool(item.is_active and item.revoked_at is None and item.expires_at > now)} for item, email, school_name in rows.all()]
+    return {"grants": grants}
+
+
+@router.post("/support-access", response_model=dict, tags=["Platform Governance"])
+async def create_support_access_grant(
+    request: SupportAccessCreate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    school = await db.scalar(select(School).where(School.id == request.school_id, School.is_active.is_(True)))
+    operator = await db.scalar(select(User).join(PlatformMembership, PlatformMembership.user_id == User.id).where(User.id == request.operator_user_id, PlatformMembership.is_active.is_(True)))
+    if school is None or operator is None:
+        raise HTTPException(status_code=404, detail="Active school or platform operator not found")
+    now = datetime.now(timezone.utc)
+    grant = SupportAccessGrant(school_id=school.id, operator_user_id=operator.id, granted_by_user_id=membership.user_id, reason=request.reason.strip(), expires_at=now + timedelta(hours=request.duration_hours))
+    db.add(grant)
+    await db.flush()
+    school_admins = await db.scalars(select(User).where(User.school_id == school.id, User.role == "school_admin", User.is_active.is_(True)))
+    for admin in school_admins.all():
+        await create_notification(
+            db,
+            recipient_user_id=admin.id,
+            school_id=school.id,
+            kind="support_access_granted",
+            title="Company support access approved",
+            body=f"A SkuPhase support operator was granted temporary access for: {grant.reason}",
+            target_url="/app/feedback",
+            payload={"grant_id": str(grant.id), "expires_at": grant.expires_at.isoformat()},
+            email_requested=True,
+        )
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, school_id=school.id, action="platform.support_access_granted", target_type="support_access_grant", target_id=grant.id, summary="Granted time-limited support access approval.", metadata={"operator_user_id": str(operator.id), "duration_hours": request.duration_hours})
+    await db.commit()
+    return {"grant_id": str(grant.id), "expires_at": grant.expires_at.isoformat(), "message": "Support access grant created. It expires automatically and does not impersonate the school user."}
+
+
+@router.post("/support-access/{grant_id}/revoke", response_model=dict, tags=["Platform Governance"])
+async def revoke_support_access_grant(
+    grant_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    grant = await db.scalar(select(SupportAccessGrant).where(SupportAccessGrant.id == grant_id))
+    if grant is None:
+        raise HTTPException(status_code=404, detail="Support access grant not found")
+    grant.revoked_at = datetime.now(timezone.utc)
+    grant.is_active = False
+    school_admins = await db.scalars(select(User).where(User.school_id == grant.school_id, User.role == "school_admin", User.is_active.is_(True)))
+    for admin in school_admins.all():
+        await create_notification(
+            db,
+            recipient_user_id=admin.id,
+            school_id=grant.school_id,
+            kind="support_access_revoked",
+            title="Company support access revoked",
+            body="A temporary SkuPhase support access grant for your school was revoked.",
+            target_url="/app/feedback",
+            payload={"grant_id": str(grant.id)},
+            email_requested=False,
+        )
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, school_id=grant.school_id, action="platform.support_access_revoked", target_type="support_access_grant", target_id=grant.id, summary="Revoked support access approval.")
+    await db.commit()
+    return {"message": "Support access revoked."}
+
+
+@router.get("/curriculum/versions", response_model=dict, tags=["Platform Governance"])
+async def list_curriculum_versions(
+    board: str | None = Query(None, max_length=50),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_CONTENT_OPERATOR, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    conditions = [CurriculumVersion.board == board] if board else []
+    rows = await db.execute(select(CurriculumVersion).where(*conditions).order_by(CurriculumVersion.created_at.desc()).limit(100))
+    return {"versions": [{"version_id": str(item.id), "version": item.version, "board": item.board, "source_document": item.source_document, "source_hash": item.source_hash, "status": item.status, "notes": item.notes, "manifest": item.manifest or {}, "created_at": item.created_at.isoformat(), "published_at": item.published_at.isoformat() if item.published_at else None, "rolled_back_at": item.rolled_back_at.isoformat() if item.rolled_back_at else None} for item in rows.scalars().all()]}
+
+
+@router.post("/curriculum/versions", response_model=dict, tags=["Platform Governance"])
+async def create_curriculum_version(
+    request: CurriculumVersionCreate,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_CONTENT_OPERATOR)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    existing = await db.scalar(select(CurriculumVersion).where(CurriculumVersion.version == request.version))
+    if existing:
+        raise HTTPException(status_code=409, detail="Curriculum version already exists")
+    item = CurriculumVersion(**request.model_dump(), created_by_user_id=membership.user_id)
+    db.add(item)
+    await db.flush()
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.curriculum_version_created", target_type="curriculum_version", target_id=item.id, summary="Created a curriculum version record.", metadata={"version": item.version, "board": item.board})
+    await db.commit()
+    return {"version_id": str(item.id), "status": item.status}
+
+
+@router.post("/curriculum/versions/{version_id}/validate", response_model=dict, tags=["Platform Governance"])
+async def validate_curriculum_version(
+    version_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_CONTENT_OPERATOR)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    item = await db.scalar(select(CurriculumVersion).where(CurriculumVersion.id == version_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Curriculum version not found")
+    manifest = item.manifest or {}
+    valid = bool(manifest.get("curriculum_count", 0) and manifest.get("scheme_count", 0))
+    item.status = "validated" if valid else "invalid"
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.curriculum_version_validated", target_type="curriculum_version", target_id=item.id, success=valid, summary="Validated curriculum version manifest.", metadata={"valid": valid})
+    await db.commit()
+    return {"version_id": str(item.id), "status": item.status, "valid": valid, "message": "Version validated." if valid else "Validation failed: manifest must include curriculum_count and scheme_count."}
+
+
+@router.post("/curriculum/versions/{version_id}/publish", response_model=dict, tags=["Platform Governance"])
+async def publish_curriculum_version(
+    version_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_CONTENT_OPERATOR)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    item = await db.scalar(select(CurriculumVersion).where(CurriculumVersion.id == version_id))
+    if item is None or item.status != "validated":
+        raise HTTPException(status_code=409, detail="Only a validated curriculum version can be published")
+    await db.execute(update(CurriculumVersion).where(CurriculumVersion.board == item.board, CurriculumVersion.status == "published").values(status="superseded"))
+    item.status = "published"
+    item.published_at = datetime.now(timezone.utc)
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.curriculum_version_published", target_type="curriculum_version", target_id=item.id, summary="Published a validated curriculum version.", metadata={"board": item.board})
+    await db.commit()
+    return {"version_id": str(item.id), "status": item.status}
+
+
+@router.post("/curriculum/versions/{version_id}/rollback", response_model=dict, tags=["Platform Governance"])
+async def rollback_curriculum_version(
+    version_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    item = await db.scalar(select(CurriculumVersion).where(CurriculumVersion.id == version_id))
+    if item is None or item.status != "published":
+        raise HTTPException(status_code=409, detail="Only a published curriculum version can be rolled back")
+    item.status = "rolled_back"
+    item.rolled_back_at = datetime.now(timezone.utc)
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.curriculum_version_rolled_back", target_type="curriculum_version", target_id=item.id, summary="Rolled back a curriculum version.", metadata={"board": item.board})
+    await db.commit()
+    return {"version_id": str(item.id), "status": item.status}
 
 
 @router.get("/schools", response_model=dict, tags=["Platform Operations"])
@@ -474,10 +726,46 @@ async def platform_members(
     }
 
 
+@router.post("/members/{user_id}/deactivate", response_model=dict, tags=["Platform Governance"])
+async def deactivate_platform_member(
+    user_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Revoke private platform access without changing the person's school role."""
+    target = await db.scalar(select(PlatformMembership).where(PlatformMembership.user_id == user_id))
+    if target is None:
+        raise HTTPException(status_code=404, detail="Platform membership not found")
+    if target.user_id == membership.user_id:
+        raise HTTPException(status_code=409, detail="You cannot deactivate your own platform membership")
+    target.is_active = False
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.member_deactivated", target_type="platform_membership", target_id=target.id, summary="Deactivated a platform membership.")
+    await db.commit()
+    return {"message": "Platform membership deactivated."}
+
+
+@router.post("/members/{user_id}/activate", response_model=dict, tags=["Platform Governance"])
+async def activate_platform_member(
+    user_id: str,
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    target = await db.scalar(select(PlatformMembership).where(PlatformMembership.user_id == user_id))
+    if target is None:
+        raise HTTPException(status_code=404, detail="Platform membership not found")
+    target.is_active = True
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.member_activated", target_type="platform_membership", target_id=target.id, summary="Activated a platform membership.")
+    await db.commit()
+    return {"message": "Platform membership activated."}
+
+
 @router.get("/audit-events", response_model=dict, tags=["Platform Operations"])
 async def platform_audit_events(
     action: str | None = Query(None, max_length=100),
     actor_user_id: str | None = Query(None, max_length=80),
+    school_id: str | None = Query(None, max_length=80),
+    target_type: str | None = Query(None, max_length=60),
+    target_id: str | None = Query(None, max_length=120),
     success: bool | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
@@ -490,6 +778,12 @@ async def platform_audit_events(
     conditions = [AuditEvent.action == action] if action else []
     if actor_user_id:
         conditions.append(AuditEvent.actor_user_id == actor_user_id)
+    if school_id:
+        conditions.append(AuditEvent.school_id == school_id)
+    if target_type:
+        conditions.append(AuditEvent.target_type == target_type)
+    if target_id:
+        conditions.append(AuditEvent.target_id == target_id)
     if success is not None:
         conditions.append(AuditEvent.success.is_(success))
     if date_from:
@@ -502,9 +796,61 @@ async def platform_audit_events(
         "events": [{
             "event_id": str(item.id), "action": item.action, "target_type": item.target_type,
             "target_id": item.target_id, "success": item.success, "actor_role": item.actor_role,
+            "actor_user_id": str(item.actor_user_id) if item.actor_user_id else None,
+            "school_id": str(item.school_id) if item.school_id else None,
             "request_id": item.request_id, "summary": item.summary, "created_at": item.created_at.isoformat(),
         } for item in rows.scalars().all()],
     }
+
+
+@router.get("/audit-events/export", tags=["Platform Governance"])
+async def export_platform_audit_events(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    """Export sanitized audit rows; the export itself is recorded in the audit stream."""
+    conditions = []
+    if date_from:
+        conditions.append(AuditEvent.created_at >= date_from)
+    if date_to:
+        conditions.append(AuditEvent.created_at <= date_to)
+    rows = await db.execute(select(AuditEvent).where(*conditions).order_by(AuditEvent.created_at.desc()).limit(5000))
+    stream = StringIO()
+    writer = csv.writer(stream)
+    writer.writerow(["created_at", "action", "actor_role", "school_id", "target_type", "target_id", "success", "request_id", "summary"])
+    for item in rows.scalars().all():
+        writer.writerow([item.created_at.isoformat(), item.action, item.actor_role or "", item.school_id or "", item.target_type or "", item.target_id or "", item.success, item.request_id or "", item.summary or ""])
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.audit_exported", target_type="audit_events", summary="Exported a bounded sanitized audit report.", metadata={"row_limit": 5000, "date_from": date_from.isoformat() if date_from else None, "date_to": date_to.isoformat() if date_to else None})
+    await db.commit()
+    return Response(stream.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=skuphase-audit-export.csv"})
+
+
+@router.get("/retention", response_model=dict, tags=["Platform Governance"])
+async def platform_retention_report(
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER, PLATFORM_ADMIN, PLATFORM_ANALYST)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Return a dry-run retention report; no data is removed by GET."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    count = await _count(db, AuditEvent, AuditEvent.created_at < cutoff)
+    return {"policy": {"audit_retention_days": 365, "redaction": "metadata secrets are removed at write time; private content is not copied"}, "eligible_audit_events": count, "cutoff": cutoff.isoformat()}
+
+
+@router.post("/retention/purge", response_model=dict, tags=["Platform Governance"])
+async def purge_platform_retention(
+    days: int = Query(365, ge=30, le=3650),
+    membership: PlatformMembership = Depends(require_platform_roles(PLATFORM_OWNER)),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Delete only audit records beyond an explicit owner-approved retention window."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    count = await _count(db, AuditEvent, AuditEvent.created_at < cutoff)
+    await db.execute(AuditEvent.__table__.delete().where(AuditEvent.created_at < cutoff))
+    await record_audit_event(db, actor_user_id=membership.user_id, actor_role=membership.role, action="platform.retention_purged", target_type="audit_events", success=True, summary="Purged audit events beyond the approved retention window.", metadata={"days": days, "deleted": count})
+    await db.commit()
+    return {"deleted": count, "cutoff": cutoff.isoformat(), "message": f"Purged {count} audit event(s)."}
 
 
 @router.get("/feedback/{ticket_id}", response_model=dict, tags=["Platform Operations"])

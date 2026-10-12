@@ -399,6 +399,29 @@ def test_platform_insights_page_renders_aggregate_metrics(monkeypatch):
     assert "No recent activity" in response.text
 
 
+def test_platform_phase_four_governance_pages_render(monkeypatch):
+    client = _logged_in_client(monkeypatch, _admin_tokens())
+
+    async def platform_call(req, method, path, **kwargs):
+        if path == "/platform/incidents":
+            return FakeResp(200, {"incidents": [{"incident_id": "i1", "title": "Provider timeout", "service": "generation", "severity": "major", "status": "investigating", "created_at": "2026-10-12T08:00:00+00:00"}]})
+        if path == "/platform/curriculum/versions":
+            return FakeResp(200, {"versions": [{"version_id": "v1", "version": "NERDC-2025.1", "board": "NERDC", "status": "validated", "manifest": {"curriculum_count": 10}, "created_at": "2026-10-12T08:00:00+00:00"}]})
+        if path == "/platform/support-access":
+            return FakeResp(200, {"grants": [{"school": "Greenfield Academy", "operator_email": "ops@skuphase.com", "reason": "Investigate reported generation failure", "active": True, "expires_at": "2026-10-12T12:00:00+00:00"}]})
+        if path == "/platform/retention":
+            return FakeResp(200, {"eligible_audit_events": 3})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.platform.call_api", platform_call)
+    incidents = client.get("/internal/platform/incidents")
+    curriculum = client.get("/internal/platform/curriculum")
+    security = client.get("/internal/platform/security")
+    assert incidents.status_code == 200 and "Provider timeout" in incidents.text
+    assert curriculum.status_code == 200 and "NERDC-2025.1" in curriculum.text and "Publish" in curriculum.text
+    assert security.status_code == 200 and "Greenfield Academy" in security.text and "365 days" in security.text
+
+
 def test_ops_page_renders_for_admin(monkeypatch):
     client = _logged_in_client(monkeypatch, _admin_tokens())
 
