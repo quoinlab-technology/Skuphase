@@ -48,6 +48,9 @@ features, operational changes, security fixes, and important migrations.
   backoff, and surfaced as pending or failed counts in platform health views.
 - Added a private platform email-delivery monitor with recipient/status/error
   visibility and a guarded retry action for terminal notification failures.
+- Completed the Phase 2 pilot operations scope: private operator access,
+  school feedback conversations, durable notifications, preferences, queued
+  email retries, and delivery recovery visibility.
 
 ### Planned
 

@@ -585,11 +585,13 @@ Exit criteria:
 
 ### Phase 2 — Feedback, support, and notifications
 
-**Status: IN PROGRESS.** A dedicated `/internal/login` entry point is now in
-place. It shares account authentication with SkuPhase but checks active
-platform membership before opening the private company console; school users
-are rejected and their session is cleared. Remaining work covers feedback
-capture, notification preferences, and delivery reliability polish.
+**Status: COMPLETE for pilot operations (2026-10-12).** The phase now has a
+dedicated internal login boundary, school feedback and reply conversations,
+durable in-app notifications, preferences, queued email delivery, retries,
+failure visibility, and operator recovery controls. Secure support attachments
+are intentionally deferred until the private-storage/signed-download contract
+is implemented; public school branding storage must not be reused for private
+support evidence.
 
 Deliver:
 
@@ -597,12 +599,16 @@ Deliver:
 - feedback/ticket data model;
 - school-user submission flow;
 - company support queue;
-- assignment, status, severity, notes, replies, and attachments;
+- assignment, status, severity, notes, and replies;
 - Faststrap notification records and inbox;
 - unread bell/count;
 - notification preferences;
 - queued email notifications for important events;
 - retry and failure visibility.
+
+Secure support attachments are deferred to the governance/storage hardening
+work so pilot feedback cannot accidentally expose private files through the
+public school-assets bucket.
 
 Exit criteria:
 
