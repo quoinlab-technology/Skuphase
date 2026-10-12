@@ -1,4 +1,4 @@
-from fasthtml.common import A, Div, Form, H1, H2, H3, Img, Input, Label, Li, Option, P, Script, Select, Span, Strong, Style, Textarea, Title, Ul
+from fasthtml.common import A, Body, Div, Form, H1, H2, H3, Head, Html, Img, Input, Label, Li, Link, Meta, Option, P, Script, Select, Span, Strong, Style, Textarea, Title, Ul
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -883,4 +883,95 @@ def server_error_handler(req, exc):
                 cls="app-card p-5 text-center",
             ),
         ),
+    )
+
+
+# Exception responses bypass ``frontend_app.hdrs``. Keep a complete public
+# document here so a missing route never falls back to browser-default HTML.
+def _public_error_document(title: str, *, eyebrow: str, heading: str, copy: str, code: str):
+    content = Container(
+        Div(
+            Div(
+                Span(code, cls="public-error-code"),
+                Span("SkuPhase", cls="public-error-mark"),
+                cls="public-error-art",
+                aria_hidden="true",
+            ),
+            Div(
+                Span(eyebrow, cls="public-error-eyebrow"),
+                H1(heading, cls="public-error-title"),
+                P(copy, cls="public-error-copy"),
+                Div(
+                    Button("Back to home", as_="a", href="/", variant="success", cls="btn-brand public-error-primary"),
+                    A("Sign in", href="/login", cls="public-error-secondary"),
+                    cls="public-error-actions",
+                ),
+                P(
+                    "If you followed a saved link, it may have moved. Start from the home page and we’ll get you back on track.",
+                    cls="public-error-note",
+                ),
+                cls="public-error-content",
+            ),
+            cls="public-error-panel",
+        ),
+        cls="public-error-wrap",
+    )
+    return Html(
+        Head(
+            Title(title),
+            Meta(name="description", content="SkuPhase curriculum-aligned exam tools for Nigerian schools."),
+            Link(rel="preconnect", href="https://fonts.googleapis.com"),
+            Link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin="anonymous"),
+            Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Nunito%20Sans:wght@400;500;600;700;800&display=swap"),
+            Link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"),
+            Link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"),
+            Link(rel="stylesheet", href="/assets/css/custom.css"),
+            Style("""
+                :root { color-scheme: light; }
+                body { background: #e8eae5; }
+                .public-error-wrap { min-height: 62vh; display: flex; align-items: center; padding: clamp(2.5rem, 7vw, 6rem) 0; background: radial-gradient(circle at 15% 20%, rgba(150,191,138,.22), transparent 34%), #e8eae5; }
+                .public-error-panel { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); overflow: hidden; border-radius: 1.5rem; background: #fff; border: 1px solid rgba(0,65,46,.12); box-shadow: 0 1.5rem 4rem rgba(0,65,46,.12); }
+                .public-error-art { min-height: 360px; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(1.5rem, 4vw, 3rem); background: #00412e; color: #fff; position: relative; isolation: isolate; }
+                .public-error-art:after { content: ""; position: absolute; width: 22rem; height: 22rem; right: -9rem; bottom: -10rem; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; box-shadow: 0 0 0 2.5rem rgba(255,255,255,.05), 0 0 0 5rem rgba(255,255,255,.04); z-index: -1; }
+                .public-error-code { display: block; font-size: clamp(5rem, 13vw, 9rem); line-height: .8; letter-spacing: -.08em; font-weight: 800; color: #b7dca5; }
+                .public-error-mark { margin-top: auto; font-size: .8rem; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; color: rgba(255,255,255,.72); }
+                .public-error-content { padding: clamp(2rem, 5vw, 4.5rem); align-self: center; }
+                .public-error-eyebrow { display: inline-flex; margin-bottom: 1rem; color: #08764f; font-size: .75rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+                .public-error-title { margin: 0 0 .8rem; color: #12382c; font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 800; letter-spacing: -.045em; line-height: 1.05; }
+                .public-error-copy { max-width: 34rem; margin-bottom: 1.75rem; color: #52645d; font-size: 1.05rem; line-height: 1.7; }
+                .public-error-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
+                .public-error-primary { border-radius: 999px; padding: .75rem 1.35rem; font-weight: 700; text-decoration: none; }
+                .public-error-secondary { color: #00412e; font-weight: 700; text-decoration: none; }
+                .public-error-secondary:hover { color: #08764f; text-decoration: underline; text-underline-offset: .2em; }
+                .public-error-note { max-width: 34rem; margin: 2rem 0 0; padding-top: 1.25rem; border-top: 1px solid #e6ece5; color: #718078; font-size: .85rem; line-height: 1.55; }
+                @media (max-width: 767.98px) { .public-error-panel { grid-template-columns: 1fr; } .public-error-art { min-height: 190px; } .public-error-code { font-size: 5.5rem; } .public-error-mark { margin-top: 2.5rem; } .public-error-content { padding: 2rem 1.5rem 2.25rem; } }
+            """),
+        ),
+        Body(
+            PublicShell(content),
+            Script(src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"),
+        ),
+        **{"data-bs-theme": "light", "lang": "en"},
+    )
+
+
+def not_found_handler(req, exc):
+    """Branded 404 page with a complete, responsive public shell."""
+    return _public_error_document(
+        "Page not found — SkuPhase",
+        eyebrow="Nothing to see here",
+        heading="That page has moved.",
+        copy="The address you opened does not match a page in this workspace. Use one of the links below to continue your work.",
+        code="404",
+    )
+
+
+def server_error_handler(req, exc):
+    """Branded 500 page that never reflects error details into the response."""
+    return _public_error_document(
+        "Something went wrong — SkuPhase",
+        eyebrow="A temporary interruption",
+        heading="We could not load that page.",
+        copy="Something unexpected happened on our side. Please return home and try again in a moment.",
+        code="500",
     )

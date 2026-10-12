@@ -98,3 +98,13 @@ def test_api_takes_precedence_over_ui_mount(client):
 def test_docs_still_available(client):
     r = client.get("/docs")
     assert r.status_code == 200
+
+
+def test_unknown_page_error_document_carries_public_assets(client):
+    """Mounted-app exception responses must not fall back to raw HTML."""
+    r = client.get("/another-missing-page")
+    assert r.status_code == 404
+    assert "/assets/css/custom.css" in r.text
+    assert "bootstrap@5.3.3" in r.text
+    assert "public-error-panel" in r.text
+    assert 'href="/login"' in r.text
