@@ -1,6 +1,6 @@
 """Support and in-app notification persistence models."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.models.base import BaseModel
@@ -22,6 +22,10 @@ class Notification(BaseModel):
     read_at = Column(DateTime(timezone=True), nullable=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
     email_status = Column(String(20), nullable=False, default="not_requested", server_default="'not_requested'")
+    email_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    email_run_at = Column(DateTime(timezone=True), nullable=True)
+    email_last_error = Column(Text, nullable=True)
+    email_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_notifications_recipient_read", "recipient_user_id", "read_at", "created_at"),

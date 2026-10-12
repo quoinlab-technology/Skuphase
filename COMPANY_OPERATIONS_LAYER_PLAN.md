@@ -612,6 +612,12 @@ Exit criteria:
 - no notification is silently lost on navigation or refresh;
 - email failure does not delete the in-app notification.
 
+Implementation note: support notifications now remain durable in-app first;
+important support events may also enter the database-backed email queue. The
+worker retries provider failures without deleting the in-app record, and the
+platform overview/health endpoints expose pending and terminally failed email
+counts for operator follow-up.
+
 ### Phase 3 — Usage, AI cost, and product intelligence
 
 Deliver:

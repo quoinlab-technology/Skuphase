@@ -43,6 +43,9 @@ features, operational changes, security fixes, and important migrations.
 - Added school-facing feedback report detail pages with public support replies,
   status context, and direct links from the report history and notifications.
   Internal support notes remain hidden from school users.
+- Added durable notification email delivery tracking: important support events
+  are queued after the in-app notification commit, retried with bounded
+  backoff, and surfaced as pending or failed counts in platform health views.
 
 ### Planned
 

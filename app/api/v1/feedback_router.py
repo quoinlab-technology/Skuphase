@@ -55,6 +55,7 @@ async def create_feedback(
         body="Your feedback has been recorded. The SkuPhase team will review it.",
         target_url=f"/app/feedback/{ticket.id}",
         payload={"ticket_id": str(ticket.id)},
+        email_requested=True,
     )
     await db.commit()
     return {"message": "Feedback submitted successfully.", "ticket_id": str(ticket.id), "status": ticket.status}

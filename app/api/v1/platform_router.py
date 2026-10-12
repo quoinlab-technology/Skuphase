@@ -21,7 +21,7 @@ from app.core.permissions import (
     require_platform_roles,
 )
 from app.models.exam import Exam
-from app.models.support import FeedbackMessage, FeedbackTicket
+from app.models.support import FeedbackMessage, FeedbackTicket, Notification
 from app.schemas.support import FeedbackMessageCreate, FeedbackStatusUpdate
 from app.services.notifications import create_notification
 from app.models.job import GenerationJob
@@ -68,6 +68,8 @@ async def platform_overview(
     pending_jobs = await _count(db, GenerationJob, GenerationJob.status == "pending")
     running_jobs = await _count(db, GenerationJob, GenerationJob.status == "running")
     failed_jobs = await _count(db, GenerationJob, GenerationJob.status == "failed")
+    pending_email = await _count(db, Notification, Notification.email_status.in_({"pending", "sending"}))
+    failed_email = await _count(db, Notification, Notification.email_status == "failed")
 
     usage = await db.execute(
         select(
@@ -97,6 +99,7 @@ async def platform_overview(
             "failed_24h": failed_exams_24h,
         },
         "jobs": {"pending": pending_jobs, "running": running_jobs, "failed": failed_jobs},
+        "notifications": {"email_pending": pending_email, "email_failed": failed_email},
         "usage_30d": {
             "tokens": int(tokens_30d or 0),
             "estimated_cost": float(estimated_cost_30d or 0),
@@ -159,7 +162,9 @@ async def platform_health(
     pending = await _count(db, GenerationJob, GenerationJob.status == "pending")
     running = await _count(db, GenerationJob, GenerationJob.status == "running")
     failed = await _count(db, GenerationJob, GenerationJob.status == "failed")
-    return {"status": status, "timestamp": datetime.now(timezone.utc).isoformat(), "checks": checks, "queue": {"pending": pending, "running": running, "failed": failed}, "provider_configuration": {"primary": get_settings().primary_llm_provider, "fallback": get_settings().fallback_llm_provider}}
+    pending_email = await _count(db, Notification, Notification.email_status.in_({"pending", "sending"}))
+    failed_email = await _count(db, Notification, Notification.email_status == "failed")
+    return {"status": status, "timestamp": datetime.now(timezone.utc).isoformat(), "checks": checks, "queue": {"pending": pending, "running": running, "failed": failed}, "email_delivery": {"pending": pending_email, "failed": failed_email}, "provider_configuration": {"primary": get_settings().primary_llm_provider, "fallback": get_settings().fallback_llm_provider}}
 
 
 @router.get("/usage", response_model=dict, tags=["Platform Operations"])
@@ -424,6 +429,7 @@ async def update_platform_feedback(
                 body=f"'{ticket.subject}' has been assigned to you.",
                 target_url=f"/internal/platform/support/{ticket.id}",
                 payload={"ticket_id": str(ticket.id)},
+                email_requested=True,
             )
     if request.status in {"resolved", "closed"}:
         from datetime import datetime, timezone
@@ -446,6 +452,7 @@ async def update_platform_feedback(
             body=f"Your report '{ticket.subject}' is now {request.status.replace('_', ' ')}.",
             target_url=f"/app/feedback/{ticket.id}",
             payload={"ticket_id": str(ticket.id), "status": request.status},
+            email_requested=True,
         )
     await db.commit()
     return {"message": "Support ticket updated.", "status": ticket.status}
@@ -480,6 +487,7 @@ async def add_platform_feedback_message(
             body=request.body[:240],
             target_url=f"/app/feedback/{ticket.id}",
             payload={"ticket_id": str(ticket.id)},
+            email_requested=True,
         )
     await db.commit()
     return {"message": "Support message added."}

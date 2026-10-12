@@ -319,6 +319,10 @@ async def _worker_loop(stop_event: asyncio.Event) -> None:
             rows = await _claim_jobs(session_maker)
             if rows:
                 await asyncio.gather(*[_guarded(row) for row in rows])
+            from app.services.notifications import process_pending_notification_emails
+            delivered = await process_pending_notification_emails(session_maker)
+            if delivered:
+                logger.info("notification.email_delivered count=%s", delivered)
 
         except Exception:
             logger.exception("Job worker loop iteration failed")

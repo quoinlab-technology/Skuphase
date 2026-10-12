@@ -132,7 +132,10 @@ def register_routes(app):
                 Div(
                     Div(
                         Strong("Immediate attention", cls="d-block text-dark"),
-                        P("Use the operational queue to investigate failed or delayed work.", cls="text-muted small mb-0"),
+                        P(
+                            f"Use the operational queue to investigate failed or delayed work. {data.get('notifications', {}).get('email_failed', 0)} notification email failure(s) need review.",
+                            cls="text-muted small mb-0",
+                        ),
                     ),
                     A("Open school directory", href="/internal/platform/schools", cls="btn btn-brand rounded-pill px-3"),
                     cls="d-flex flex-wrap justify-content-between align-items-center gap-3",
