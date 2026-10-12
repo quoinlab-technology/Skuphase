@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from typing import Dict, Any, Optional
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import School, User, Plan, SchoolSubscription, SchoolSettings
@@ -23,6 +23,7 @@ from app.utils.email_templates import (
     build_reset_password_email,
     build_verify_email,
 )
+from app.utils.email import normalize_email
 from app.schemas.auth import (
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
@@ -79,6 +80,8 @@ class AuthService:
         db: AsyncSession,
     ) -> SchoolRegistrationResponse:
         """Register a new school organization with admin user."""
+        admin_email = normalize_email(request.admin_user.email)
+        contact_email = normalize_email(request.contact_email)
         password = request.admin_user.password
         if len(password.encode('utf-8')) > 72:
             password = password[:72]
@@ -89,12 +92,12 @@ class AuthService:
             raise ValueError(f"School with name '{request.school_name}' already exists")
 
         # Check existing school contact email
-        email_check = await db.execute(select(School).filter(School.contact_email == request.contact_email))
+        email_check = await db.execute(select(School).filter(func.lower(School.contact_email) == contact_email))
         if email_check.scalar_one_or_none():
             raise ValueError(f"A school with contact email '{request.contact_email}' already exists. Please sign in or use a different email.")
 
         # Check existing user
-        result = await db.execute(select(User).filter(User.email == request.admin_user.email))
+        result = await db.execute(select(User).filter(func.lower(User.email) == admin_email))
         if result.scalar_one_or_none():
             raise ValueError(f"An account with email '{request.admin_user.email}' already exists. Please sign in instead.")
 
@@ -107,7 +110,7 @@ class AuthService:
         try:
             school = School(
                 name=request.school_name,
-                contact_email=request.contact_email,
+                contact_email=contact_email,
                 contact_phone=request.contact_phone,
                 address=request.address,
                 is_personal_workspace=False,
@@ -118,7 +121,7 @@ class AuthService:
             verification_token = secrets.token_urlsafe(32)
             user = User(
                 school_id=school.id,
-                email=request.admin_user.email,
+                email=admin_email,
                 hashed_password=hash_password(password),
                 full_name=request.admin_user.full_name,
                 role="school_admin",
@@ -189,17 +192,18 @@ class AuthService:
         db: AsyncSession,
     ) -> IndividualRegistrationResponse:
         """Register an independent teacher/tutor with a dedicated personal workspace."""
+        email = normalize_email(request.email)
         password = request.password
         if len(password.encode('utf-8')) > 72:
             password = password[:72]
 
         # Check existing user
-        result = await db.execute(select(User).filter(User.email == request.email))
+        result = await db.execute(select(User).filter(func.lower(User.email) == email))
         if result.scalar_one_or_none():
             raise ValueError(f"An account with email '{request.email}' already exists. Please sign in instead.")
 
         # Check existing school contact email
-        school_email_check = await db.execute(select(School).filter(School.contact_email == request.email))
+        school_email_check = await db.execute(select(School).filter(func.lower(School.contact_email) == email))
         if school_email_check.scalar_one_or_none():
             raise ValueError(f"A workspace or school with email '{request.email}' already exists. Please sign in instead.")
 
@@ -217,7 +221,7 @@ class AuthService:
         try:
             school = School(
                 name=workspace_name,
-                contact_email=request.email,
+                contact_email=email,
                 contact_phone=request.phone_number,
                 is_personal_workspace=True,
             )
@@ -227,7 +231,7 @@ class AuthService:
             verification_token = secrets.token_urlsafe(32)
             user = User(
                 school_id=school.id,
-                email=request.email,
+                email=email,
                 hashed_password=hash_password(password),
                 full_name=request.full_name,
                 role="teacher",
@@ -293,7 +297,8 @@ class AuthService:
         db: AsyncSession,
     ) -> Dict[str, Any]:
         """Authenticate user and issue access and refresh tokens."""
-        result = await db.execute(select(User).filter(User.email == email))
+        email = normalize_email(email)
+        result = await db.execute(select(User).filter(func.lower(User.email) == email))
         user = result.scalar_one_or_none()
 
         if not user or not user.hashed_password or not verify_password(password, user.hashed_password):
@@ -468,7 +473,8 @@ class AuthService:
     @staticmethod
     async def request_password_reset(email: str, db: AsyncSession) -> Dict[str, str]:
         """Generate a password reset token for user."""
-        result = await db.execute(select(User).filter(User.email == email))
+        email = normalize_email(email)
+        result = await db.execute(select(User).filter(func.lower(User.email) == email))
         user = result.scalar_one_or_none()
         if not user:
             # Prevent email enumeration: return generic success message
@@ -574,7 +580,8 @@ class AuthService:
     @staticmethod
     async def resend_verification(email: str, db: AsyncSession) -> Dict[str, str]:
         """Resend email verification token."""
-        result = await db.execute(select(User).filter(User.email == email))
+        email = normalize_email(email)
+        result = await db.execute(select(User).filter(func.lower(User.email) == email))
         user = result.scalar_one_or_none()
         if not user:
             return {"message": "If the account exists, a new verification link has been sent."}

@@ -13,6 +13,7 @@ from app.core.rate_limit import (
     record_success as _login_success,
 )
 from app.services.auth_service import AuthService
+from app.utils.email import normalize_email
 from app.schemas.auth import (
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
@@ -123,17 +124,18 @@ async def login(
     Authenticate user and return JWT access and refresh tokens.
     """
     client_ip = _client_ip(http_request)
-    if await _login_locked_out(db, request.email, client_ip):
+    email = normalize_email(request.email)
+    if await _login_locked_out(db, email, client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed attempts. Try again later.",
         )
     try:
-        result = await AuthService.login(request.email, request.password, db)
-        await _login_success(db, request.email, client_ip)
+        result = await AuthService.login(email, request.password, db)
+        await _login_success(db, email, client_ip)
         return result
     except ValueError as e:
-        await _login_failure(db, request.email, client_ip)
+        await _login_failure(db, email, client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except Exception as e:
         logger.error(f"Login error: {str(e)}")

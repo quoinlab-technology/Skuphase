@@ -25,6 +25,7 @@ from app.core.security import hash_password
 from app.config.settings import get_settings
 from app.services.mailer import send_email
 from app.utils.email_templates import build_invite_email
+from app.utils.email import normalize_email
 
 
 def utc_now() -> datetime:
@@ -43,22 +44,23 @@ class UserService:
     ) -> InviteResponse:
         """Invite a new teacher/staff to the school."""
         try:
+            email = normalize_email(request.email)
             # Check existing user
             existing_user = await db.execute(
-                select(User).filter(User.email == request.email)
+                select(User).filter(func.lower(User.email) == email)
             )
             user_obj = existing_user.scalar_one_or_none()
             if user_obj:
                 if user_obj.school_id == school_id:
-                    raise ValueError(f"User with email {request.email} already belongs to this school")
+                    raise ValueError(f"User with email {email} already belongs to this school")
                 else:
-                    raise ValueError(f"User with email {request.email} already has an account")
+                    raise ValueError(f"User with email {email} already has an account")
 
             invite_token = secrets.token_urlsafe(32)
             user = User(
                 id=uuid.uuid4(),
                 school_id=school_id,
-                email=request.email,
+                email=email,
                 full_name=request.full_name,
                 hashed_password=hash_password(secrets.token_urlsafe(16)),  # Temporary placeholder
                 role=request.role,
