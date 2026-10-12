@@ -51,7 +51,13 @@ def _session_expired_handler(req, exc):
 
 frontend_app = FastHTML(
     secret_key=settings.jwt_secret_key,
-    sess_https_only=settings.app_env != "development",
+    # Secure cookies must follow the URL the browser is actually using. The
+    # app is often run locally with APP_ENV=production-like settings while
+    # still being served over http://localhost; forcing Secure in that case
+    # makes a successful login disappear on the redirect to /internal/platform.
+    # Production deployments set APP_BASE_URL to their public https origin,
+    # so their session cookie remains Secure.
+    sess_https_only=settings.app_base_url.strip().lower().startswith("https://"),
     sess_path="/",
     exception_handlers={
         404: public_routes.not_found_handler,
