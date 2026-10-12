@@ -929,8 +929,8 @@ def _public_error_document(title: str, *, eyebrow: str, heading: str, copy: str,
             Style("""
                 :root { color-scheme: light; }
                 body { background: #e8eae5; }
-                .public-error-wrap { min-height: 62vh; display: flex; align-items: center; padding: clamp(2.5rem, 7vw, 6rem) 0; background: radial-gradient(circle at 15% 20%, rgba(150,191,138,.22), transparent 34%), #e8eae5; }
-                .public-error-panel { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); overflow: hidden; border-radius: 1.5rem; background: #fff; border: 1px solid rgba(0,65,46,.12); box-shadow: 0 1.5rem 4rem rgba(0,65,46,.12); }
+                .public-error-wrap { width: 100%; min-height: 62vh; display: flex; align-items: center; padding: clamp(2.5rem, 7vw, 6rem) 0; background: radial-gradient(circle at 15% 20%, rgba(150,191,138,.22), transparent 34%), #e8eae5; }
+                .public-error-panel { width: 100%; margin-inline: auto; display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); overflow: hidden; border-radius: 1.5rem; background: #fff; border: 1px solid rgba(0,65,46,.12); box-shadow: 0 1.5rem 4rem rgba(0,65,46,.12); }
                 .public-error-art { min-height: 360px; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(1.5rem, 4vw, 3rem); background: #00412e; color: #fff; position: relative; isolation: isolate; }
                 .public-error-art:after { content: ""; position: absolute; width: 22rem; height: 22rem; right: -9rem; bottom: -10rem; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; box-shadow: 0 0 0 2.5rem rgba(255,255,255,.05), 0 0 0 5rem rgba(255,255,255,.04); z-index: -1; }
                 .public-error-code { display: block; font-size: clamp(5rem, 13vw, 9rem); line-height: .8; letter-spacing: -.08em; font-weight: 800; color: #b7dca5; }
