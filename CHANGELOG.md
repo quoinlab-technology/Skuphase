@@ -7,6 +7,14 @@ features, operational changes, security fixes, and important migrations.
 
 ### Added
 
+- Split weekly worksheet authoring and recent worksheets into a focused Teaching
+  workspace page; the main teaching page now emphasizes lesson planning and
+  school coverage. Worksheet authoring starts with one question, adds rows on
+  demand, and keeps the final question protected from accidental removal.
+- Improved Teaching page plan-card spacing and responsive widths, made school
+  coverage details collapsible, and branded the worksheet question removal
+  action. Worksheet PDFs now render inline and display TeX formulas as the same
+  safe vector math used by exam PDF exports.
 - Hardened the AI exam wizard's curriculum-week validation: an empty selection
   stays on Step 2 with clear feedback and restores the Next button; valid
   selection continues normally. Replaced inline HTMX handlers in the wizard

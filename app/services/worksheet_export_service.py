@@ -10,6 +10,41 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from app.services.branding import logo_flowable
+from app.services.math_rendering import formula_to_svg
+from app.services.export_service import _svg_to_flowable
+
+_FORMULA_TOKEN = re.compile(r"\\\[(.+?)\\\]|\\\((.+?)\\\)|\$\$(.+?)\$\$|(?<!\$)\$(?!\$)(.+?)(?<!\$)\$", re.DOTALL)
+
+
+def _append_rich_text(story: list, value: str, body: ParagraphStyle, *, prefix: str = "", suffix: str = "") -> None:
+    """Render formula delimiters as the same vector math used by exam PDFs."""
+    text = str(value or "")
+    matches = list(_FORMULA_TOKEN.finditer(text))
+    if not matches:
+        safe_text = "<br/>".join(escape(line) for line in text.splitlines())
+        story.append(Paragraph(prefix + safe_text + suffix, body))
+        return
+    cursor = 0
+    first_text = True
+    for match in matches:
+        plain = text[cursor:match.start()]
+        if plain.strip() or (first_text and prefix):
+            safe_plain = "<br/>".join(escape(line) for line in plain.splitlines())
+            story.append(Paragraph(prefix + safe_plain, body))
+            first_text = False
+        latex = next((part for part in match.groups() if part is not None), "").strip()
+        drawing = _svg_to_flowable(formula_to_svg(latex), max_width_pt=380, max_height_pt=60)
+        if drawing is not None:
+            story.append(drawing)
+        else:
+            story.append(Paragraph(escape(latex), body))
+        cursor = match.end()
+    remainder = text[cursor:]
+    if remainder.strip() or first_text:
+        safe_remainder = "<br/>".join(escape(line) for line in remainder.splitlines())
+        story.append(Paragraph(prefix + safe_remainder + suffix, body))
+    elif suffix:
+        story.append(Paragraph(suffix.lstrip(), body))
 
 
 def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_level: str, term: str | None = None, instructions: str | None, questions: list[dict], school_logo_path: str | None = None) -> str:
@@ -57,18 +92,23 @@ def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_le
             # hardcoded marks=1. The explicit suffix is the reliable source.
             marks = int(suffix.group(1))
             raw_text = raw_text[:suffix.start()].strip()
-        text = escape(raw_text)
         try:
             mark_value = int(marks) if marks is not None else 0
         except (TypeError, ValueError):
             mark_value = 0
         mark_label = f"[{mark_value} {'mark' if mark_value == 1 else 'marks'}]" if mark_value > 0 else ""
-        story.append(Paragraph(f"<b>{index}.</b> {text}" + (f" <b>{mark_label}</b>" if mark_label else ""), body))
+        _append_rich_text(
+            story,
+            raw_text,
+            body,
+            prefix=f"<b>{index}.</b> ",
+            suffix=f" <b>{escape(mark_label)}</b>" if mark_label else "",
+        )
         if str(question.get("type", "")).lower() == "mcq":
             options = question.get("answer_options") or []
             for option_index, option in enumerate(options):
                 label = chr(ord("A") + option_index) if option_index < 26 else str(option_index + 1)
-                story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;{label}. {escape(str(option))}", body))
+                _append_rich_text(story, str(option), body, prefix=f"&nbsp;&nbsp;&nbsp;{label}. ")
         try:
             answer_lines = max(0, min(12, int(question.get("answer_lines", 2))))
         except (TypeError, ValueError):

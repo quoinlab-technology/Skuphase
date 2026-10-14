@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from uuid import UUID
+from urllib.parse import urlencode
 
 from fasthtml.common import (
     H1,
@@ -163,10 +164,10 @@ def _plan_card(plan: dict, user: dict) -> Card:
     return Card(
         Div(
             Div(
-                Div(Span(f"Week {plan.get('week_number', '-')}", cls="small text-success fw-bold"), _status_badge(plan.get("status", "draft"))),
-                Strong(plan.get("title") or "Untitled lesson plan", cls="d-block fs-6 text-dark mt-2"),
-                P(f"{plan.get('term', '')} · {plan.get('week_number', '')}", cls="small text-muted mb-0"),
-                cls="d-flex justify-content-between align-items-start",
+                Div(Span(f"Week {plan.get('week_number', '-')}", cls="small text-success fw-bold"), _status_badge(plan.get("status", "draft")), cls="d-flex align-items-center flex-wrap gap-2"),
+                Strong(plan.get("title") or "Untitled lesson plan", cls="d-block fs-5 text-dark mt-2 text-break"),
+                P(f"{plan.get('term', '')}", cls="small text-muted mb-0 mt-1"),
+                cls="mb-2",
             ),
             P(" · ".join((plan.get("learning_objectives") or [])[:2]) or "Add learning objectives from the curriculum week.", cls="small text-muted mt-3 mb-3"),
             Div(
@@ -255,6 +256,37 @@ def _exercise_card(exercise: dict) -> Card:
     )
 
 
+def _worksheet_form(subject: str, term: str, plans: list[dict]) -> Form:
+    """Compact worksheet builder; teachers can add question rows as needed."""
+    active_plan = plans[0] if plans else {}
+    question = Div(
+        Strong("Question 1", cls="small text-success d-block mb-2", data_question_heading="true"),
+        Label("Question type", for_="exercise-type-1", cls="form-label small fw-semibold text-muted mb-1"),
+        Select("question_type_1", ("short_answer", "Short answer", True), ("mcq", "Multiple choice"), id="exercise-type-1", cls="form-select form-select-sm mb-2"),
+        Label("Question", for_="exercise-question-1", cls="form-label small fw-semibold text-muted mb-1"),
+        Textarea(name="question_text_1", id="exercise-question-1", rows="2", maxlength="3000", aria_describedby="exercise-question-help-1", placeholder="Write one clear question", cls="form-control mb-2"),
+        P("For multiple choice, enter 2–10 options, one per line. Leave blank if you do not need this question.", id="exercise-question-help-1", cls="form-text small text-muted mb-2"),
+        Label("Answer options (multiple choice only; one per line)", for_="exercise-options-1", cls="form-label small fw-semibold text-muted mb-1"),
+        Textarea(name="answer_options_1", id="exercise-options-1", rows="2", placeholder="Option A\nOption B", cls="form-control form-control-sm mb-2"),
+        Label("Marks", for_="exercise-marks-1", cls="form-label small fw-semibold text-muted mb-1"),
+        Input(type="number", name="question_marks_1", id="exercise-marks-1", value="1", min="1", max="100", cls="form-control form-control-sm mb-2"),
+        Label("Answer key / expected answer (staff only)", for_="exercise-key-1", cls="form-label small fw-semibold text-muted mb-1"),
+        Textarea(name="answer_key_1", id="exercise-key-1", rows="2", maxlength="3000", placeholder="Optional; not printed on the learner worksheet", cls="form-control form-control-sm"),
+        Button(Icon("trash3", cls="bi me-1"), "Remove question", type="button", variant="outline-danger", disabled=True, cls="btn-sm rounded-pill mt-3 remove-worksheet-question"),
+        cls="border rounded-3 p-3 mb-3 bg-light",
+        data_worksheet_question="true", data_question_index="1", role="group", aria_label="Worksheet question 1",
+    )
+    options = [(str(plan.get("id", "")), f"Week {plan.get('week_number', '—')} · {plan.get('title') or 'Untitled lesson plan'}", index == 0) for index, plan in enumerate(plans)]
+    return Form(
+        Div(Label("Lesson plan", for_="lesson-plan-id", cls="small fw-semibold text-muted mb-1"), Select("lesson_plan_id", *options, required=True, id="lesson-plan-id", cls="form-select border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+        Div(Label("Exercise title", for_="exercise-title", cls="small fw-semibold text-muted mb-1"), Input(name="title", id="exercise-title", required=True, value=f"{subject} · {term} practice", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+        Div(Label("Instructions for learners", for_="exercise-instructions", cls="small fw-semibold text-muted mb-1"), Textarea(name="instructions", id="exercise-instructions", rows="2", placeholder="e.g. Answer all questions clearly in your exercise books. Marks are indicated against each question.", cls="form-control border-0 rounded-3", style="background:#F1F4F1; font-size: 0.88rem;"), cls="col-12"),
+        Div(Label("Questions and marking guide", cls="small fw-semibold text-muted mb-1"), P("Start with one question, then add more only when you need them. Marks and answer keys are saved; answer keys are not printed for learners. Multiple-choice questions need at least two options.", cls="form-text small text-muted"), Div(question, id="worksheet-question-list"), Button(Icon("plus-lg", cls="bi me-1"), "Add question", type="button", variant="outline-success", id="add-worksheet-question", cls="rounded-pill mb-3"), cls="col-12"),
+        Div(Button(Icon("file-earmark-plus", cls="bi me-1"), "Create worksheet", type="submit", variant="success", cls="rounded-pill px-4 btn-brand", disabled=not bool(active_plan)), cls="col-12"),
+        action="/app/teaching/exercises/create", method="post", cls="row g-3",
+    )
+
+
 def _coverage_card(row: dict, user: dict) -> Card:
     status = row.get("status", "planned")
     status_config = {
@@ -314,24 +346,20 @@ def teaching_routes(app):
         )
         # Resolve scope first so an expired access token can refresh before the
         # independent workspace requests run concurrently.
-        plans_data, summary_data, exercises_data, coverage_data = await asyncio.gather(
+        plans_data, summary_data, coverage_data = await asyncio.gather(
             _fetch_data(req, "/lesson-plans", source="lesson plans"),
             _fetch_data(req, "/lesson-plans/coverage/summary", source="coverage summary"),
-            _fetch_data(req, "/lesson-plans/exercises", source="worksheets"),
             _fetch_data(req, "/lesson-plans/coverage", source="coverage records"),
         )
         plans, plans_warning = plans_data
         summary, summary_warning = summary_data
-        exercises, exercises_warning = exercises_data
         coverage_rows, coverage_warning = coverage_data
         plans = plans if isinstance(plans, list) else []
         summary = summary if isinstance(summary, dict) else {"total": 0, "completed": 0, "verified": 0}
-        exercises = exercises if isinstance(exercises, list) else []
         coverage_rows = coverage_rows if isinstance(coverage_rows, list) else []
         source_warnings = [
             warning for warning in (
-                *scope_warnings, plans_warning, summary_warning,
-                exercises_warning, coverage_warning,
+                *scope_warnings, plans_warning, summary_warning, coverage_warning,
             ) if warning
         ]
 
@@ -397,65 +425,7 @@ def teaching_routes(app):
             method="post",
             cls="row g-3",
         )
-        active_plan = plans[0] if plans else {}
-        question_fields = []
-        for question_index in range(1, 5):
-            question_fields.append(
-                Div(
-                    Strong(f"Question {question_index}", cls="small text-success d-block mb-2"),
-                    Label("Question type", for_=f"exercise-type-{question_index}", cls="form-label small fw-semibold text-muted mb-1"),
-                    Select(
-                        f"question_type_{question_index}",
-                        ("short_answer", "Short answer", True),
-                        ("mcq", "Multiple choice"),
-                        id=f"exercise-type-{question_index}",
-                        cls="form-select form-select-sm mb-2",
-                    ),
-                    Label("Question", for_=f"exercise-question-{question_index}", cls="form-label small fw-semibold text-muted mb-1"),
-                    Textarea(
-                        name=f"question_text_{question_index}", id=f"exercise-question-{question_index}", rows="2",
-                        maxlength="3000", aria_describedby=f"exercise-question-help-{question_index}",
-                        placeholder="Write one clear question", cls="form-control mb-2",
-                    ),
-                    P("For multiple choice, enter 2–10 options, one per line below. Leave this question blank if you do not need it.", id=f"exercise-question-help-{question_index}", cls="form-text small text-muted mb-2"),
-                    Label("Answer options (multiple choice only; one per line)", for_=f"exercise-options-{question_index}", cls="form-label small fw-semibold text-muted mb-1"),
-                    Textarea(name=f"answer_options_{question_index}", id=f"exercise-options-{question_index}", rows="2", placeholder="Option A\nOption B", cls="form-control form-control-sm mb-2"),
-                    Label("Marks", for_=f"exercise-marks-{question_index}", cls="form-label small fw-semibold text-muted mb-1"),
-                    Input(type="number", name=f"question_marks_{question_index}", id=f"exercise-marks-{question_index}", value="1", min="1", max="100", cls="form-control form-control-sm mb-2"),
-                    Label("Answer key / expected answer (staff only)", for_=f"exercise-key-{question_index}", cls="form-label small fw-semibold text-muted mb-1"),
-                    Textarea(name=f"answer_key_{question_index}", id=f"exercise-key-{question_index}", rows="2", maxlength="3000", placeholder="Optional; not printed on the learner worksheet", cls="form-control form-control-sm"),
-                    Button("Remove question", type="button", cls="btn btn-sm btn-link text-danger px-0 mt-2 remove-worksheet-question"),
-                    cls="border rounded-3 p-3 mb-3 bg-light",
-                    data_worksheet_question="true",
-                    data_question_index=str(question_index),
-                    role="group",
-                    aria_label=f"Worksheet question {question_index}",
-                )
-            )
-
-        exercise_form = Form(
-            Input(type="hidden", name="lesson_plan_id", value=active_plan.get("id", "")),
-            Div(Label("Exercise title", for_="exercise-title", cls="small fw-semibold text-muted mb-1"), Input(name="title", id="exercise-title", required=True, value=f"{subject} · Week {active_plan.get('week_number', 1)} practice", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
-            Div(
-                Label("Instructions for learners", for_="exercise-instructions", cls="small fw-semibold text-muted mb-1"),
-                Textarea(
-                    name="instructions",
-                    id="exercise-instructions",
-                    rows="2",
-                    placeholder="e.g. Answer all questions clearly in your exercise books. Marks are indicated against each question.",
-                    cls="form-control border-0 rounded-3",
-                    style="background:#F1F4F1; font-size: 0.88rem;",
-                ),
-                cls="col-12",
-            ),
-            Div(Label("Questions and marking guide", cls="small fw-semibold text-muted mb-1"), P("Add as many questions as needed (up to 20). Marks and optional answer keys are saved with the worksheet; answer keys are not printed for learners. For multiple choice, provide at least two options.", cls="form-text small text-muted"), Div(*question_fields, id="worksheet-question-list"), Button(Icon("plus-lg", cls="bi me-1"), "Add question", type="button", variant="outline-success", id="add-worksheet-question", cls="rounded-pill mb-3"), cls="col-12"),
-            Div(Button(Icon("file-earmark-plus", cls="bi me-1"), "Create worksheet", type="submit", variant="success", cls="rounded-pill px-4 btn-brand", disabled=not bool(active_plan)), cls="col-12"),
-            action="/app/teaching/exercises/create",
-            method="post",
-            cls="row g-3",
-        )
-
-        plans_view = Row(*[Col(_plan_card(p, user), span=12, md=6) for p in plans[:8]], g=3) if plans else Card(
+        plans_view = Div(*[_plan_card(plan, user) for plan in plans[:8]], cls="d-grid gap-3") if plans else Card(
             Div(
                 Icon("journal-text", cls="bi fs-2 text-success mb-2"),
                 P(
@@ -510,21 +480,25 @@ def teaching_routes(app):
                 cls="mb-4",
             ),
             Div(Icon("exclamation-triangle", cls="bi me-2"), summary.get("warning"), cls="alert alert-warning rounded-4 border-0") if summary.get("warning") else None,
-            Row(
-                Col(Card(Div(H2("Build a weekly worksheet", cls="fs-5 fw-bold mb-3"), P("Turn a lesson plan into printable practice for learners.", cls="small text-muted mb-3"), exercise_form, cls="p-4"), cls="border-0 shadow-sm rounded-4"), span=12, lg=5),
-                Col(Div(H2("Recent worksheets", cls="fs-5 fw-bold mb-3"), Row(*[Col(_exercise_card(item), span=12, md=6) for item in exercises[:6]], g=3) if exercises else P("Worksheets could not be loaded. Use Refresh scheme to try again." if exercises_warning else "Your exported worksheets will appear here.", cls="text-muted small")), span=12, lg=7),
-                g=4,
-                cls="mt-4",
+            Card(
+                Div(
+                    Div(H2("Teaching tools", cls="fs-5 fw-bold mb-2"), P("Create printable classwork from your lesson plans.", cls="small text-muted mb-0")),
+                    A(Icon("plus-lg", cls="bi me-1"), "Open worksheets", href=f"/app/teaching/worksheets?{urlencode({'class_level': class_level, 'subject': subject, 'term': term})}", cls="btn btn-brand rounded-pill px-4 flex-shrink-0"),
+                    cls="d-flex justify-content-between align-items-center gap-3 flex-wrap p-4",
+                ),
+                cls="border-0 shadow-sm rounded-4 mb-4",
             ),
             Card(
-                Div(H2("Coverage progress", cls="fs-5 fw-bold mb-1"), P("This is a school-wide syllabus record, not a count of only your own lessons. Teachers update teaching progress; a school administrator confirms completed coverage.", cls="small text-muted mb-3"), Row(*[_coverage_card(row, user) for row in coverage_rows[:12]], g=3) if coverage_rows else P("Coverage records could not be loaded. Use Refresh scheme to try again." if coverage_warning else "No coverage records have been started by staff yet.", cls="text-muted small mb-0"), cls="p-4"),
-                cls="border-0 shadow-sm rounded-4 mt-4",
+                Details(
+                    Summary("Coverage progress", cls="fs-5 fw-bold text-dark"),
+                    P("This is a school-wide syllabus record. Teachers update progress; an administrator confirms completed coverage.", cls="small text-muted mt-2 mb-3"),
+                    Row(*[Col(_coverage_card(row, user), span=12, md=6, xl=4) for row in coverage_rows[:12]], g=3) if coverage_rows else P("Coverage records could not be loaded. Use Refresh scheme to retry." if coverage_warning else "No coverage records have been started by staff yet.", cls="text-muted small mb-0"),
+                    cls="p-4",
+                ),
+                cls="border-0 shadow-sm rounded-4 mb-4",
             ),
-            Row(
-                Col(Card(Div(H2("Create a lesson plan", cls="fs-5 fw-bold mb-3"), P(f"Grounded in {subject or 'your selected subject'} · {term}.", cls="small text-muted mb-3"), create_form, cls="p-4"), cls="border-0 shadow-sm rounded-4"), span=12, lg=5),
-                Col(Div(H2("Your teaching plans", cls="fs-5 fw-bold mb-3"), plans_view), span=12, lg=7),
-                g=4,
-            ),
+            Card(Div(H2("Create a lesson plan", cls="fs-5 fw-bold mb-3"), P(f"Grounded in {subject or 'your selected subject'} · {term}.", cls="small text-muted mb-3"), create_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
+            Card(Div(H2("Your teaching plans", cls="fs-5 fw-bold mb-3"), plans_view, cls="p-4"), cls="border-0 shadow-sm rounded-4"),
             cls="py-4 pt-lg-5 teaching-workspace",
         )
         confirmation = Div(
@@ -588,42 +562,6 @@ def teaching_routes(app):
             pendingTrigger = null;
             pending = null;
           });
-          const questionList = document.getElementById('worksheet-question-list');
-          const addQuestion = document.getElementById('add-worksheet-question');
-          addQuestion?.addEventListener('click', () => {
-            const rows = questionList?.querySelectorAll('[data-worksheet-question]') || [];
-            if (!questionList || rows.length >= 20) return;
-            const nextIndex = Math.max(0, ...Array.from(rows, (row) => Number(row.dataset.questionIndex) || 0)) + 1;
-            if (nextIndex > 20) return;
-            const clone = rows[0].cloneNode(true);
-            clone.dataset.questionIndex = String(nextIndex);
-            clone.setAttribute('aria-label', `Worksheet question ${nextIndex}`);
-            const heading = clone.querySelector('strong');
-            if (heading) heading.textContent = `Question ${nextIndex}`;
-            clone.querySelectorAll('[id]').forEach((element) => { element.id = element.id.replace(/-[0-9]+$/, `-${nextIndex}`); });
-            clone.querySelectorAll('[name]').forEach((field) => {
-              const prefix = field.name.replace(/_[0-9]+$/, '');
-              field.name = `${prefix}_${nextIndex}`;
-              if (field.tagName === 'SELECT') field.selectedIndex = 0;
-              else if (field.name.startsWith('question_marks_')) field.value = '1';
-              else field.value = '';
-            });
-            clone.querySelectorAll('label[for]').forEach((label) => { label.htmlFor = label.htmlFor.replace(/-[0-9]+$/, `-${nextIndex}`); });
-            clone.querySelectorAll('[aria-describedby]').forEach((element) => { element.setAttribute('aria-describedby', element.getAttribute('aria-describedby').replace(/-[0-9]+$/, `-${nextIndex}`)); });
-            questionList.appendChild(clone);
-            if (addQuestion) addQuestion.disabled = nextIndex >= 20;
-            clone.querySelector('textarea')?.focus();
-          });
-          questionList?.addEventListener('click', (event) => {
-            const remove = event.target.closest('.remove-worksheet-question');
-            if (remove) {
-              remove.closest('[data-worksheet-question]')?.remove();
-              if (addQuestion) addQuestion.disabled = questionList.querySelectorAll('[data-worksheet-question]').length >= 20;
-            }
-          });
-          questionList?.addEventListener('input', () => {
-            if (addQuestion) addQuestion.disabled = questionList.querySelectorAll('[data-worksheet-question]').length >= 20;
-          });
         })();
         """)
         return AppShell(
@@ -633,6 +571,91 @@ def teaching_routes(app):
             active="teaching",
             flash=pop_flash(req),
             crumbs=[("Teaching workspace", None)],
+        )
+
+    @app.get("/app/teaching/worksheets")
+    async def teaching_worksheets(
+        req: Request,
+        class_level: str = "Primary 4",
+        subject: str = "",
+        term: str = "First Term",
+    ):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+        classes, subjects, weeks, class_level, subject, warnings = await _scope(req, class_level, subject, term)
+        plans_data, exercises_data = await asyncio.gather(
+            _fetch_data(req, "/lesson-plans", source="lesson plans"),
+            _fetch_data(req, "/lesson-plans/exercises", source="worksheets"),
+        )
+        plans, plans_warning = plans_data
+        exercises, exercises_warning = exercises_data
+        plans = plans if isinstance(plans, list) else []
+        exercises = exercises if isinstance(exercises, list) else []
+        source_warnings = [warning for warning in (*warnings, plans_warning, exercises_warning) if warning]
+        exercises_view = Row(*[Col(_exercise_card(item), span=12, md=6, xl=4) for item in exercises[:12]], g=3) if exercises else Card(
+            Div(Icon("file-earmark-text", cls="bi fs-2 text-success mb-2"), P("No worksheets yet. Build one above and your saved worksheets will appear here.", cls="small text-muted mb-0"), cls="p-4 text-center"),
+            cls="border-0 rounded-4 bg-light",
+        )
+        content = Container(
+            A(Icon("arrow-left", cls="bi me-2"), "Back to teaching", href=f"/app/teaching?{urlencode({'class_level': class_level, 'subject': subject, 'term': term})}", cls="btn btn-link text-success text-decoration-none px-0 mb-3"),
+            Div(Span("TEACHING TOOLS", cls="small fw-bold text-success"), H1("Weekly worksheets", cls="fs-2 fw-bold text-dark mt-2 mb-2"), P(f"Create and revisit printable classwork for {class_level} · {subject or 'your subject'} · {term}.", cls="text-muted mb-0"), cls="mb-4"),
+            Alert("Some worksheet information could not be loaded. You can still draft a worksheet; refresh this page to retry.", variant="warning", cls="rounded-4 border-0") if source_warnings else None,
+            Card(Div(H2("Build a weekly worksheet", cls="fs-5 fw-bold mb-2"), P("Start with one question. Add more only as needed.", cls="small text-muted mb-3"), _worksheet_form(subject, term, plans), cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
+            Div(H2("Recent worksheets", cls="fs-5 fw-bold mb-3"), exercises_view),
+            cls="py-4 pt-lg-5 teaching-workspace teaching-worksheets",
+        )
+        question_script = Script("""
+        (() => {
+          const list = document.getElementById('worksheet-question-list');
+          const add = document.getElementById('add-worksheet-question');
+          add?.addEventListener('click', () => {
+            const rows = list?.querySelectorAll('[data-worksheet-question]') || [];
+            if (!list || rows.length >= 20) return;
+            const used = new Set(Array.from(rows, row => Number(row.dataset.questionIndex)));
+            let next = 1;
+            while (used.has(next) && next <= 20) next += 1;
+            if (next > 20) return;
+            const clone = rows[0].cloneNode(true);
+            clone.dataset.questionIndex = String(next);
+            clone.setAttribute('aria-label', `Worksheet question ${next}`);
+            const heading = clone.querySelector('[data-question-heading]');
+            if (heading) heading.textContent = `Question ${next}`;
+            clone.querySelectorAll('[id]').forEach(el => { el.id = el.id.replace(/-[0-9]+$/, `-${next}`); });
+            clone.querySelectorAll('[name]').forEach(field => {
+              const prefix = field.name.replace(/_[0-9]+$/, '');
+              field.name = `${prefix}_${next}`;
+              if (field.tagName === 'SELECT') field.selectedIndex = 0;
+              else if (field.name.startsWith('question_marks_')) field.value = '1';
+              else field.value = '';
+            });
+            clone.querySelectorAll('label[for]').forEach(label => { label.htmlFor = label.htmlFor.replace(/-[0-9]+$/, `-${next}`); });
+            clone.querySelectorAll('[aria-describedby]').forEach(el => el.setAttribute('aria-describedby', el.getAttribute('aria-describedby').replace(/-[0-9]+$/, `-${next}`)));
+            list.appendChild(clone);
+            list.querySelectorAll('.remove-worksheet-question').forEach(button => { button.disabled = false; });
+            add.disabled = rows.length + 1 >= 20;
+            clone.querySelector('textarea')?.focus();
+          });
+          list?.addEventListener('click', event => {
+            const remove = event.target.closest('.remove-worksheet-question');
+            if (!remove) return;
+            if (list.querySelectorAll('[data-worksheet-question]').length <= 1) return;
+            remove.closest('[data-worksheet-question]')?.remove();
+            if (list.querySelectorAll('[data-worksheet-question]').length === 1) {
+              list.querySelector('.remove-worksheet-question').disabled = true;
+            }
+            add.disabled = list.querySelectorAll('[data-worksheet-question]').length >= 20;
+          });
+        })();
+        """)
+        return AppShell(
+            Title("Weekly worksheets — SkuPhase"),
+            Div(content, question_script),
+            user=user,
+            active="teaching",
+            flash=pop_flash(req),
+            crumbs=[("Teaching workspace", "/app/teaching"), ("Weekly worksheets", None)],
         )
 
     @app.post("/app/teaching/create")
@@ -766,7 +789,7 @@ def teaching_routes(app):
             })
         if not questions:
             push_flash(req, "Enter at least one question before creating the worksheet.", "danger")
-            return RedirectResponse("/app/teaching", status_code=303)
+            return RedirectResponse("/app/teaching/worksheets", status_code=303)
         payload = {
             "lesson_plan_id": str(form.get("lesson_plan_id", "")),
             "title": str(form.get("title", "")),
@@ -776,7 +799,7 @@ def teaching_routes(app):
         resp = await call_api(req, "POST", "/lesson-plans/exercises", json=payload)
         ok, data = unwrap(resp)
         push_flash(req, "Weekly worksheet created." if ok else data.get("message", "Could not create worksheet."), "success" if ok else "danger")
-        return RedirectResponse("/app/teaching", status_code=303)
+        return RedirectResponse("/app/teaching/worksheets", status_code=303)
 
     @app.get("/app/teaching/exercises/{exercise_id}/export")
     async def export_exercise(req: Request, exercise_id: str):

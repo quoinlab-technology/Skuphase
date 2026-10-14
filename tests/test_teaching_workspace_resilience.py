@@ -106,7 +106,7 @@ def test_teaching_workspace_parallelizes_independent_fetches(monkeypatch):
 
     assert response.status_code == 200
     assert "QA teaching plan" in response.text
-    assert api_stub.max_active == 4
+    assert api_stub.max_active == 3
     assert ("GET", "/lesson-plans/coverage") in api_stub.calls
 
 
@@ -148,21 +148,37 @@ def test_worksheet_form_exposes_question_type_marks_and_answer_key(monkeypatch):
     _login(client, monkeypatch)
     monkeypatch.setattr("app.frontend.routes.teaching.call_api", TeachingApiStub())
 
-    response = client.get("/app/teaching?class_level=Primary%204&subject=Mathematics")
+    response = client.get("/app/teaching/worksheets?class_level=Primary%204&subject=Mathematics")
 
     assert response.status_code == 200
-    assert "<title>Teaching workspace — SkuPhase</title>" in response.text
+    assert "Weekly worksheets" in response.text
     assert "<title>" not in response.text.split("<body", 1)[1]
     assert 'name="question_type_1"' in response.text
     assert 'name="question_marks_1"' in response.text
     assert 'name="answer_key_1"' in response.text
     assert "answer keys are not printed for learners" in response.text
-    assert "Read full topics for this term" in response.text
-    assert "lesson-note-confirm-modal" in response.text
-    assert "restorePendingButton(pendingTrigger)" in response.text
     assert "add-worksheet-question" in response.text
+    assert 'name="question_type_2"' not in response.text
+    assert "remove-worksheet-question" in response.text
+    assert 'id="worksheet-question-list"' in response.text
+    assert "Create worksheet" in response.text
     assert "btn-primary btn-outline-success" not in response.text
     assert "btn-primary btn-outline-secondary" not in response.text
+
+
+def test_teaching_workspace_links_to_focused_worksheet_page_and_uses_full_width_plan_cards(monkeypatch):
+    client = TestClient(app, follow_redirects=False)
+    _login(client, monkeypatch)
+    monkeypatch.setattr("app.frontend.routes.teaching.call_api", TeachingApiStub())
+
+    response = client.get("/app/teaching?class_level=Primary%204&subject=Mathematics")
+
+    assert response.status_code == 200
+    assert "Build a weekly worksheet" not in response.text
+    assert "/app/teaching/worksheets?class_level=Primary+4&amp;subject=Mathematics&amp;term=First+Term" in response.text
+    assert "Your teaching plans" in response.text
+    assert 'name="question_type_1"' not in response.text
+    assert "Coverage progress" in response.text
 
 
 def test_worksheet_creation_persists_type_marks_options_and_answer_key(monkeypatch):
@@ -226,3 +242,30 @@ def test_worksheet_pdf_prints_mcq_options_but_not_answer_key(tmp_path):
     assert "Sun" in pdf_text and "Moon" in pdf_text
     assert "Which is a source of light?" in pdf_text
     assert "Private key" not in pdf_text
+
+
+def test_worksheet_pdf_renders_tex_as_vector_formula_not_literal_delimiters(tmp_path, monkeypatch):
+    import app.services.worksheet_export_service as worksheet_export
+
+    rendered = []
+    original = worksheet_export.formula_to_svg
+
+    def capture_formula(formula, **kwargs):
+        rendered.append(formula)
+        return original(formula, **kwargs)
+
+    monkeypatch.setattr(worksheet_export, "formula_to_svg", capture_formula)
+    filename = export_worksheet_pdf(
+        export_dir=tmp_path,
+        title="Quadratic equations practice",
+        subject="Mathematics",
+        grade_level="Primary 6",
+        term="First Term",
+        instructions=None,
+        questions=[{"question_text": r"Solve $$x^2 + 5x + 6 = 0$$, then use \(y = 2\).", "marks": 2}],
+    )
+
+    pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(tmp_path / "worksheets" / filename).pages)
+    assert rendered == ["x^2 + 5x + 6 = 0", "y = 2"]
+    assert "$$" not in pdf_text
+    assert r"\(" not in pdf_text
