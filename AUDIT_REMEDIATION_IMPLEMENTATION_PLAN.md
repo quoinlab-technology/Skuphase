@@ -654,6 +654,19 @@ Test valid logo, missing object, 404, 504, and slow response.
   baseline.
 - Ensure local table scrolling does not widen the document.
 
+Session reliability follow-up (14 October 2026): the repeated `/login?expired=1`
+loop was traced to cookie-backed state surviving expiry and accumulating large
+curriculum/generation payloads alongside auth tokens. Login now replaces the
+entire prior session; expiry/sign-out clear all session data; the wizard reloads
+curriculum cards from the canonical catalogue instead of persisting them in the
+cookie; and only compact metadata for the three newest generation jobs is
+retained. A regression test signs an oversized legacy cookie and verifies that
+successful login replaces it with a cookie below the browser 4 KB limit. The
+full local test suite passes. A real FastAPI Cloud login/relogin check is still
+required after deployment, including verification that the deployed
+`APP_BASE_URL` is the HTTPS app origin and the session cookie is returned on
+the redirect chain.
+
 ### Phase 4 acceptance
 
 - `/app/teaching` remains usable under concurrent and slow requests.

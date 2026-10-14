@@ -67,7 +67,13 @@ def require_role(request: Request, *roles: str) -> Optional[RedirectResponse]:
 
 
 def store_auth(session, data: dict) -> None:
-    """Persist a TokenResponse payload into the session (§2.3)."""
+    """Start a fresh, compact browser session with the TokenResponse payload.
+
+    SessionMiddleware stores the entire session in one browser cookie. Reusing
+    stale wizard/cache state here can push that cookie over browser limits and
+    make a successful login look expired on the next request.
+    """
+    session.clear()
     session["access_token"] = data["access_token"]
     session["refresh_token"] = data["refresh_token"]
     session["user"] = data.get("user") or {}
@@ -77,5 +83,5 @@ def store_auth(session, data: dict) -> None:
 
 
 def clear_auth(session) -> None:
-    for key in ("access_token", "refresh_token", "user", "csrf"):
-        session.pop(key, None)
+    """Clear all cookie-backed state when the user signs out or expires."""
+    session.clear()

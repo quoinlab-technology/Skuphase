@@ -207,6 +207,44 @@ def test_login_success_sets_session_and_redirects(client, mock_api):
     assert _session_json(client).get("access_token") == "access-token-123"
 
 
+def test_login_replaces_oversized_legacy_cookie_session(client, mock_api):
+    """A large stale wizard cookie must not survive a successful login."""
+    import base64
+    import json
+
+    from itsdangerous import TimestampSigner
+
+    from app.config.settings import get_settings
+
+    stale_session = {
+        "wizard": {"curriculum_weeks": [{"topic": f"curriculum-topic-{i}"} for i in range(100)]},
+        "generation_contexts": {
+            str(i): {"sections": [{"name": "Section", "content": "x" * 120} for _ in range(10)]}
+            for i in range(10)
+        },
+    }
+    signed_cookie = TimestampSigner(get_settings().jwt_secret_key).sign(
+        base64.b64encode(json.dumps(stale_session).encode("utf-8"))
+    ).decode("utf-8")
+    assert len(signed_cookie) > 4096
+    client.cookies.set(SESSION_COOKIE, signed_cookie, domain="testserver.local", path="/")
+    mock_api(FakeResp(200, _tokens()))
+
+    response = client.post(
+        "/login",
+        data={"email": "a@b.com", "password": "password123"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/app"
+    assert len(client.cookies.get(SESSION_COOKIE)) < 4096
+    session = _session_json(client)
+    assert session.get("access_token") == "access-token-123"
+    assert "wizard" not in session
+    assert "generation_contexts" not in session
+
+
 def test_login_failure_shows_friendly_error(client, mock_api):
     mock_api(FakeResp(401, {"detail": "Incorrect email or password."}))
     r = client.post("/login", data={"email": "a@b.com", "password": "wrong"}, follow_redirects=False)

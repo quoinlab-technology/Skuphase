@@ -17,6 +17,10 @@ features, operational changes, security fixes, and important migrations.
   omitting horizontal-rule source markers, and presenting inline TeX in a
   readable safe-text form in PDFs. Reflowed OMR candidate fields and scoring
   area for small screens without changing its print sheet layout.
+- Fixed recurring post-login expiry loops caused by stale, oversized cookie
+  sessions: sign-in now starts from a clean session, expiry/sign-out clear all
+  cookie-backed state, curriculum catalogue data stays out of the cookie, and
+  queued-generation context is compact and bounded.
 - Correctly place public, authentication, and workspace page titles in the HTML
   document head, with branded defaults for untitled pages. Login now redirects
   an already-authenticated user to the workspace and displays the one-time

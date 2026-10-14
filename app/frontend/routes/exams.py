@@ -1445,19 +1445,8 @@ def register_page_routes(app):
                 weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"))
                 if weeks:
                     req.state.wizard_curriculum_weeks = weeks
-                    wiz["curriculum_weeks"] = [
-                        {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
-                        for w in weeks
-                    ]
-                    wiz["curriculum_scope"] = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
                     if not wiz.get("selected_weeks"):
                         wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
-                    # Curriculum cards are render-time data.  Do not persist
-                    # the full catalogue in Starlette's signed cookie session:
-                    # auth tokens + week metadata can exceed browser/proxy
-                    # cookie limits and silently erase the wizard state.
-                    wiz.pop("curriculum_weeks", None)
-                    wiz.pop("curriculum_scope", None)
                     _wizard_save(req, wiz)
             except Exception:
                 pass
@@ -3408,11 +3397,7 @@ def register_wizard_routes(app):
         try:
             weeks = await _get_curriculum_weeks(req, wiz["grade_level"], wiz["subject"], wiz["term"])
             if weeks:
-                wiz["curriculum_weeks"] = [
-                    {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
-                    for w in weeks
-                ]
-                wiz["curriculum_scope"] = current_context
+                req.state.wizard_curriculum_weeks = weeks
                 if not wiz.get("selected_weeks"):
                     wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
         except Exception:
@@ -3743,7 +3728,17 @@ def _wizard_state(request: Request) -> dict:
     """Session-backed wizard state (audit #1/#2: fields were dropped between
     steps because Step 2 advanced via a bare anchor and Step 3's hx_include
     referenced DOM that no longer existed)."""
-    return request.session.setdefault("wizard", {})
+    wiz = request.session.get("wizard")
+    if not isinstance(wiz, dict):
+        wiz = {}
+        request.session["wizard"] = wiz
+    # Older releases persisted the whole curriculum catalogue in this
+    # cookie-backed wizard. Remove it as users return so legacy cookies shrink.
+    removed_legacy_catalogue = wiz.pop("curriculum_weeks", None) is not None
+    removed_legacy_scope = wiz.pop("curriculum_scope", None) is not None
+    if removed_legacy_catalogue or removed_legacy_scope:
+        request.session["wizard"] = wiz
+    return wiz
 
 
 def _wizard_save(request: Request, wiz: dict) -> None:
@@ -3774,11 +3769,48 @@ def _generation_context(request: Request, exam: dict, exam_id: str) -> dict:
     return {
         "total_questions": total_q,
         "num_sections": num_sections,
-        "num_weeks": len(selected_weeks),
+        "num_weeks": len(selected_weeks) or context.get("num_weeks", 0),
         "subject": exam.get("subject") or context.get("subject") or "",
         "grade_level": exam.get("grade_level") or context.get("grade_level") or "",
         "term": exam.get("term") or context.get("term") or "",
     }
+
+
+def _remember_generation_context(session: dict, exam_id: str, context: dict) -> None:
+    """Keep only compact metadata for a few recent queued exam pages.
+
+    Full section payloads and selected week lists are already persisted on the
+    exam record. Duplicating them in the signed session cookie caused unbounded
+    cookie growth across exam generations.
+    """
+    contexts = session.get("generation_contexts") or {}
+    if not isinstance(contexts, dict):
+        contexts = {}
+
+    compacted = {}
+    for key, value in contexts.items():
+        if not isinstance(value, dict):
+            continue
+        sections = value.get("sections") or []
+        selected_weeks = value.get("selected_weeks") or []
+        compacted[str(key)] = {
+            "total_questions": value.get("total_questions") or sum(
+                _safe_int(section.get("num_questions"), 0)
+                for section in sections if isinstance(section, dict)
+            ),
+            "num_sections": value.get("num_sections") or len(sections),
+            "num_weeks": value.get("num_weeks") or len(selected_weeks),
+            "subject": value.get("subject") or "",
+            "grade_level": value.get("grade_level") or "",
+            "term": value.get("term") or "",
+        }
+
+    compacted[str(exam_id)] = {
+        key: context[key]
+        for key in ("total_questions", "num_sections", "num_weeks", "subject", "grade_level", "term")
+        if key in context
+    }
+    session["generation_contexts"] = dict(list(compacted.items())[-3:])
 
 
 def _wizard_panel(step: str, request: Request) -> Div:
@@ -5345,20 +5377,14 @@ def register_action_routes(app):
 
         total_q = sum(int(s.get("num_questions", 1)) for s in sections)
         num_sec = len(sections)
-        contexts = req.session.get("generation_contexts") or {}
-        if not isinstance(contexts, dict):
-            contexts = {}
-        contexts[exam_id] = {
+        _remember_generation_context(req.session, exam_id, {
             "total_questions": total_q,
             "num_sections": num_sec,
             "num_weeks": len(weeks_list),
-            "selected_weeks": weeks_list,
             "subject": payload["subject"],
             "grade_level": payload["grade_level"],
             "term": payload.get("term") or "",
-            "sections": sections,
-        }
-        req.session["generation_contexts"] = contexts
+        })
 
         if req.headers.get("hx-request") == "true":
             # If immediately completed (e.g. in test environment or quick mock):
@@ -5434,11 +5460,6 @@ def register_action_routes(app):
         wiz["term"] = term
 
         if weeks:
-            wiz["curriculum_weeks"] = [
-                {"week_number": w["week_number"], "topic": w["topic"], "subtopics_summary": w.get("subtopics_summary", ""), "is_exam_or_break": False}
-                for w in weeks
-            ]
-            wiz["curriculum_scope"] = _wizard_scope_key(grade, subject, term)
             wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
             _wizard_save(req, wiz)
             return Div(
@@ -5456,7 +5477,6 @@ def register_action_routes(app):
                 style="background:#F4F8F5; min-height:2.2rem; width:fit-content; max-width:100%;",
             )
         else:
-            wiz["curriculum_weeks"] = []
             wiz["selected_weeks"] = []
             _wizard_save(req, wiz)
             return Div(
