@@ -1,11 +1,18 @@
 """Layout shells for the SkuPhase frontend (FRONTEND_SPEC sec 3.3)."""
 
-from fasthtml.common import A, Img, Button as HtmlButton, Div, Footer, Form, H1, H2, Main, Nav, P, Script, Span, Strong
+from fasthtml.common import A, Img, Button as HtmlButton, Div, Footer, Form, H1, Main, Nav, P, Script, Span, Strong, Title
 from faststrap import Button, Col, Container, Icon, Row
 
 from app.frontend.theme import FONT_FAMILY
 from app.frontend.components.feedback import app_toast_container, to_toast
 from app.config.settings import get_settings
+
+
+def _head_title(content, default: str):
+    """Move page titles out of the body and into FastHTML's response head."""
+    titles = tuple(item for item in content if getattr(item, "tag", None) == "title")
+    body = tuple(item for item in content if getattr(item, "tag", None) != "title")
+    return titles or (Title(default),), body
 
 
 def _brand_mark(height: int = 36, white: bool = False):
@@ -21,6 +28,7 @@ def _brand_mark(height: int = 36, white: bool = False):
 
 def PublicShell(*content, active: str = "", flash=None):
     """Shell for public pages: navbar + content + footer matching prototype."""
+    titles, content = _head_title(content, "SkuPhase — Curriculum tools for Nigerian schools")
     links = [
         ("Features", "/#features", "features"),
         ("Pricing", "/#pricing", "pricing"),
@@ -35,7 +43,7 @@ def PublicShell(*content, active: str = "", flash=None):
         )
         for label, href, key in links
     ]
-    return Div(
+    shell = Div(
         Nav(
             Container(
                 Div(
@@ -129,6 +137,7 @@ def PublicShell(*content, active: str = "", flash=None):
         cls="app-shell d-flex flex-column min-vh-100 bg-white",
         **{"data-font-family": FONT_FAMILY},
     )
+    return (*titles, shell)
 
 
 def _bottom_nav(active: str = ""):
@@ -173,6 +182,7 @@ def _bottom_nav(active: str = ""):
 
 def AuthShell(*content, title: str = "Sign in"):
     """Split-screen shell for auth and registration pages matching prototype screenshots."""
+    titles, content = _head_title(content, title)
     left_brand_panel = Div(
         Div(
             A(
@@ -241,7 +251,7 @@ def AuthShell(*content, title: str = "Sign in"):
         style="background-color: #E6ECE5; overflow-y: auto;",
     )
 
-    return Div(
+    shell = Div(
         Div(
             Row(
                 left_brand_panel,
@@ -253,6 +263,7 @@ def AuthShell(*content, title: str = "Sign in"):
         ),
         cls="app-auth-shell min-vh-100",
     )
+    return (*titles, shell)
 
 
 def AppShell(*content, user: dict | None = None, active: str = "", flash=None, crumbs=None, bell_count: int | None = None, platform: bool = False):
@@ -264,6 +275,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
     ``collapse`` + ``d-lg-flex`` pattern).  ``crumbs`` is an optional list of
     (label, href_or_None) tuples rendered after "Home".
     """
+    titles, content = _head_title(content, "SkuPhase — School workspace")
     user = user or {}
     name = user.get("full_name") or user.get("email") or "Account"
     account_type = user.get("account_type") or ""
@@ -457,7 +469,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
 
     flash_toast = to_toast(flash) if flash is not None else None
 
-    return Div(
+    shell = Div(
         # Mobile: sidebar collapses under the topbar; desktop: always visible.
         Div(
             sidebar,
@@ -496,3 +508,4 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         """),
         cls="app-shell has-bottomnav",
     )
+    return (*titles, shell)

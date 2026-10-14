@@ -104,7 +104,7 @@ _STATUS_BADGE = {
 
 def state_of(exam: dict) -> str:
     """Public state resolver (was ``_state_of``)."""
-    if exam.get("status") == "failed":
+    if exam.get("status") == "failed" or exam.get("workflow_state") == "failed":
         return "failed"
     return exam.get("workflow_state") or exam.get("status") or "draft"
 
@@ -128,6 +128,7 @@ def StatusBadge(exam: dict):
         "approved": ("Approved", "badge-status-approved"),
         "failed": ("Failed", "badge-status-failed"),
         "teacher_review": ("Under Review", "badge-status-review"),
+        "under_review": ("Under Review", "badge-status-review"),
         "final_submitted_by_teacher": ("Under Review", "badge-status-review"),
         "refinement_requested": ("Refining", "badge-status-review"),
         "generation_requested": ("Generating", "badge-status-generating"),

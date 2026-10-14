@@ -1,24 +1,33 @@
 """Scheme-grounded lesson planning API."""
-from uuid import UUID
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
 from pathlib import Path
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
+from app.models.curriculum import Curriculum, SchemeOfWork
+from app.models.lesson_plan import LessonPlan, SyllabusCoverage, WeeklyExercise
+from app.models.school import School, SchoolSettings
 from app.models.user import User
-from app.models.school import SchoolSettings
-from app.models.curriculum import SchemeOfWork, Curriculum
-from app.models.lesson_plan import LessonPlan, WeeklyExercise, SyllabusCoverage
-from app.schemas.lesson_plan import (LessonPlanCreate, LessonPlanUpdate, LessonPlanResponse,
-    WeeklyExerciseCreate, WeeklyExerciseResponse, CoverageUpdate, CoverageResponse, LessonNoteRequest)
-from app.services.lesson_delivery_service import generate_lesson_note, coverage_summary
-from app.services.worksheet_export_service import export_worksheet_pdf
-from app.services.curriculum_service import CurriculumService
+from app.schemas.lesson_plan import (
+    CoverageResponse,
+    CoverageUpdate,
+    LessonNoteRequest,
+    LessonPlanCreate,
+    LessonPlanResponse,
+    LessonPlanUpdate,
+    WeeklyExerciseCreate,
+    WeeklyExerciseResponse,
+)
 from app.services.export_service import ExportService
+from app.services.lesson_delivery_service import coverage_summary, generate_lesson_note
+from app.services.lesson_note_export_service import export_lesson_note_docx, export_lesson_note_pdf
+from app.services.worksheet_export_service import export_worksheet_pdf
 
 router = APIRouter()
 
@@ -88,7 +97,14 @@ async def create_weekly_exercise(request: WeeklyExerciseCreate, current_user: Us
     plan = await db.scalar(select(LessonPlan).where(LessonPlan.id == request.lesson_plan_id, LessonPlan.school_id == current_user.school_id))
     if plan is None:
         raise HTTPException(status_code=404, detail="Lesson plan not found")
-    exercise = WeeklyExercise(school_id=current_user.school_id, lesson_plan_id=plan.id, created_by_user_id=current_user.user_id, title=request.title, instructions=request.instructions, questions=request.questions)
+    normalized_questions = [
+        {
+            **question.model_dump(exclude_none=True),
+            "question_number": question.question_number or index,
+        }
+        for index, question in enumerate(request.questions, start=1)
+    ]
+    exercise = WeeklyExercise(school_id=current_user.school_id, lesson_plan_id=plan.id, created_by_user_id=current_user.user_id, title=request.title, instructions=request.instructions, questions=normalized_questions)
     db.add(exercise)
     await db.commit()
     await db.refresh(exercise)
@@ -97,22 +113,30 @@ async def create_weekly_exercise(request: WeeklyExerciseCreate, current_user: Us
 
 @router.get("/exercises", response_model=list[WeeklyExerciseResponse])
 async def list_weekly_exercises(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+    if not _can_plan(current_user):
+        raise HTTPException(status_code=403, detail="Only school staff can view worksheet content and answer keys")
     result = await db.execute(select(WeeklyExercise).where(WeeklyExercise.school_id == current_user.school_id).order_by(WeeklyExercise.created_at.desc()))
     return list(result.scalars().all())
 
 
 @router.post("/exercises/{exercise_id}/export", response_model=dict)
 async def export_weekly_exercise(exercise_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+    if not _can_plan(current_user):
+        raise HTTPException(status_code=403, detail="Only school staff can export worksheets")
     exercise = await db.scalar(select(WeeklyExercise).where(WeeklyExercise.id == exercise_id, WeeklyExercise.school_id == current_user.school_id))
     if exercise is None:
         raise HTTPException(status_code=404, detail="Weekly exercise not found")
     plan = await db.scalar(select(LessonPlan).where(LessonPlan.id == exercise.lesson_plan_id))
+    curriculum = await db.scalar(
+        select(Curriculum).where(Curriculum.id == plan.curriculum_id)
+    ) if plan else None
     school_settings = await db.scalar(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
     filename = export_worksheet_pdf(
         export_dir=ExportService.EXPORT_DIR,
         title=exercise.title,
-        subject="Curriculum Exercise",
-        grade_level=plan.term if plan else "",
+        subject=curriculum.subject_name if curriculum else "",
+        grade_level=curriculum.class_level if curriculum else "",
+        term=plan.term if plan else "",
         instructions=exercise.instructions,
         questions=exercise.questions or [],
         school_logo_path=school_settings.logo_url if school_settings else None,
@@ -122,6 +146,8 @@ async def export_weekly_exercise(exercise_id: UUID, current_user: User = Depends
 
 @router.get("/exercises/{exercise_id}/download/{filename}")
 async def download_weekly_exercise(exercise_id: UUID, filename: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
+    if not _can_plan(current_user):
+        raise HTTPException(status_code=403, detail="Only school staff can download worksheets")
     exercise = await db.scalar(select(WeeklyExercise).where(WeeklyExercise.id == exercise_id, WeeklyExercise.school_id == current_user.school_id))
     if exercise is None or Path(filename).name != filename or not filename.endswith(".pdf"):
         raise HTTPException(status_code=404, detail="Worksheet not found")
@@ -146,6 +172,90 @@ async def create_lesson_note(lesson_plan_id: UUID, request: LessonNoteRequest, c
     await db.commit()
     await db.refresh(plan)
     return plan
+
+
+@router.get("/{lesson_plan_id}/lesson-note/export.pdf")
+async def export_lesson_note(
+    lesson_plan_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Download the saved lesson note as a tenant-authorized PDF."""
+    if not _can_plan(current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to lesson plans")
+    plan = await db.scalar(
+        select(LessonPlan).where(
+            LessonPlan.id == lesson_plan_id,
+            LessonPlan.school_id == current_user.school_id,
+        )
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Lesson plan not found")
+    if not (plan.ai_lesson_note or "").strip():
+        raise HTTPException(status_code=409, detail="Save or generate a lesson note before exporting it")
+
+    curriculum = await db.scalar(select(Curriculum).where(Curriculum.id == plan.curriculum_id))
+    school = await db.scalar(select(School).where(School.id == current_user.school_id))
+    payload = export_lesson_note_pdf(
+        title=plan.title,
+        subject=curriculum.subject_name if curriculum else "",
+        class_level=curriculum.class_level if curriculum else "",
+        term=plan.term,
+        week_number=plan.week_number,
+        content=plan.ai_lesson_note,
+        school_name=school.name if school else None,
+    )
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="lesson-note-{lesson_plan_id}.pdf"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.get("/{lesson_plan_id}/lesson-note/export.docx")
+async def export_lesson_note_docx_file(
+    lesson_plan_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Download the saved lesson note as an editable, tenant-authorized Word file."""
+    if not _can_plan(current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to lesson plans")
+    plan = await db.scalar(
+        select(LessonPlan).where(
+            LessonPlan.id == lesson_plan_id,
+            LessonPlan.school_id == current_user.school_id,
+        )
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Lesson plan not found")
+    if not (plan.ai_lesson_note or "").strip():
+        raise HTTPException(status_code=409, detail="Save or generate a lesson note before exporting it")
+
+    curriculum = await db.scalar(select(Curriculum).where(Curriculum.id == plan.curriculum_id))
+    school = await db.scalar(select(School).where(School.id == current_user.school_id))
+    teacher = await db.scalar(select(User).where(User.id == plan.created_by_user_id)) if plan.created_by_user_id else None
+    payload = export_lesson_note_docx(
+        title=plan.title,
+        subject=curriculum.subject_name if curriculum else "",
+        class_level=curriculum.class_level if curriculum else "",
+        term=plan.term,
+        week_number=plan.week_number,
+        content=plan.ai_lesson_note,
+        school_name=school.name if school else None,
+        teacher_name=teacher.full_name if teacher else None,
+    )
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="lesson-note-{lesson_plan_id}.docx"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.post("/{lesson_plan_id}/coverage", response_model=CoverageResponse, status_code=201)

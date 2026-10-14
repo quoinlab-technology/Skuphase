@@ -18,6 +18,9 @@ def client():
 def test_landing_page_renders(client):
     r = client.get("/")
     assert r.status_code == 200
+    assert "<title>SkuPhase" in r.text
+    assert "</head>" in r.text
+    assert "<title>" not in r.text.split("<body", 1)[1]
     assert "Curriculum-aligned exams" in r.text
     assert "SkuPhase" in r.text
     # Auth CTAs are present (§6.10)

@@ -19,6 +19,12 @@ class Exam(BaseModel):
     
     subject = Column(String(100), nullable=False)
     grade_level = Column(String(50), nullable=False)  # JSS1, JSS2, SSS1, etc
+    title = Column(String(180), nullable=True)
+    term = Column(String(30), nullable=True)
+    focus_topics = Column(Text, nullable=True)
+    custom_instructions = Column(Text, nullable=True)
+    selected_weeks = Column(JSON, nullable=True)
+    source_type = Column(String(20), nullable=False, default="manual")
     language = Column(String(20), nullable=False, default="English")  # language of instruction
     
     status = Column(String(20), default="draft")  # draft, under_review, approved

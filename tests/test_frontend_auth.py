@@ -86,6 +86,18 @@ def test_login_page_has_fields(client):
     r = client.get("/login")
     assert 'type="email"' in r.text
     assert "forgot-password" in r.text
+    assert "<title>Sign in to SkuPhase</title>" in r.text.split("</head>", 1)[0]
+    assert "<title>" not in r.text.split("<body", 1)[1]
+
+
+def test_authenticated_user_is_redirected_away_from_public_login(client, mock_api):
+    mock_api(FakeResp(200, _tokens()))
+    client.post("/login", data={"email": "amina@example.com", "password": "password123"})
+
+    response = client.get("/login", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/app"
 
 
 def test_register_school_has_admin_fields(client):
@@ -353,6 +365,10 @@ def test_logout_clears_session(client, mock_api):
     assert r.status_code == 303
     assert "/login" in r.headers.get("location")
     assert _session_json(client).get("access_token") is None
+
+    login_page = client.get("/login")
+    assert "Signed out." in login_page.text
+    assert "Signed out." not in client.get("/login").text
 
 
 # ------------------------------------------------------------ forgot/reset

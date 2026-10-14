@@ -21,6 +21,7 @@ from fasthtml.common import (
     Span,
     Strong,
     Textarea,
+    Title,
     Ul,
     to_xml,
 )
@@ -525,6 +526,7 @@ def curriculum_routes(app):
             content_view = _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list, board, boards, _can_edit_local(user))
 
         return AppShell(
+            Title("Curriculum — SkuPhase"),
             Container(
                 header,
                 search_form,

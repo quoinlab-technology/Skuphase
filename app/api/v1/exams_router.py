@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, update
+from sqlalchemy import select, and_, func, update, or_
 
 from app.core.dependencies import get_current_user
 from app.core.security import verify_token
@@ -465,6 +465,12 @@ async def generate_exam(
             created_by_user_id=current_user.user_id,
             subject=request.subject,
             grade_level=request.grade_level,
+            title=(request.title or "").strip() or None,
+            term=request.term,
+            focus_topics=(request.focus_topics or "").strip() or None,
+            custom_instructions=(request.custom_instructions or "").strip() or None,
+            selected_weeks=request.selected_weeks,
+            source_type="ai",
             status="draft",  # Will be updated by the job worker
             workflow_state="generation_requested",
             llm_call_count=1,
@@ -536,6 +542,8 @@ async def submit_manual_exam(
         created_by_user_id=current_user.user_id,
         subject=request.subject,
         grade_level=request.grade_level,
+        title=(request.title or "").strip() or None,
+        source_type="manual",
         status="under_review",
         workflow_state="final_submitted_by_teacher",
         llm_call_count=0,
@@ -605,6 +613,12 @@ async def submit_manual_exam(
         created_by_user_id=exam.created_by_user_id,
         subject=exam.subject,
         grade_level=exam.grade_level,
+        title=getattr(exam, "title", None),
+        term=getattr(exam, "term", None),
+        focus_topics=getattr(exam, "focus_topics", None),
+        custom_instructions=getattr(exam, "custom_instructions", None),
+        selected_weeks=getattr(exam, "selected_weeks", None),
+        source_type=getattr(exam, "source_type", None) or "manual",
         status=exam.status,
         workflow_state=(getattr(exam, "workflow_state", None) or "final_submitted_by_teacher"),
         total_marks=exam.total_marks,
@@ -733,6 +747,7 @@ async def save_exam_questions_to_bank(
 async def list_question_bank_items(
     subject: Optional[str] = Query(None, description="Filter by subject"),
     grade_level: Optional[str] = Query(None, description="Filter by grade level"),
+    search: Optional[str] = Query(None, min_length=1, max_length=180, description="Search title, subject, or grade"),
     topic: Optional[str] = Query(None, description="Filter by topic"),
     difficulty: Optional[str] = Query(None, description="Filter by difficulty"),
     query_text: Optional[str] = Query(None, description="Free-text search on question text"),
@@ -1077,7 +1092,9 @@ async def list_exams(
     limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
     subject: Optional[str] = Query(None, description="Filter by subject"),
     grade_level: Optional[str] = Query(None, description="Filter by grade level"),
+    search: Optional[str] = Query(None, min_length=1, max_length=180, description="Search title, subject, or grade"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    workflow_state: Optional[str] = Query(None, description="Filter by canonical workflow state"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ExamListResponse:
@@ -1091,15 +1108,53 @@ async def list_exams(
     """
     try:
         # Build query with school isolation
-        query = select(Exam).where(Exam.school_id == current_user.school_id)
+        scope_filters = [Exam.school_id == current_user.school_id]
         
         # Apply filters
         if subject:
-            query = query.where(Exam.subject == subject)
+            scope_filters.append(Exam.subject == subject)
         if grade_level:
-            query = query.where(Exam.grade_level == grade_level)
+            scope_filters.append(Exam.grade_level == grade_level)
+        if search and search.strip():
+            term = search.strip()
+            scope_filters.append(or_(
+                Exam.title.ilike(f"%{term}%"),
+                Exam.subject.ilike(f"%{term}%"),
+                Exam.grade_level.ilike(f"%{term}%"),
+            ))
+        query = select(Exam).where(*scope_filters)
+        if workflow_state:
+            if workflow_state == "teacher_review":
+                query = query.where(Exam.workflow_state.in_(
+                    ("teacher_review", "final_submitted_by_teacher", "refinement_requested")
+                ))
+            elif workflow_state == "generation_requested":
+                query = query.where(and_(
+                    Exam.workflow_state == "generation_requested",
+                    Exam.status != "failed",
+                ))
+            else:
+                query = query.where(Exam.workflow_state == workflow_state)
         if status:
-            query = query.where(Exam.status == status)
+            # Legacy list filters use status; accept both persisted status and
+            # workflow state so dashboard/list counters remain consistent.
+            if status == "under_review":
+                query = query.where(or_(
+                    Exam.workflow_state.in_(
+                        ("teacher_review", "final_submitted_by_teacher", "refinement_requested")
+                    ),
+                    Exam.status == "under_review",
+                ))
+            elif status == "generating":
+                query = query.where(and_(Exam.workflow_state == "generation_requested", Exam.status != "failed"))
+            elif status == "draft":
+                query = query.where(and_(Exam.workflow_state == "draft", Exam.status != "failed"))
+            elif status == "failed":
+                query = query.where(or_(Exam.workflow_state == "failed", Exam.status == "failed"))
+            elif status in {"approved", "teacher_review", "final_submitted_by_teacher", "refinement_requested", "generation_requested"}:
+                query = query.where(or_(Exam.workflow_state == status, Exam.status == status))
+            else:
+                query = query.where(Exam.status == status)
         
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -1125,13 +1180,26 @@ async def list_exams(
             counts_by_exam = {
                 row[0]: row[1] for row in counts_result.all()
             }
+        creator_ids = {exam.created_by_user_id for exam in exams if exam.created_by_user_id}
+        creator_names: Dict[uuid.UUID, str] = {}
+        if creator_ids:
+            creator_result = await db.execute(
+                select(User.id, User.full_name).where(User.id.in_(creator_ids))
+            )
+            creator_names = {row[0]: row[1] for row in creator_result.all()}
 
         exam_list = [
             ExamListItem(
                 id=exam.id,
                 subject=exam.subject,
                 grade_level=exam.grade_level,
+                title=getattr(exam, "title", None),
+                term=getattr(exam, "term", None),
+                selected_weeks=getattr(exam, "selected_weeks", None),
+                source_type=getattr(exam, "source_type", None) or ("ai" if (exam.llm_call_count or 0) > 0 else "manual"),
+                creator_name=creator_names.get(exam.created_by_user_id),
                 status=exam.status,
+                workflow_state=getattr(exam, "workflow_state", None) or exam.status or "draft",
                 total_marks=exam.total_marks,
                 question_count=counts_by_exam.get(exam.id, 0),
                 created_at=exam.created_at,
@@ -1139,7 +1207,33 @@ async def list_exams(
             for exam in exams
         ]
 
-        return ExamListResponse(total=total, exams=exam_list)
+        grouped_states = await db.execute(
+            select(Exam.workflow_state, Exam.status, func.count())
+            .where(*scope_filters)
+            .group_by(Exam.workflow_state, Exam.status)
+        )
+        status_counts = {
+            "all": 0,
+            "approved": 0,
+            "under_review": 0,
+            "generating": 0,
+            "draft": 0,
+            "failed": 0,
+        }
+        for state, persisted_status, count in grouped_states.all():
+            status_counts["all"] += count
+            if persisted_status == "failed" or state == "failed":
+                status_counts["failed"] += count
+            elif state == "approved" or persisted_status == "approved":
+                status_counts["approved"] += count
+            elif state in {"teacher_review", "final_submitted_by_teacher", "refinement_requested"} or persisted_status == "under_review":
+                status_counts["under_review"] += count
+            elif state == "generation_requested":
+                status_counts["generating"] += count
+            elif state == "draft":
+                status_counts["draft"] += count
+
+        return ExamListResponse(total=total, exams=exam_list, status_counts=status_counts)
         
     except Exception as e:
         logger.error(f"Failed to list exams: {str(e)}")
@@ -1345,12 +1439,19 @@ async def get_exam(
             created_by_user_id=exam.created_by_user_id,
             subject=exam.subject,
             grade_level=exam.grade_level,
+            title=getattr(exam, "title", None),
+            term=getattr(exam, "term", None),
+            focus_topics=getattr(exam, "focus_topics", None),
+            custom_instructions=getattr(exam, "custom_instructions", None),
+            selected_weeks=getattr(exam, "selected_weeks", None),
+            source_type=getattr(exam, "source_type", None) or ("ai" if (exam.llm_call_count or 0) > 0 else "manual"),
             status=exam.status,
 workflow_state=(getattr(exam, "workflow_state", None) or "teacher_review"),
             total_marks=exam.total_marks,
             duration_minutes=exam.duration_minutes,
             instructions=exam.instructions,
             language=(getattr(exam, "language", None) or "English"),
+            blueprint=exam.blueprint,
             questions=question_responses,
             passages=[ExamPassageResponse.model_validate(p) for p in passages] or None,
             created_at=exam.created_at,
@@ -1482,11 +1583,19 @@ async def update_exam(
             created_by_user_id=exam.created_by_user_id,
             subject=exam.subject,
             grade_level=exam.grade_level,
+            title=getattr(exam, "title", None),
+            term=getattr(exam, "term", None),
+            focus_topics=getattr(exam, "focus_topics", None),
+            custom_instructions=getattr(exam, "custom_instructions", None),
+            selected_weeks=getattr(exam, "selected_weeks", None),
+            source_type=getattr(exam, "source_type", None) or ("ai" if (exam.llm_call_count or 0) > 0 else "manual"),
             status=exam.status,
+            workflow_state=getattr(exam, "workflow_state", None) or exam.status or "draft",
             total_marks=exam.total_marks,
             duration_minutes=exam.duration_minutes,
             instructions=exam.instructions,
             language=(getattr(exam, "language", None) or "English"),
+            blueprint=exam.blueprint,
             questions=question_responses,
             passages=[ExamPassageResponse.model_validate(p) for p in passages] or None,
             created_at=exam.created_at,
@@ -1643,8 +1752,22 @@ async def export_exam_exchange(
     exporters = {"csv": (export_csv, "text/csv"), "gift": (export_gift, "text/plain"), "qti": (export_qti, "application/xml"), "docx": (export_docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
     if name not in exporters:
         raise HTTPException(status_code=400, detail="format_name must be csv, docx, gift, or qti")
-    content = exporters[name][0](questions)
-    return Response(content=content, media_type=exporters[name][1], headers={"Content-Disposition": f'attachment; filename="exam-{exam_id}.{name}"'})
+    try:
+        content = exporters[name][0](questions)
+    except ImportError as exc:
+        logger.exception("Exam %s export dependency is unavailable", name)
+        raise HTTPException(
+            status_code=503,
+            detail=f"The {name.upper()} export service is temporarily unavailable. Please contact support.",
+        ) from exc
+    return Response(
+        content=content,
+        media_type=exporters[name][1],
+        headers={
+            "Content-Disposition": f'attachment; filename="exam-{exam_id}.{name}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.post("/{exam_id}/exchange/{format_name}/preview")

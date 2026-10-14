@@ -208,10 +208,11 @@ def test_export_error_returns_toast(client, monkeypatch):
 
 
 def test_export_success_renders_download_link_and_toast(client, monkeypatch):
+    export_name = "a" * 32 + ".pdf"
     _login(client, monkeypatch)
     stub = ApiStub([
         ("POST", "/exams/e1/export", FakeResp(200, {
-            "download_url": "https://cdn.example/exam.pdf", "file_name": "exam.pdf",
+            "download_url": "https://cdn.example/exam.pdf", "file_name": export_name,
         })),
     ])
     monkeypatch.setattr("app.frontend.routes.exams.call_api", stub)
@@ -220,8 +221,9 @@ def test_export_success_renders_download_link_and_toast(client, monkeypatch):
     assert r.status_code == 200
     body = r.text
     assert TOAST_MARKER in body
-    assert "Download exam.pdf" in body
-    assert 'href="https://cdn.example/exam.pdf"' in body
+    assert f"Download {export_name}" in body
+    assert f'href="/app/exams/e1/exports/{export_name}"' in body
+    assert 'href="https://cdn.example/exam.pdf"' not in body
 
 
 # ---------------------------------------------------------------------------

@@ -142,6 +142,23 @@ frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/katex@0.16.11/
 frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/mhchem.min.js", defer=True))
 frontend_app.hdrs.append(Script(src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js", defer=True))
 frontend_app.hdrs.append(Script("""
+// School logos are externally hosted, so a storage/CDN timeout must not leave
+// broken-image chrome on settings previews or printed exam pages. Capture the
+// non-bubbling image error before body images begin loading and replace it
+// once with the app-owned brand mark.
+document.addEventListener('error', function (event) {
+    var image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.matches('img[data-school-logo="true"]')) return;
+    if (image.dataset.schoolLogoFallback === 'applied') {
+        image.hidden = true;
+        return;
+    }
+    image.dataset.schoolLogoFallback = 'applied';
+    image.src = image.dataset.fallbackSrc || '/assets/img/skuphase_logo.png';
+    image.alt = 'SkuPhase logo (school logo unavailable)';
+    image.classList.add('school-logo-fallback');
+}, true);
+
 document.addEventListener('DOMContentLoaded', function() {
     function renderMath(el) {
         var target = el || document.body;
@@ -276,6 +293,17 @@ document.addEventListener('DOMContentLoaded', function () {
     document.body.addEventListener('htmx:sendError', function (event) {
         var form = event.detail && event.detail.elt instanceof HTMLFormElement ? event.detail.elt : null;
         restore(form);
+    });
+
+    // Keep HTMX action behavior CSP-safe: hx-on attributes are dynamically
+    // evaluated by HTMX and fail under the app's script-src policy.
+    document.body.addEventListener('htmx:beforeRequest', function (event) {
+        var elt = event.detail && event.detail.elt;
+        var modalId = elt && elt.dataset ? elt.dataset.closeModalBeforeRequest : '';
+        var modalElement = modalId ? document.getElementById(modalId) : null;
+        if (!modalElement || !window.bootstrap || !bootstrap.Modal) return;
+        var modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) modal.hide();
     });
 });
 """))

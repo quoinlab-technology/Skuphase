@@ -39,7 +39,7 @@ httpx          # Resend HTTP API provider + test client
 # FILE EXPORT
 reportlab            # PDF generation (platypus)
 svglib               # SVG to ReportLab flowable conversion
-python-docx          # DOCX question exchange import/export
+python-docx==1.2.0   # DOCX question exchange import/export
 
 # UTILITIES
 python-dotenv          # .env loading for pydantic-settings
@@ -62,7 +62,7 @@ mypy
 # NOTES
 # - Removed vs the legacy stack: torch, sentence-transformers, paddleocr,
 #   paddlepaddle, opencv, pytesseract, PyPDF2, tiktoken, numpy, weasyprint,
-#   python-docx, anthropic, sentry-sdk, structlog, python-json-logger,
+#   anthropic, sentry-sdk, structlog, python-json-logger,
 #   gunicorn, faker, factory-boy.
 # - FastHTML + Faststrap provide the responsive UI layer.
 # - svglib provides SVG-to-ReportLab drawing flowables for PDF exam generation.

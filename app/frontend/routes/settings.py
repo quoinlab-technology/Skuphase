@@ -236,7 +236,12 @@ def _build_settings_content(
     # Keep logo actions outside the profile form. This avoids invalid nested
     # multipart forms and gives the administrator a clear replace/reset flow.
     logo_preview = (
-        Img(src=logo_url, alt=f"{name} school logo", cls="school-logo-preview img-fluid rounded-3")
+        Img(
+            src=logo_url,
+            alt=f"{name} school logo",
+            cls="school-logo-preview img-fluid rounded-3 school-logo-image",
+            **{"data-school-logo": "true", "data-fallback-src": "/assets/img/skuphase_logo.png"},
+        )
         if logo_url
         else Div(
             Icon("image", cls="bi fs-1 text-muted"),

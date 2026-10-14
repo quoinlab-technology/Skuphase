@@ -61,8 +61,8 @@ def test_wizard_sources_renders_real_topics():
     assert "week-validation-msg" in html
 
 
-def test_wizard_sources_empty_weeks_shows_validation():
-    """_wizard_sources with empty selected_weeks must display the validation warning."""
+def test_wizard_sources_empty_weeks_keeps_validation_hidden_until_submit():
+    """An untouched step should not start in an error state; submit reveals it."""
     req = MagicMock()
     req.session = {
         "wizard": {
@@ -74,7 +74,9 @@ def test_wizard_sources_empty_weeks_shows_validation():
     }
     div = _wizard_sources(req)
     html = to_xml(div)
-    assert 'id="week-validation-msg" style="display:flex;' in html
+    assert 'id="week-validation-msg" style="display:none;' in html
+    assert "htmx:beforeRequest" in html
+    assert "hx-on" not in html
 
 
 def test_build_sections_marks_calculation():

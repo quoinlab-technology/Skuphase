@@ -6,7 +6,7 @@ the signed session per §2.3.
 
 from fasthtml.common import (
     A, Div, Form, H1, H2, Label, Option, P, RedirectResponse,
-    Script, Select, Span, Strong, Title,
+    Script, Select, Span, Strong,
 )
 from starlette.requests import Request
 from starlette.datastructures import FormData
@@ -14,9 +14,9 @@ from starlette.datastructures import FormData
 from faststrap import Button, Card, Col, Container, Icon, Input, Row
 
 from app.frontend.api import call_api, unwrap
-from app.frontend.components.feedback import Flash, set_flash
+from app.frontend.components.feedback import Flash, pop_flash, set_flash
 from app.frontend.components.layout import AuthShell
-from app.frontend.deps import clear_auth, store_auth
+from app.frontend.deps import clear_auth, current_user, ensure_login, store_auth
 
 # ---------------------------------------------------------------- helpers
 
@@ -162,6 +162,14 @@ def register_session_routes(app):
                 "Account created. We sent a verification link to your email. Open that link first, then return here to sign in. Check your spam folder if you do not see it.",
                 "success",
             )
+        elif req.session.get("access_token"):
+            guard = ensure_login(req)
+            if guard:
+                return guard
+            if current_user(req):
+                return RedirectResponse("/app", status_code=303)
+        else:
+            flash = pop_flash(req)
         return AuthShell(flash, _login_form(), title="Sign in to SkuPhase")
 
     @app.post("/login")

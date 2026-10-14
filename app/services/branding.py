@@ -25,7 +25,8 @@ def logo_flowable(source: str | None, *, width, height):
         raw = None
         source_text = str(source)
         if source_text.startswith(("https://", "http://")):
-            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            timeout = httpx.Timeout(4.0, connect=2.0)
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
                 response = client.get(source_text)
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "").lower()
@@ -38,16 +39,37 @@ def logo_flowable(source: str | None, *, width, height):
             path = Path(source_text)
             if not path.is_file():
                 raw_source = source_text.lstrip("/")
-                for candidate in (Path(raw_source), Path("app") / raw_source, Path("assets") / raw_source):
+                candidates = (
+                    Path(raw_source),
+                    Path("app") / raw_source,
+                    Path("assets") / raw_source,
+                )
+                for candidate in candidates:
                     if candidate.is_file():
                         path = candidate
                         break
             if path.is_file() and path.stat().st_size <= MAX_LOGO_BYTES:
                 raw = str(path)
         if raw is None:
-            return None
+            raise ValueError("school logo source is unavailable")
         from reportlab.platypus import Image
         return Image(raw, width=width, height=height)
     except Exception as exc:
-        logger.warning("Failed to load school logo '%s': %s", source, exc)
-        return None
+        # Do not fail the document because Supabase/CDN is temporarily
+        # unavailable. Use the packaged local brand mark as a visible fallback.
+        logger.warning(
+            "School logo could not be loaded; using platform fallback (%s)",
+            type(exc).__name__,
+        )
+        fallback_path = Path(__file__).resolve().parents[1] / "assets" / "img" / "skuphase_logo.png"
+        if not fallback_path.is_file():
+            return None
+        try:
+            from reportlab.platypus import Image
+            return Image(str(fallback_path), width=width, height=height)
+        except Exception as fallback_exc:
+            logger.error(
+                "Platform logo fallback could not be rendered (%s)",
+                type(fallback_exc).__name__,
+            )
+            return None

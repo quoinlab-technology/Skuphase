@@ -5,6 +5,7 @@ tests stub that function so no database is required. Login is performed for real
 (via the auth router with a stubbed ``call_api``) to obtain a session cookie.
 """
 
+import asyncio
 import json
 
 import pytest
@@ -137,6 +138,7 @@ def test_exams_list_renders(client, logged_in):
     assert r.status_code == 200
     assert "Mathematics" in r.text
     assert "/app/exams/e1" in r.text
+    assert 'aria-label="Exam list table; scroll horizontally to see all columns"' in r.text
 
 
 def test_exams_list_empty_state(client, logged_in):
@@ -312,6 +314,9 @@ def test_manual_entry_page_renders(client, logged_in):
     assert "SSS 3" in r.text
     assert "Physics" in r.text
     assert "manualNoticeModal" in r.text
+    assert "manualQuestionDeleteModal" in r.text
+    assert "confirm-manual-question-delete" in r.text
+    assert "pendingDeleteCard" in r.text
     assert "Study Mode (Show Full Labels)" in r.text
 
 
@@ -365,6 +370,44 @@ def test_exam_detail_404_handled(client, logged_in):
     logged_in(FakeResp(404, {"detail": "not found"}))
     r = client.get("/app/exams/nope")
     assert r.status_code == 200  # error state page, no crash
+
+
+def test_exam_detail_timeout_renders_retry_page(client, logged_in, monkeypatch):
+    logged_in(FakeResp(200, EXAM))
+    monkeypatch.setattr("app.frontend.routes.exams.EXAM_FETCH_TIMEOUT_SECONDS", 0.001)
+
+    async def slow_api(*args, **kwargs):
+        await asyncio.sleep(0.03)
+        return FakeResp(200, EXAM)
+
+    monkeypatch.setattr("app.frontend.routes.exams.call_api", slow_api)
+    response = client.get("/app/exams/e1")
+    assert response.status_code == 200
+    assert "taking longer than expected" in response.text
+    assert 'href="/app/exams/e1"' in response.text
+    assert 'href="/app/exams"' in response.text
+
+
+def test_exam_detail_server_error_uses_safe_retry_copy(client, logged_in):
+    logged_in(FakeResp(503, {"detail": "database secret/internal trace"}))
+    response = client.get("/app/exams/e1")
+    assert response.status_code == 200
+    assert "could not load this exam right now" in response.text
+    assert "database secret/internal trace" not in response.text
+
+
+def test_wizard_empty_week_submission_stays_on_step_two(client, logged_in):
+    logged_in(FakeResp(200, {}))
+
+    response = client.post(
+        "/app/exams/new?step=3",
+        data={"subject": "Mathematics", "grade_level": "Primary 4", "term": "First Term"},
+        headers={"HX-Request": "true", "HX-Target": "wizard-container"},
+    )
+
+    assert response.status_code == 200
+    assert 'id="wizard-step-2"' in response.text
+    assert "Please select at least one curriculum week" in response.text
 
 
 def test_poll_partial(client, logged_in):
@@ -424,6 +467,76 @@ def test_exam_detail_approved_header_actions(client, logged_in):
     r = client.get("/app/exams/e1")
     assert r.status_code == 200
     assert "Export PDF" in r.text
+
+
+def test_exam_detail_handles_nullable_legacy_metadata(client, logged_in):
+    legacy_exam = {
+        **EXAM,
+        "title": None,
+        "term": None,
+        "duration_minutes": None,
+        "total_marks": 0,
+        "questions": [
+            {
+                "id": "q1",
+                "question_number": 1,
+                "type": "mcq",
+                "question_text": "A saved legacy question?",
+                "marks": 1,
+                "options": ["A", "B"],
+                "correct_answer": "A",
+                "sub_parts": None,
+                "content_blocks": None,
+                "diagram_svg": None,
+                "passage_id": None,
+            }
+        ],
+    }
+    logged_in(FakeResp(200, legacy_exam))
+
+    response = client.get("/app/exams/e1")
+
+    assert response.status_code == 200
+    assert "TERM NOT SET" in response.text
+    assert "A saved legacy question?" in response.text
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_title"),
+    [
+        ("print/student", "Mathematics - Question Paper — SkuPhase"),
+        ("print/answer-key", "Marking Guide - Mathematics — SkuPhase"),
+        ("print/omr", "OMR Sheet - Mathematics — SkuPhase"),
+    ],
+)
+def test_exam_print_pages_have_specific_document_titles(client, logged_in, path, expected_title):
+    logged_in(FakeResp(200, EXAM))
+
+    response = client.get(f"/app/exams/e1/{path}")
+
+    assert response.status_code == 200
+    assert f"<title>{expected_title}</title>" in response.text
+
+
+def test_exam_student_print_handles_missing_term_without_printing_none(client, logged_in):
+    logged_in(FakeResp(200, {**EXAM, "term": None}))
+
+    response = client.get("/app/exams/e1/print/student")
+
+    assert response.status_code == 200
+    assert "TERM: TERM NOT SET" in response.text
+    assert "TERM: NONE" not in response.text
+
+
+def test_omr_print_metadata_uses_responsive_fields(client, logged_in):
+    logged_in(FakeResp(200, EXAM))
+
+    response = client.get("/app/exams/e1/print/omr")
+
+    assert response.status_code == 200
+    assert 'class="omr-candidate-details"' in response.text
+    assert response.text.count('class="omr-field-line"') == 4
+    assert 'class="omr-answer-grid"' in response.text
 
 
 def test_edit_question_recalculates_marks(client, logged_in):

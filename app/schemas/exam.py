@@ -90,10 +90,12 @@ class SectionConfig(BaseModel):
 class ExamGenerationRequest(BaseModel):
     """Request schema for generating an exam."""
 
+    title: Optional[str] = Field(None, max_length=180, description="Teacher-provided exam title")
     subject: str = Field(..., min_length=1, max_length=100, description="Subject name")
     grade_level: str = Field(..., description="Grade level (e.g., Primary 4)")
     term: Optional[str] = Field(None, description="Term (First Term, Second Term, Third Term)")
     selected_weeks: Optional[List[int]] = Field(None, description="Selected Scheme of Work weeks (e.g. [1, 2, 3, 4])")
+    focus_topics: Optional[str] = Field(None, max_length=1000, description="Topics the teacher wants emphasized")
 
     sections: List[SectionConfig] = Field(..., min_length=1, max_length=5, description="Exam sections")
 
@@ -255,6 +257,12 @@ class ExamResponse(BaseModel):
     
     subject: str
     grade_level: str
+    title: Optional[str] = None
+    term: Optional[str] = None
+    focus_topics: Optional[str] = None
+    custom_instructions: Optional[str] = None
+    selected_weeks: Optional[List[int]] = None
+    source_type: str = "manual"
     status: str
     workflow_state: str = "teacher_review"  # FRONTEND_SPEC §3.1 badge/action mapping
     total_marks: int
@@ -292,7 +300,13 @@ class ExamListItem(BaseModel):
     id: UUID
     subject: str
     grade_level: str
+    title: Optional[str] = None
+    term: Optional[str] = None
+    selected_weeks: Optional[List[int]] = None
+    source_type: str = "manual"
+    creator_name: Optional[str] = None
     status: str
+    workflow_state: str = "draft"
     total_marks: int
     question_count: int
     created_at: datetime
@@ -305,6 +319,7 @@ class ExamListResponse(BaseModel):
     
     total: int
     exams: List[ExamListItem]
+    status_counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class ExamGenerationResponse(BaseModel):
@@ -485,6 +500,7 @@ class ManualQuestionInput(BaseModel):
 class ManualExamSubmissionRequest(BaseModel):
     """Manual exam submission where teacher writes full questions without AI."""
 
+    title: Optional[str] = Field(None, max_length=180)
     subject: str = Field(..., min_length=1, max_length=100)
     grade_level: str = Field(..., min_length=1, max_length=50)
     duration_minutes: Optional[int] = Field(120, ge=30, le=300)

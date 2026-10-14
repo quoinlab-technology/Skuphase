@@ -81,6 +81,8 @@ def test_question_bank_renders(monkeypatch):
     assert "What is 1/2 + 1/4?" in resp.text
     assert "Mathematics" in resp.text
     assert "Primary 4" in resp.text
+    assert 'data-close-modal-before-request="deleteBankModal-b1"' in resp.text
+    assert "hx-on::before-request" not in resp.text
 
 
 def test_question_bank_update_item(monkeypatch):

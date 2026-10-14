@@ -734,3 +734,24 @@ def test_list_exports_cross_school_returns_404():
     response = client.get(f"/api/v1/exams/{other.id}/exports")
 
     assert response.status_code == 404
+
+
+def test_list_exams_accepts_search_and_filters_title_subject_grade():
+    user = _admin()
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[
+        SimpleNamespace(scalar=lambda: 0),
+        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+        SimpleNamespace(all=lambda: []),
+    ])
+    client = _build_test_app(db, user)
+
+    response = client.get("/api/v1/exams/?search=physics")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+    count_sql = str(db.execute.await_args_list[0].args[0])
+    list_sql = str(db.execute.await_args_list[1].args[0])
+    for column in ("exams.title", "exams.subject", "exams.grade_level"):
+        assert column in count_sql
+        assert column in list_sql

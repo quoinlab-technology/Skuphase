@@ -8,7 +8,7 @@ query string for future progressive-disclosure work.
 
 from urllib.parse import quote
 
-from fasthtml.common import A, Div, Form, H1, H2, Label, P, Span, Strong
+from fasthtml.common import A, Div, Form, H1, H2, Label, P, Span, Strong, Title
 from starlette.requests import Request
 
 from faststrap import Button, Card, Col, Container, Icon, Row, Select
@@ -198,4 +198,4 @@ def guided_routes(app):
             ),
             cls="py-4 pt-lg-5 guided-page",
         )
-        return AppShell(content, user=user, active="start", crumbs=[("Start here", None)])
+        return AppShell(Title("Start here — SkuPhase"), content, user=user, active="start", crumbs=[("Start here", None)])

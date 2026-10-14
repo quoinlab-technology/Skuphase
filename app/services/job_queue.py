@@ -280,6 +280,7 @@ async def _process_one(
                 )).scalar_one_or_none()
                 if exam_row is not None:
                     exam_row.status = "failed"
+                    exam_row.workflow_state = "failed"
                     exam_row.updated_at = utc_now()
                 await db.commit()
 

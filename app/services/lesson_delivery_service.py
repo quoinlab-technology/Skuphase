@@ -1,5 +1,6 @@
 """Curriculum-delivery helpers kept independent from assessment generation."""
 from __future__ import annotations
+
 from app.core.llm import get_llm_service
 
 
@@ -27,5 +28,8 @@ def coverage_summary(rows: list[dict]) -> dict:
         "completed": counts["completed"],
         "verified": counts["verified"],
         "completion_percent": completion_percent,
-        "warning": "Curriculum coverage is incomplete for this school." if total and completion_percent < 100 else None,
+        "warning": (
+            f"School-wide coverage tracking: {completion_percent}% of {total} started scheme-week records are marked taught or admin-verified ({counts['completed']} taught, {counts['verified']} verified). This is not a judgment about an individual teacher or the selected scope."
+            if total and completion_percent < 100 else None
+        ),
     }

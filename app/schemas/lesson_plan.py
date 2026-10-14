@@ -1,7 +1,9 @@
 """Schemas for teacher lesson planning."""
+import re
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class LessonPlanCreate(BaseModel):
@@ -54,11 +56,45 @@ class LessonPlanResponse(BaseModel):
     approved_at: datetime | None = None
 
 
+class WeeklyExerciseQuestion(BaseModel):
+    """Normalized worksheet item; accepts legacy ``text`` and mark suffixes."""
+
+    question_number: int | None = Field(None, ge=1, le=100)
+    type: str = Field("short_answer", pattern="^(short_answer|mcq)$", max_length=40)
+    question_text: str = Field(..., min_length=1, max_length=3000)
+    marks: int = Field(1, ge=1, le=100)
+    answer_lines: int = Field(2, ge=0, le=12)
+    answer_options: list[str] | None = Field(None, max_length=10)
+    answer_key: str | None = Field(None, max_length=3000)
+    explanation: str | None = Field(None, max_length=5000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_question(cls, value):
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if not data.get("question_text") and data.get("text"):
+            data["question_text"] = data.pop("text")
+        text = str(data.get("question_text") or "").strip()
+        mark_suffix = re.search(r"\s*\[(\d+)\s+marks?\]\s*$", text, re.IGNORECASE)
+        if mark_suffix:
+            data["marks"] = int(mark_suffix.group(1))
+            data["question_text"] = text[:mark_suffix.start()].strip()
+        return data
+
+    @model_validator(mode="after")
+    def validate_multiple_choice(self):
+        if self.type == "mcq" and len([item for item in (self.answer_options or []) if item.strip()]) < 2:
+            raise ValueError("Multiple-choice questions require at least two answer options")
+        return self
+
+
 class WeeklyExerciseCreate(BaseModel):
     lesson_plan_id: UUID
     title: str = Field(..., min_length=3, max_length=255)
     instructions: str | None = Field(None, max_length=2000)
-    questions: list[dict] = Field(..., min_length=1, max_length=100)
+    questions: list[WeeklyExerciseQuestion] = Field(..., min_length=1, max_length=100)
 
 
 class WeeklyExerciseResponse(BaseModel):

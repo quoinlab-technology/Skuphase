@@ -109,6 +109,7 @@ def test_admin_control_centre_renders_for_admin(monkeypatch):
     monkeypatch.setattr("app.frontend.routes.admin.call_api", fake_admin_call)
     resp = client.get("/app/admin")
     assert resp.status_code == 200
+    assert "<title>Administration — SkuPhase</title>" in resp.text
     assert "School administration" in resp.text
     assert "Greenfield Academy" in resp.text
     assert "+234 801 000 0000" in resp.text
@@ -158,6 +159,8 @@ def test_settings_page_renders_for_admin(monkeypatch):
     assert "Greenfield Academy" in resp.text
     assert "Reset school logo" in resp.text
     assert "current.png" in resp.text
+    assert 'data-school-logo="true"' in resp.text
+    assert 'data-fallback-src="/assets/img/skuphase_logo.png"' in resp.text
     assert 'name="csrf_token"' in resp.text
 
 

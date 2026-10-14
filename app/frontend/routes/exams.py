@@ -8,8 +8,11 @@ action handlers (refine, submit-final, approve, export, download, delete).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
+import time
 import uuid
 from urllib.parse import quote, urlencode
 
@@ -45,6 +48,7 @@ from fasthtml.common import (
 )
 from starlette.responses import JSONResponse
 from sqlalchemy import and_, select
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
@@ -91,6 +95,7 @@ from app.frontend.deps import current_user, ensure_login
 from app.services.svg_safety import sanitize_svg
 
 logger = logging.getLogger("skuphase.frontend.exams")
+EXAM_FETCH_TIMEOUT_SECONDS = 12
 
 QUESTION_TYPES = [
     ("multiple_choice", "Multiple choice"),
@@ -162,9 +167,94 @@ def _safe_int(value, default: int) -> int:
 
 
 async def _fetch_exam(req: Request, exam_id: str):
-    """Fetch single exam. Returns (ok, data_or_error_dict)."""
-    resp = await call_api(req, "GET", f"/exams/{exam_id}")
-    return unwrap(resp)
+    """Fetch a single exam with a bounded wait and useful failure metadata."""
+    started_at = time.perf_counter()
+    try:
+        resp = await asyncio.wait_for(
+            call_api(req, "GET", f"/exams/{exam_id}"),
+            timeout=EXAM_FETCH_TIMEOUT_SECONDS,
+        )
+    except HTTPException:
+        # In particular, preserve call_api's expired-session redirect.
+        raise
+    except TimeoutError:
+        duration_ms = round((time.perf_counter() - started_at) * 1000)
+        logger.warning(
+            "exam_detail_fetch_failed exam_id=%s category=timeout duration_ms=%s",
+            exam_id,
+            duration_ms,
+        )
+        return False, {
+            "kind": "timeout",
+            "status_code": 504,
+            "message": "This exam is taking longer than expected to load. Your work is safe; try again.",
+        }
+    except Exception:
+        duration_ms = round((time.perf_counter() - started_at) * 1000)
+        logger.exception(
+            "exam_detail_fetch_failed exam_id=%s category=exception duration_ms=%s",
+            exam_id,
+            duration_ms,
+        )
+        return False, {
+            "kind": "unavailable",
+            "status_code": 503,
+            "message": "We could not load this exam right now. Please try again.",
+        }
+
+    ok, data = unwrap(resp)
+    duration_ms = round((time.perf_counter() - started_at) * 1000)
+    if not ok:
+        status_code = getattr(resp, "status_code", 0)
+        if status_code >= 500:
+            logger.warning(
+                "exam_detail_fetch_failed exam_id=%s category=http status=%s duration_ms=%s",
+                exam_id,
+                status_code,
+                duration_ms,
+            )
+        data = dict(data) if isinstance(data, dict) else {"message": str(data)}
+        data["status_code"] = status_code
+        if status_code >= 500:
+            data["kind"] = "unavailable"
+            data["message"] = "We could not load this exam right now. Please try again."
+        return False, data
+    return True, data
+
+
+def _exam_load_error_page(req: Request, user: dict, exam_id: str, error: dict, *, title="Exam unavailable"):
+    """Keep transient fetch failures on a recoverable, branded page."""
+    status_code = error.get("status_code")
+    if status_code == 404:
+        set_flash(req.session, "danger", error.get("message", "Exam not found."))
+        return RedirectResponse("/app/exams", status_code=303)
+    detail = error.get("message") or "We could not load this exam right now. Please try again."
+    return AppShell(
+        Title(f"{title} - SkuPhase"),
+        Div(
+            Card(
+                Div(
+                    H1(title, cls="h4 fw-bold mb-2"),
+                    Alert(detail, variant="warning" if error.get("kind") == "timeout" else "danger", cls="mb-4"),
+                    Div(
+                        A(
+                            "Try again",
+                            href=f"/app/exams/{quote(str(exam_id), safe='')}",
+                            cls="btn btn-brand text-white rounded-pill px-4",
+                        ),
+                        A("Back to exams", href="/app/exams", cls="btn btn-link text-decoration-none ms-2"),
+                        cls="d-flex flex-wrap align-items-center gap-2",
+                    ),
+                    cls="p-4 p-md-5",
+                ),
+                cls="border-0 shadow-sm rounded-4",
+            ),
+            cls="container py-4",
+        ),
+        user=user,
+        active="exams",
+        crumbs=[("Exams", "/app/exams"), (title, None)],
+    )
 
 
 def _query(**params) -> str:
@@ -174,9 +264,21 @@ def _query(**params) -> str:
 
 def _state_of(exam: dict) -> str:
     """Resolve the effective workflow state for badge/action logic."""
-    if exam.get("status") == "failed":
+    if exam.get("status") == "failed" or exam.get("workflow_state") == "failed":
         return "failed"
     return exam.get("workflow_state") or exam.get("status") or "draft"
+
+
+def _exam_display_title(exam: dict) -> str:
+    """Use the saved teacher title; derive a legacy fallback only when absent."""
+    saved = (exam.get("title") or "").strip()
+    if saved:
+        return saved
+    grade = (exam.get("grade_level") or "").strip()
+    subject = (exam.get("subject") or "Exam").strip()
+    term = (exam.get("term") or "").strip()
+    suffix = f" — {term} Examination" if term else " — Term Examination"
+    return f"{grade} {subject}{suffix}".strip()
 
 
 def _quality_bar(exam: dict):
@@ -185,8 +287,10 @@ def _quality_bar(exam: dict):
     Prototype: 3.5rem (w-14) x 0.375rem (h-1.5) track, rounded-full.
     Fill color: emerald >=90, amber >=75, red <75.
     """
-    score = exam.get("quality_score") or exam.get("qualityScore") or None
-    if not score:
+    score = exam.get("quality_score")
+    if score is None:
+        score = exam.get("qualityScore")
+    if score is None:
         return Span("\u2014", cls="text-muted small")
     pct = max(0, min(100, int(score)))
     if pct >= 90:
@@ -217,7 +321,7 @@ def _row_actions(exam: dict, user: dict = None):
     """
     user = user or {}
     exam_id = str(exam.get("id", ""))
-    state = (exam.get("workflow_state") or exam.get("status") or "draft")
+    state = _state_of(exam)
     role = user.get("role")
     account = user.get("account_type")
     is_admin = role == "school_admin" or account == "individual_teacher"
@@ -289,8 +393,8 @@ def _exam_row(exam: dict, user: dict = None):
     grade = exam.get("grade_level", "")
     total_marks = exam.get("total_marks", 0)
     questions_count = exam.get("question_count") or exam.get("total_questions") or len(exam.get("questions") or []) or 0
-    created_by = exam.get("creator_name") or exam.get("created_by_name") or "Adaeze"
-    workflow_state = exam.get("workflow_state") or exam.get("status") or "draft"
+    created_by = exam.get("creator_name") or exam.get("created_by_name") or "Unknown"
+    workflow_state = _state_of(exam)
     ai_generated = (
         not (exam.get("source_type") == "manual" or exam.get("is_manual"))
         and workflow_state != "generation_requested"
@@ -309,7 +413,7 @@ def _exam_row(exam: dict, user: dict = None):
         icon_container_cls = "app-table-row-icon ai"
         icon_svg_cls = "text-primary"
 
-    title_text = f"{grade} {subject} \u2014 Term Examination" if "Exam" not in subject else f"{grade} {subject}"
+    title_text = _exam_display_title(exam)
 
     return TRow(
         TCell(
@@ -388,7 +492,7 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
     subject = exam.get("subject", "Untitled exam")
     grade = exam.get("grade_level", "")
     total_marks = exam.get("total_marks", 0)
-    workflow_state = exam.get("workflow_state") or exam.get("status") or "draft"
+    workflow_state = _state_of(exam)
 
     if workflow_state == "generation_requested":
         icon_name = "bolt"
@@ -407,11 +511,13 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
         icon_container_cls = "app-table-row-icon ai"
         icon_svg_cls = "text-primary"
 
-    title_text = f"{grade} {subject} — Term Examination" if "Exam" not in subject else f"{grade} {subject}"
+    title_text = _exam_display_title(exam)
     subtitle_text = f"{subject} · {grade} · {total_marks} marks"
 
     # Quality indicator
-    score = exam.get("overall_score") or exam.get("quality_score")
+    score = exam.get("overall_score")
+    if score is None:
+        score = exam.get("quality_score")
     quality_el = None
     if score is not None:
         try:
@@ -673,6 +779,23 @@ def _can_work_exam(user: dict, exam: dict | None = None) -> bool:
     return not creator or not user_id or str(creator) == str(user_id)
 
 
+def _print_after_assets_script() -> Script:
+    """Give the local logo fallback time to load before opening print UI."""
+    return Script("""
+      window.addEventListener('DOMContentLoaded', function () {
+        var logos = Array.from(document.querySelectorAll('img[data-school-logo="true"]'));
+        var loaded = Promise.all(logos.map(function (image) {
+          if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+          return new Promise(function (resolve) { image.addEventListener('load', resolve, { once: true }); });
+        }));
+        var maxWait = new Promise(function (resolve) { setTimeout(resolve, 2500); });
+        Promise.race([loaded, maxWait]).then(function () {
+          setTimeout(function () { window.print(); }, 150);
+        });
+      });
+    """)
+
+
 def _render_clean_print_paper(exam: dict, user: dict) -> Div:
     """Standalone, pristine school examination paper optimized for paper printing."""
     school_name = user.get("school_name") or exam.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
@@ -680,7 +803,13 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
     school_logo = user.get("school_logo_url") or ""
 
     logo_part = (
-        Img(src=school_logo, alt="Logo", style="max-height: 70px; max-width: 70px; object-fit: contain; margin-right: 18px;")
+        Img(
+            src=school_logo,
+            alt="School logo",
+            cls="school-logo-image",
+            style="max-height: 70px; max-width: 70px; object-fit: contain; margin-right: 18px;",
+            **{"data-school-logo": "true", "data-fallback-src": "/assets/img/skuphase_logo.png"},
+        )
         if school_logo
         else Div()
     )
@@ -691,10 +820,13 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
             Div(
                 H1(school_name.upper(), style="font-size: 1.35rem; font-weight: 800; margin-bottom: 2px; text-align: center; color: #111;"),
                 P(school_address, style="font-size: 0.82rem; color: #555; margin-bottom: 4px; text-align: center;") if school_address else Div(),
-                H2(f"{str(exam.get('subject', '')).upper()} EXAMINATION", style="font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; text-align: center; color: #111;"),
+                H2(
+                    str(exam.get("title") or f"{exam.get('subject', '')} EXAMINATION").upper(),
+                    style="font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; text-align: center; color: #111;",
+                ),
                 P(
                     f"CLASS: {str(exam.get('grade_level', '')).upper()}    |    "
-                    f"TERM: {str(exam.get('term', 'First Term')).upper()}    |    "
+                    f"TERM: {str(exam.get('term') or 'TERM NOT SET').upper()}    |    "
                     f"TIME: {exam.get('duration_minutes', 60)} MINS    |    "
                     f"TOTAL MARKS: {exam.get('total_marks', 100)}",
                     style="font-size: 0.82rem; font-weight: 600; text-align: center; color: #222; margin-bottom: 0;",
@@ -823,14 +955,13 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
     )
 
     return Div(
-        Title(f"{exam.get('subject', 'Exam')} - Question Paper"),
         toolbar,
         Div(
             header,
             Div(*content_blocks, cls="print-2col"),
             style="max-width: 820px; margin: 0 auto; padding: 20px; background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111;",
         ),
-        Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
+        _print_after_assets_script(),
         style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
     )
 
@@ -892,7 +1023,6 @@ def _render_answer_key_paper(exam: dict, user: dict) -> Div:
     )
 
     return Div(
-        Title(f"Marking Guide - {exam.get('subject', '')}"),
         toolbar,
         Div(
             header,
@@ -905,7 +1035,7 @@ def _render_answer_key_paper(exam: dict, user: dict) -> Div:
             ),
             style="max-width: 800px; margin: 0 auto; padding: 20px; background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111;",
         ),
-        Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
+        _print_after_assets_script(),
         style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
     )
 
@@ -923,20 +1053,20 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
 
     details = Div(
         Div(
-            Div(Strong("Candidate Name: "), "_______________________________", style="font-size: 0.85rem; margin-bottom: 4px;"),
-            Div(Strong("Candidate ID: "), "_______________________________", style="font-size: 0.85rem;"),
-            style="flex: 1;",
+            Div(Strong("Candidate Name:"), Span(cls="omr-field-line"), cls="omr-field", style="font-size: 0.85rem;"),
+            Div(Strong("Candidate ID:"), Span(cls="omr-field-line"), cls="omr-field", style="font-size: 0.85rem;"),
+            cls="omr-candidate-block",
         ),
         Div(
-            Div(Strong("Class: "), "___________", style="font-size: 0.85rem; margin-bottom: 4px;"),
-            Div(Strong("Date: "), "___________", style="font-size: 0.85rem;"),
-            style="flex: 1;",
+            Div(Strong("Class:"), Span(cls="omr-field-line"), cls="omr-field", style="font-size: 0.85rem;"),
+            Div(Strong("Date:"), Span(cls="omr-field-line"), cls="omr-field", style="font-size: 0.85rem;"),
+            cls="omr-candidate-block",
         ),
         Div(
-            Div(Strong("Score: "), "[ &nbsp; &nbsp; / 50 ]", style="font-size: 0.95rem; font-weight: bold; border: 1.5px solid #000; padding: 6px 12px; text-align: center;"),
-            style="display: flex; align-items: center; justify-content: flex-end;",
+            Div(Strong("Score: "), "[ _____ / 50 ]", style="font-size: 0.95rem; font-weight: bold; border: 1.5px solid #000; padding: 6px 12px; text-align: center;"),
+            cls="omr-score-block",
         ),
-        style="display: flex; border: 1px solid #000; padding: 10px; margin-bottom: 14px;",
+        cls="omr-candidate-details",
     )
 
     col1 = []
@@ -969,6 +1099,7 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
     bubble_grid = Div(
         Div(*col1, style="flex: 1; padding-right: 15px; border-right: 1px dashed #aaa;"),
         Div(*col2, style="flex: 1; padding-left: 15px;"),
+        cls="omr-answer-grid",
         style="display: flex; border: 1px solid #ddd; padding: 12px; margin-bottom: 14px;",
     )
 
@@ -979,7 +1110,6 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
     )
 
     return Div(
-        Title(f"OMR Sheet - {exam.get('subject', '')}"),
         toolbar,
         Div(
             hdr,
@@ -990,9 +1120,10 @@ def _render_omr_sheet_paper(exam: dict, user: dict) -> Div:
                 Div("Invigilator Sign: ____________________", style="font-size: 0.8rem; font-weight: bold;"),
                 style="display: flex; justify-content: space-between; margin-top: 15px;",
             ),
+            cls="omr-paper",
             style="max-width: 800px; margin: 0 auto; padding: 20px; background: #fff; font-family: Arial, sans-serif; color: #111;",
         ),
-        Script("window.addEventListener('DOMContentLoaded', function() { setTimeout(function() { window.print(); }, 400); });"),
+        _print_after_assets_script(),
         style="background: #eaedf0; min-height: 100vh; padding: 20px 10px;",
     )
 
@@ -1015,12 +1146,15 @@ def register_page_routes(app):
             return Response("Unsupported exchange format", status_code=400)
         upstream = await call_api(req, "GET", f"/exams/{exam_id}/exchange/{format_name.lower()}")
         if not upstream.is_success:
-            ok, data = unwrap(upstream)
-            return Response(data.get("message", "Could not export this exam."), status_code=upstream.status_code)
+            push_flash(req, "Could not prepare that export. Please try again or contact support.", "danger")
+            return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
         return Response(
             content=upstream.content,
             media_type=upstream.headers.get("content-type", "application/octet-stream"),
-            headers={"Content-Disposition": upstream.headers.get("content-disposition", f'attachment; filename="exam-{exam_id}.{format_name}"')},
+            headers={
+                "Content-Disposition": upstream.headers.get("content-disposition", f'attachment; filename="exam-{exam_id}.{format_name}"'),
+                "Cache-Control": "private, no-store",
+            },
         )
 
     @app.post("/app/exams/{exam_id}/exchange/{format_name}/preview")
@@ -1062,7 +1196,9 @@ def register_page_routes(app):
         status = req.query_params.get("status", "").strip()
         guided_mode = req.query_params.get("mode") == "guided"
 
-        params = {"limit": "50"}
+        params = {"limit": "100"}
+        if q:
+            params["search"] = q
         if subject:
             params["subject"] = subject
         if grade:
@@ -1082,12 +1218,6 @@ def register_page_routes(app):
             )
         else:
             exams = data.get("exams", []) or []
-            if q:
-                q_lower = q.lower()
-                exams = [
-                    e for e in exams
-                    if q_lower in (e.get("subject", "") + " " + e.get("grade_level", "")).lower()
-                ]
             if not exams:
                 body_content = EmptyState(
                     title="No exams yet",
@@ -1117,7 +1247,10 @@ def register_page_routes(app):
                 tbody = TBody(*rows, cls="app-table-body")
                 desktop_table = Div(
                     Table(thead, tbody, hover=True, striped=False, cls="app-table mb-0"),
-                    cls="app-table-container app-card shadow-sm border-0 rounded-4 overflow-hidden d-none d-md-block",
+                    cls="app-table-container app-card shadow-sm border-0 rounded-4 d-none d-md-block",
+                    role="region",
+                    aria_label="Exam list table; scroll horizontally to see all columns",
+                    tabindex="0",
                 )
                 mobile_cards = Div(
                     *cards,
@@ -1148,18 +1281,20 @@ def register_page_routes(app):
                      **({"aria-current": "true"} if is_active else {}))
 
         all_exams = (data.get("exams", []) or []) if ok else []
-        approved_cnt = sum(1 for e in all_exams if (e.get("workflow_state") or e.get("status")) == "approved")
-        review_cnt = sum(1 for e in all_exams if (e.get("workflow_state") or e.get("status")) in {"teacher_review", "final_submitted_by_teacher", "refinement_requested"})
-        gen_cnt = sum(1 for e in all_exams if (e.get("workflow_state") or e.get("status")) == "generation_requested")
-        draft_cnt = sum(1 for e in all_exams if (e.get("workflow_state") or e.get("status")) == "draft")
-        failed_cnt = sum(1 for e in all_exams if e.get("status") == "failed")
+        counts = data.get("status_counts") or {}
+        approved_cnt = counts.get("approved", sum(1 for e in all_exams if _state_of(e) == "approved"))
+        review_cnt = counts.get("under_review", sum(1 for e in all_exams if _state_of(e) in {"teacher_review", "final_submitted_by_teacher", "refinement_requested"}))
+        gen_cnt = counts.get("generating", sum(1 for e in all_exams if _state_of(e) == "generation_requested"))
+        draft_cnt = counts.get("draft", sum(1 for e in all_exams if _state_of(e) == "draft"))
+        failed_cnt = counts.get("failed", sum(1 for e in all_exams if _state_of(e) == "failed"))
+        all_cnt = counts.get("all", data.get("total", len(all_exams)))
 
         # Live bell badge (audit: was hardcoded "3"): stash the under-review
         # count in the session so every AppShell page can show a real number.
         req.session["bell_count"] = review_cnt
 
         pills = Div(
-            _pill("All", "", status, len(all_exams)),
+            _pill("All", "", status, all_cnt),
             _pill("Approved", "approved", status, approved_cnt),
             _pill("Under Review", "under_review", status, review_cnt),
             _pill("Generating", "generating", status, gen_cnt),
@@ -1393,10 +1528,12 @@ def register_page_routes(app):
             if not selected_weeks:
                 # Must select at least one week
                 wiz["selected_weeks"] = []
+                wiz["week_validation_error"] = True
                 _wizard_save(req, wiz)
-                set_flash(req, "Please select at least one curriculum week to assess.", "warning")
+                set_flash(req.session, "warning", "Please select at least one curriculum week to assess.")
                 target_step = "2"
             else:
+                wiz.pop("week_validation_error", None)
                 wiz["selected_weeks"] = selected_weeks
                 selected_docs = form.getlist("selected_documents")
                 if selected_docs:
@@ -1461,8 +1598,7 @@ def register_page_routes(app):
 
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
-            return RedirectResponse("/app/exams", status_code=303)
+            return _exam_load_error_page(req, user, exam_id, exam)
 
         state = _state_of(exam)
         is_generating = state in ("generation_requested", "refinement_requested")
@@ -1510,10 +1646,9 @@ def register_page_routes(app):
         user = current_user(req) or {}
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
-            return RedirectResponse("/app/exams", status_code=303)
+            return _exam_load_error_page(req, user, exam_id, exam, title="Print sheet unavailable")
 
-        return _render_clean_print_paper(exam, user)
+        return (Title(f"{exam.get('subject') or 'Exam'} - Question Paper — SkuPhase"), _render_clean_print_paper(exam, user))
 
     @app.get("/app/exams/{exam_id}/print/answer-key")
     async def exam_print_answer_key(req: Request, exam_id: str):
@@ -1524,10 +1659,9 @@ def register_page_routes(app):
         user = current_user(req) or {}
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
-            return RedirectResponse("/app/exams", status_code=303)
+            return _exam_load_error_page(req, user, exam_id, exam, title="Marking guide unavailable")
 
-        return _render_answer_key_paper(exam, user)
+        return (Title(f"Marking Guide - {exam.get('subject') or 'Exam'} — SkuPhase"), _render_answer_key_paper(exam, user))
 
     @app.get("/app/exams/{exam_id}/print/omr")
     async def exam_print_omr(req: Request, exam_id: str):
@@ -1538,73 +1672,9 @@ def register_page_routes(app):
         user = current_user(req) or {}
         ok, exam = await _fetch_exam(req, exam_id)
         if not ok:
-            set_flash(req.session, "danger", exam.get("message", "Exam not found."))
-            return RedirectResponse("/app/exams", status_code=303)
+            return _exam_load_error_page(req, user, exam_id, exam, title="OMR sheet unavailable")
 
-        return _render_omr_sheet_paper(exam, user)
-
-    @app.get("/app/exams/{exam_id}/exports/{file_name}")
-    async def exam_export_download(req: Request, exam_id: str, file_name: str):
-        """Session-authenticated proxy to download generated PDF export.
-        
-        Reads the access_token from the session (not from Authorization header),
-        so it works when a browser navigates a plain <a href> link that only
-        sends the session cookie. Tenant-checked: only the exam's school can
-        download its exports. Streams the PDF back as a downloadable attachment.
-        """
-        guard = ensure_login(req)
-        if guard:
-            return guard
-        
-        token = req.session.get("access_token")
-        if not token:
-            set_flash(req.session, "danger", "Session expired — please log in again.")
-            return RedirectResponse("/login", status_code=303)
-        
-        import re
-        from pathlib import Path
-        from fastapi.responses import FileResponse
-        from sqlalchemy import select
-        from app.core.database import get_async_session_maker
-        from app.models.exam import Exam
-        
-        # Validate file name format
-        if not re.fullmatch(r"[0-9a-f]{32}\.pdf", file_name or ""):
-            set_flash(req.session, "danger", "Invalid export file name.")
-            return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
-        
-        # Tenant check: exam must belong to the user's school
-        session_maker = get_async_session_maker()
-        async with session_maker() as db:
-            try:
-                school_id = req.session.get("school_id")
-                result = await db.execute(
-                    select(Exam.id).where(
-                        and_(
-                            Exam.id == uuid.UUID(exam_id),
-                            Exam.school_id == uuid.UUID(school_id) if school_id else Exam.id == uuid.UUID(exam_id),
-                        )
-                    )
-                )
-                if result.scalar_one_or_none() is None:
-                    set_flash(req.session, "danger", "Exam not found or access denied.")
-                    return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
-                
-                # Stream the PDF from the exports directory
-                export_dir = Path("exports") / "exams" / str(exam_id)
-                file_path = export_dir / file_name
-                if not file_path.is_file():
-                    set_flash(req.session, "danger", "Export file not found — run export again.")
-                    return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
-                
-                return FileResponse(
-                    path=str(file_path),
-                    media_type="application/pdf",
-                    filename=file_name,
-                )
-            except Exception:
-                set_flash(req.session, "danger", "Could not load export file.")
-                return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
+        return (Title(f"OMR Sheet - {exam.get('subject') or 'Exam'} — SkuPhase"), _render_omr_sheet_paper(exam, user))
 
 # ----- Detail tab partials (lazy-loaded into #tab-content) -----
 
@@ -2306,22 +2376,33 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
     """
     exam_id = str(exam.get("id", ""))
     state = _state_of(exam)
-    origin_chip = "AI-generated" if exam.get("generation_job_id") or exam.get("ai_generated") else "Manual entry"
+    is_ai_generated = exam.get("source_type") == "ai" or exam.get("generation_job_id") or exam.get("ai_generated")
+    origin_chip = "AI-generated" if is_ai_generated else "Manual entry"
     school_name = user.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
     school_address = user.get("school_address") or ""
     school_logo = user.get("school_logo_url") or ""
 
     # Clean standard school examination paper header (shows only on print)
-    logo_part = Img(src=school_logo, alt="Logo", style="max-height:60px; max-width:60px; margin-right:15px;") if school_logo else Div()
+    logo_part = (
+        Img(
+            src=school_logo,
+            alt="School logo",
+            cls="school-logo-image",
+            style="max-height:60px; max-width:60px; margin-right:15px; object-fit:contain;",
+            **{"data-school-logo": "true", "data-fallback-src": "/assets/img/skuphase_logo.png"},
+        )
+        if school_logo
+        else Div()
+    )
     print_header = Div(
         Div(
             logo_part,
             Div(
                 H1(school_name.upper(), cls="fs-4 fw-bold mb-1 text-center text-dark"),
                 P(school_address, cls="small text-center text-muted mb-1") if school_address else Div(),
-                H2(f"{exam.get('subject', '').upper()} EXAMINATION", cls="fs-5 fw-bold text-center text-dark mb-1"),
+                H2(f"{str(exam.get('subject') or '').upper()} EXAMINATION", cls="fs-5 fw-bold text-center text-dark mb-1"),
                 P(
-                    f"CLASS: {exam.get('grade_level', '').upper()}    |    TERM: {exam.get('term', '').upper()}    |    TIME: {exam.get('duration_minutes', 60)} MINS    |    TOTAL MARKS: {exam.get('total_marks', 100)}",
+                    f"CLASS: {str(exam.get('grade_level') or '').upper()}    |    TERM: {str(exam.get('term') or 'TERM NOT SET').upper()}    |    TIME: {exam.get('duration_minutes') or 60} MINS    |    TOTAL MARKS: {exam.get('total_marks') or 0}",
                     cls="small fw-semibold text-center text-dark mb-0",
                 ),
                 cls="flex-grow-1",
@@ -2422,7 +2503,7 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
     grade = exam.get("grade_level", "")
     subject = exam.get("subject", "") or "Untitled exam"
     term = exam.get("term", "")
-    title_text = f"{grade} {subject} — {term} Examination" if term and "Exam" not in subject else f"{grade} {subject}"
+    title_text = _exam_display_title(exam)
     updated_date = (exam.get("updated_at") or exam.get("created_at") or "")[:10]
 
     header_block = Div(
@@ -2869,35 +2950,37 @@ def _quality_tab_content(data: dict) -> Div:
       Difficulty balance (89%), Bloom's distribution (94%), Asset integration (88%).
     """
     overall = data.get("overall_score")
-    overall_num = int(overall) if isinstance(overall, (int, float)) else 88
-    overall_txt = f"{overall_num}%"
+    overall_txt = f"{round(float(overall))}%" if isinstance(overall, (int, float)) else "—"
 
-    coverage = (data.get("coverage") or {}).get("score")
-    coverage_txt = f"{int(coverage)}%" if isinstance(coverage, (int, float)) else "6/6 levels"
-    q_count = data.get("question_count", "40")
+    q_count = data.get("question_count")
+    score_class = (
+        "text-success" if isinstance(overall, (int, float)) and overall >= 80
+        else "text-warning" if isinstance(overall, (int, float)) and overall >= 60
+        else "text-danger" if isinstance(overall, (int, float))
+        else "text-muted"
+    )
 
     # Calculate real Bloom and difficulty metrics from actual exam distribution
     distribution = data.get("distribution") or {}
     bloom = distribution.get("bloom_levels") or {}
     difficulty = distribution.get("difficulty") or {}
-    q_total = max(int(q_count) if str(q_count).isdigit() else 1, 1)
+    q_total = int(q_count) if str(q_count).isdigit() else 0
 
     dimensions = []
-    for b_level in ["remember", "understand", "apply", "analyze", "evaluate", "create"]:
-        cnt = bloom.get(b_level, 0)
-        pct = round((cnt / q_total) * 100)
-        color = "green" if pct > 0 else "amber"
-        dimensions.append((f"Bloom: {b_level.capitalize()}", pct, color))
+    if q_total:
+        for b_level in ["remember", "understand", "apply", "analyze", "evaluate", "create"]:
+            cnt = int(bloom.get(b_level, 0) or 0)
+            if cnt:
+                dimensions.append((f"Bloom: {b_level.capitalize()}", round((cnt / q_total) * 100), "green"))
 
     for diff_name in ["easy", "medium", "hard"]:
         cnt = difficulty.get(diff_name, 0)
         if cnt > 0:
-            pct = round((cnt / q_total) * 100)
+            pct = round((cnt / q_total) * 100) if q_total else 0
             color = "green" if diff_name in ("easy", "medium") else "amber"
             dimensions.append((f"Difficulty: {diff_name.capitalize()}", pct, color))
 
-    if bloom:
-        coverage_txt = f"{len(bloom)}/6 levels"
+    bloom_coverage_txt = f"{sum(1 for count in bloom.values() if int(count or 0) > 0)}/6 levels" if bloom else "—"
 
     dim_rows = []
     for dim_title, default_pct, color in dimensions:
@@ -2923,7 +3006,7 @@ def _quality_tab_content(data: dict) -> Div:
         Row(
             Col(
                 Div(
-                    P(overall_txt, cls="fs-2 fw-bold text-success mb-1"),
+                    P(overall_txt, cls=f"fs-2 fw-bold {score_class} mb-1"),
                     P("Overall Score", cls="text-muted small mb-0"),
                     cls="app-quality-metric-card shadow-sm",
                 ),
@@ -2931,7 +3014,7 @@ def _quality_tab_content(data: dict) -> Div:
             ),
             Col(
                 Div(
-                    P(str(q_count), cls="fs-2 fw-bold text-dark mb-1"),
+                    P(str(q_count if q_count is not None else "—"), cls="fs-2 fw-bold text-dark mb-1"),
                     P("Questions", cls="text-muted small mb-0"),
                     cls="app-quality-metric-card shadow-sm",
                 ),
@@ -2939,7 +3022,7 @@ def _quality_tab_content(data: dict) -> Div:
             ),
             Col(
                 Div(
-                    P(coverage_txt, cls="fs-2 fw-bold text-dark mb-1"),
+                    P(bloom_coverage_txt, cls="fs-2 fw-bold text-dark mb-1"),
                     P("Bloom's Coverage", cls="text-muted small mb-0"),
                     cls="app-quality-metric-card shadow-sm",
                 ),
@@ -2950,7 +3033,7 @@ def _quality_tab_content(data: dict) -> Div:
         # Dimension Scores Card
         Div(
             H6("Dimension Scores", cls="fw-bold text-dark mb-3"),
-            *dim_rows,
+            *(dim_rows or [P("No distribution metrics are available for this report yet.", cls="text-muted small mb-0")]),
             cls="bg-white border rounded-4 p-4 shadow-sm",
         ),
     )
@@ -3362,12 +3445,14 @@ def register_wizard_routes(app):
         selected_weeks = [str(w).strip() for w in form.getlist("selected_weeks") if str(w).strip()]
         if not selected_weeks:
             wiz["selected_weeks"] = []
+            wiz["week_validation_error"] = True
             _wizard_save(req, wiz)
-            set_flash(req, "Please select at least one curriculum week to assess.", "warning")
+            set_flash(req.session, "warning", "Please select at least one curriculum week to assess.")
             if req.headers.get("hx-target") == "wizard-panel":
                 return _wizard_panel("2", req)
             return _render_wizard_full("2", req)
 
+        wiz.pop("week_validation_error", None)
         wiz["selected_weeks"] = selected_weeks
         selected_docs = form.getlist("selected_documents")
         curriculum_doc = f"{wiz.get('grade_level', 'Primary 4')} {wiz.get('subject', 'Mathematics')} Curriculum.pdf"
@@ -4123,6 +4208,7 @@ def _wizard_scope(request: Request) -> Div:
 
 def _wizard_sources(request: Request) -> Div:
     wiz = _wizard_state(request)
+    show_week_validation = bool(wiz.get("week_validation_error"))
     # Focus Topics is deliberately optional. Never seed it with guessed topics:
     # an untouched field must not silently constrain the generated paper.
     default_topics = wiz.get("focus_topics") or ""
@@ -4237,11 +4323,31 @@ def _wizard_sources(request: Request) -> Div:
           msg.style.display = 'flex';
           msg.scrollIntoView({behavior: 'smooth', block: 'nearest'});
         }
+        const submit = document.querySelector('#wizard-step2-next-btn');
+        const form = document.querySelector('#wizard-step-2 form');
+        if (submit && submit.dataset.loadingOriginalHtml) {
+          submit.innerHTML = submit.dataset.loadingOriginalHtml;
+          submit.disabled = false;
+          submit.removeAttribute('aria-busy');
+          delete submit.dataset.loadingActive;
+          delete submit.dataset.loadingOriginalHtml;
+        }
+        if (form) delete form.dataset.loadingButton;
         if (e && e.preventDefault) e.preventDefault();
         if (e && e.stopPropagation) e.stopPropagation();
         return false;
       }
       return true;
+    }
+    if (!window.__skuphaseStep2RequestGuard) {
+      window.__skuphaseStep2RequestGuard = true;
+      document.addEventListener('htmx:beforeRequest', function (event) {
+        const form = event.detail && event.detail.elt;
+        if (form && form.matches('#wizard-step-2 form') &&
+            document.querySelectorAll('.week-checkbox-input:checked').length === 0) {
+          validateStep2Submit(event);
+        }
+      }, true);
     }
     """)
 
@@ -4277,7 +4383,7 @@ def _wizard_sources(request: Request) -> Div:
             Icon("exclamation-triangle-fill", cls="bi me-2", style="font-size:0.9rem;"),
             "Please select at least one curriculum week before continuing.",
             id="week-validation-msg",
-            style=f"display:{'flex' if not selected_weeks else 'none'}; background:#FEF3C7; color:#92400e; font-size:0.82rem; font-weight:500; border-radius:8px; padding:0.6rem 1rem; margin-bottom:1rem; align-items:center;",
+            style=f"display:{'flex' if show_week_validation else 'none'}; background:#FEF3C7; color:#92400e; font-size:0.82rem; font-weight:500; border-radius:8px; padding:0.6rem 1rem; margin-bottom:1rem; align-items:center;",
         ),
         Form(
             _csrf_input(request),
@@ -4311,7 +4417,6 @@ def _wizard_sources(request: Request) -> Div:
                     Icon("chevron-right", cls="bi ms-1", style="font-size:0.75rem;"),
                     type="submit",
                     id="wizard-step2-next-btn",
-                    onclick="if(!validateStep2Submit(event)){ return false; }",
                     style="background:#00412E; color:#fff; border:none; border-radius:999px; padding:0.6rem 1.85rem; font-size:0.9rem; font-weight:600; display:inline-flex; align-items:center; cursor:pointer;",
                 ),
                 style="display:flex; justify-content:space-between; align-items:center; margin-top:2rem;",
@@ -4323,7 +4428,6 @@ def _wizard_sources(request: Request) -> Div:
             hx_swap="outerHTML",
             hx_push_url="/app/exams/new?step=3",
             onsubmit="return validateStep2Submit(event);",
-            hx_on__before_request="if(!validateStep2Submit(event)){ event.preventDefault(); }",
         ),
         id="wizard-step-2",
         cls="bg-white border rounded-4 shadow-sm p-4 p-md-5",
@@ -4788,6 +4892,7 @@ def _wizard_confirm(request: Request) -> Div:
             Input(name="grade_level", type="hidden", value=str(grade if grade != "Not selected" else "")),
             Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
             Input(name="exam_title", type="hidden", value=str(wiz.get("exam_title") or "")),
+            Input(name="focus_topics", type="hidden", value=str(wiz.get("focus_topics") or "")),
             Input(name="total_marks", type="hidden", value=str(total_marks)),
             Input(name="difficulty_preset", type="hidden", value=str(preset_raw)),
             *[Input(name="selected_weeks", type="hidden", value=str(week)) for week in selected_weeks],
@@ -4906,10 +5011,10 @@ def _render_generating_screen(
             cls="app-step-dot", style="width:1.85rem; height:1.85rem; border-radius:50%; border:1.5px solid #00412E; background:#00412E; color:#fff; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"),
         Span("Scope", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
         Div(style="flex:1; height:1px; background:#00412E; margin:0 0.85rem; align-self:center; min-width:20px;"),
-        # 2 Sources (done)
+        # 2 Curriculum (done)
         Div(Icon("check-lg", cls="bi", style="font-size:0.75rem;"),
             cls="app-step-dot", style="width:1.85rem; height:1.85rem; border-radius:50%; border:1.5px solid #00412E; background:#00412E; color:#fff; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"),
-        Span("Sources", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
+        Span("Curriculum", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
         Div(style="flex:1; height:1px; background:#00412E; margin:0 0.85rem; align-self:center; min-width:20px;"),
         # 3 Structure (done)
         Div(Icon("check-lg", cls="bi", style="font-size:0.75rem;"),
@@ -5034,10 +5139,10 @@ def _render_generated_screen(exam_id: str, exam: dict) -> Div:
             cls="app-step-dot", style="width:1.85rem; height:1.85rem; border-radius:50%; border:1.5px solid #00412E; background:#00412E; color:#fff; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"),
         Span("Scope", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
         Div(style="flex:1; height:1px; background:#00412E; margin:0 0.85rem; align-self:center; min-width:20px;"),
-        # 2 Sources (done)
+        # 2 Curriculum (done)
         Div(Icon("check-lg", cls="bi", style="font-size:0.75rem;"),
             cls="app-step-dot", style="width:1.85rem; height:1.85rem; border-radius:50%; border:1.5px solid #00412E; background:#00412E; color:#fff; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;"),
-        Span("Sources", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
+        Span("Curriculum", style="font-size:0.82rem; margin-left:0.45rem; color:#00412E; font-weight:600;"),
         Div(style="flex:1; height:1px; background:#00412E; margin:0 0.85rem; align-self:center; min-width:20px;"),
         # 3 Structure (done)
         Div(Icon("check-lg", cls="bi", style="font-size:0.75rem;"),
@@ -5186,10 +5291,12 @@ def register_action_routes(app):
             return _wizard_error("Duration must be between 30 and 300 minutes.")
 
         payload = {
+            "title": (form.get("exam_title") or wiz.get("exam_title") or "").strip() or None,
             "subject": (form.get("subject") or wiz.get("subject") or "").strip(),
             "grade_level": (form.get("grade_level") or wiz.get("grade_level") or "").strip(),
             "term": form.get("term") or wiz.get("term") or None,
             "selected_weeks": weeks_list or None,
+            "focus_topics": (form.get("focus_topics") or wiz.get("focus_topics") or "").strip() or None,
             "sections": sections,
             "duration_minutes": duration,
             "language": form.get("language") or "English",
@@ -5542,10 +5649,12 @@ def register_action_routes(app):
                 msg += '<br><a href="/app/exams/' + exam_id + '?tab=preflight" class="small">Open Preflight tab →</a>'
             return show_toast(msg, "danger", title="Export blocked")
         file_name = data.get("file_name", "exam.pdf")
-        # Prefer a signed provider URL when the API returns one. Older/local
-        # exports may only expose the authenticated API path, so the frontend
-        # proxy remains the safe fallback for browser navigation.
-        download_link = data.get("download_url") or f"/app/exams/{exam_id}/exports/{file_name}"
+        # Browser navigation sends the signed session cookie, not an API bearer
+        # header. Always use the same-origin proxy; API download URLs are not
+        # browser-authenticated and must never be exposed as the download link.
+        if not re.fullmatch(r"[0-9a-f]{32}\.pdf", str(file_name or "")):
+            return show_toast("The export service returned an invalid file name.", "danger", title="Download failed")
+        download_link = f"/app/exams/{exam_id}/exports/{file_name}"
         wa_text = quote(f"SkuPhase Exam Export ({file_name}): {download_link}")
         wa_url = f"https://wa.me/?text={wa_text}"
         return Div(
@@ -5568,7 +5677,7 @@ def register_action_routes(app):
                 ),
                 cls="d-flex flex-wrap align-items-center",
             ),
-            Script(f"window.location.assign('{download_link}');"),
+            Script(f"window.location.assign({json.dumps(download_link)});"),
             id="export-result",
         )
 
@@ -5584,20 +5693,20 @@ def register_action_routes(app):
         guard = ensure_login(req)
         if guard:
             return guard
+        if not re.fullmatch(r"[0-9a-f]{32}\.pdf", file_name or ""):
+            set_flash(req.session, "danger", "That export link is invalid. Please generate the PDF again.")
+            return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
         resp = await call_api(req, "GET", f"/exams/{exam_id}/exports/{file_name}")
         if not resp.is_success:
-            return Div(
-                show_toast(
-                    "That export is no longer available. Please generate it again.",
-                    "danger",
-                    title="Download failed",
-                ),
-                id="export-result",
-            )
+            push_flash(req, "That export is unavailable. Please generate the PDF again.", "danger")
+            return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
         return Response(
             content=resp.content,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_name}"',
+                "Cache-Control": "private, no-store",
+            },
         )
 
     @app.delete("/ui/exams/{exam_id}")
@@ -5905,6 +6014,19 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     if (messageEl) messageEl.textContent = message || '';
     if (modal && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
   }};
+  let pendingDeleteCard = null;
+  const deleteModalEl = document.getElementById('manualQuestionDeleteModal');
+  const getDeleteModal = () => deleteModalEl && window.bootstrap ? bootstrap.Modal.getOrCreateInstance(deleteModalEl) : null;
+  document.getElementById('confirm-manual-question-delete')?.addEventListener('click', () => {{
+    if (pendingDeleteCard && document.contains(pendingDeleteCard) && cards().length > 1) {{
+      pendingDeleteCard.remove();
+      renumber();
+      update();
+    }}
+    pendingDeleteCard = null;
+    getDeleteModal()?.hide();
+  }});
+  deleteModalEl?.addEventListener('hidden.bs.modal', () => {{ pendingDeleteCard = null; }});
 
   // Track active input for formula insertion
   let lastFocusedInput = null;
@@ -6615,10 +6737,12 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
       return;
     }}
     const b = e.target.closest('.manual-remove-question');
-    if (b && cards().length > 1) {{
-      b.closest('[data-question-card]').remove();
-      renumber();
-      update();
+    if (b) {{
+      if (cards().length <= 1) {{ showManualNotice('Keep one question', 'An exam must contain at least one question.'); return; }}
+      pendingDeleteCard = b.closest('[data-question-card]');
+      const modal = getDeleteModal();
+      if (modal) modal.show(b);
+      else showManualNotice('Question not removed', 'The confirmation dialog could not be opened. Please try again.');
       return;
     }}
 
@@ -6855,6 +6979,31 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         tabindex="-1",
         **{"aria-hidden": "true"},
     )
+    manual_delete_modal = Div(
+        Div(
+            Div(
+                Div(
+                    H2("Remove this question?", id="manual-delete-title", cls="modal-title fs-5 fw-bold text-dark"),
+                    Button(Icon("x-lg", cls="bi"), type="button", variant="light", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Keep question"}),
+                    cls="modal-header border-0 pb-2",
+                ),
+                Div(P("This question will be removed from the current exam. You can add a new question again before saving.", id="manual-delete-description", cls="text-muted mb-0"), cls="modal-body py-2"),
+                Div(
+                    Button("Keep question", type="button", variant="outline-secondary", cls="rounded-pill px-4", **{"data-bs-dismiss": "modal"}),
+                    Button("Remove question", type="button", variant="danger", id="confirm-manual-question-delete", cls="rounded-pill px-4"),
+                    cls="modal-footer border-0 pt-3",
+                ),
+                cls="modal-content border-0 rounded-4 shadow-lg",
+            ),
+            cls="modal-dialog modal-dialog-centered",
+        ),
+        id="manualQuestionDeleteModal",
+        cls="modal fade",
+        tabindex="-1",
+        aria_labelledby="manual-delete-title",
+        aria_describedby="manual-delete-description",
+        **{"aria-hidden": "true"},
+    )
 
     mobile_notice = Div(
         Div(
@@ -6955,6 +7104,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         ),
         Div(id="manual-result", cls="mt-3"),
         manual_notice_modal,
+        manual_delete_modal,
         diagram_modal,
         composer_script,
         cls="py-2",

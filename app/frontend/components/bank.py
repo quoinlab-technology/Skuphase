@@ -52,7 +52,7 @@ def BankCard(item: dict, is_editor: bool, editable_exams: list[dict] = None) -> 
     topic = item.get("topic") or ""
     diff = (item.get("difficulty") or "medium").lower()
     q_type_raw = item.get("question_type") or "multiple_choice"
-    
+
     # Format type label (MCQ, Short Answer, Essay)
     if "choice" in q_type_raw.lower() or "mcq" in q_type_raw.lower():
         type_label = "MCQ"
@@ -210,7 +210,7 @@ def BankCard(item: dict, is_editor: bool, editable_exams: list[dict] = None) -> 
         modals.append(_edit_bank_modal(item, edit_modal_id))
         # Add to Exam Modal
         modals.append(_add_to_exam_modal(item, add_exam_modal_id, editable_exams or []))
-        # Delete Modal (with hx-on::before-request close)
+        # Delete modal closes through the registered HTMX request listener.
         modals.append(_delete_bank_modal(item, delete_modal_id))
 
     return Div(card, *modals)
@@ -319,15 +319,12 @@ def _delete_bank_modal(item: dict, modal_id: str) -> Div:
                     HtmlButton(
                         "Delete Question",
                         type="button",
-                        cls="btn btn-danger rounded-pill px-4 py-2",
+                        cls="btn btn-danger rounded-pill px-4 py-2 bank-delete-action",
                         **{
                             "hx-delete": f"/ui/bank/items/{item_id}",
                             "hx-target": f"#bank-card-{item_id}",
                             "hx-swap": "outerHTML",
-                            "hx-on::before-request": (
-                                f"var m=bootstrap.Modal.getInstance(document.getElementById('{modal_id}'));"
-                                "if(m)m.hide();"
-                            ),
+                            "data-close-modal-before-request": modal_id,
                         },
                     ),
                     cls="modal-footer border-0 pt-3 pb-4 px-4 d-flex justify-content-end",
@@ -346,7 +343,7 @@ def _delete_bank_modal(item: dict, modal_id: str) -> Div:
 def _add_to_exam_modal(item: dict, modal_id: str, editable_exams: list[dict]) -> Div:
     """Modal to insert this bank item directly into an active exam's section."""
     item_id = str(item.get("id") or "")
-    
+
     exam_options = []
     if editable_exams:
         for ex in editable_exams:

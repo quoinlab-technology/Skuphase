@@ -593,6 +593,13 @@ class ExamGenerator:
         primary_layout_block = self._build_primary_layout_instructions(request)
         rich_content_block = self._build_rich_content_instructions(request)
         language_block = self._build_language_instructions(request.language)
+        focus_topics_block = (
+            "\nTEACHER-PRIORITISED TOPICS (must remain within selected curriculum):\n"
+            + request.focus_topics.strip()
+            + "\nUse these topics as priorities, not as permission to introduce untaught content.\n"
+            if request.focus_topics and request.focus_topics.strip()
+            else ""
+        )
         blueprint_block = ""
         if request.blueprint:
             blueprint = request.blueprint
@@ -646,6 +653,8 @@ Duration: {request.duration_minutes} minutes
 {section_instructions}
 
 {difficulty_block}
+
+{focus_topics_block}
 
 {self._build_custom_instructions(request.custom_instructions)}
 
@@ -1216,6 +1225,13 @@ TEACHER'S CUSTOM INSTRUCTIONS
                 exam = result.scalar_one_or_none()
                 
                 if exam:
+                    exam.title = (request.title or "").strip() or getattr(exam, "title", None)
+                    exam.term = request.term
+                    exam.focus_topics = (request.focus_topics or "").strip() or None
+                    exam.custom_instructions = (request.custom_instructions or "").strip() or None
+                    exam.selected_weeks = request.selected_weeks
+                    exam.source_type = "ai"
+                    exam.blueprint = request.blueprint.model_dump(mode="json") if request.blueprint else getattr(exam, "blueprint", None)
                     exam.total_marks = total_marks
                     exam.status = "under_review"
                     exam.workflow_state = "teacher_review"
@@ -1233,6 +1249,12 @@ TEACHER'S CUSTOM INSTRUCTIONS
                         created_by_user_id=created_by_user_id,
                         subject=request.subject,
                         grade_level=request.grade_level,
+                        title=(request.title or "").strip() or None,
+                        term=request.term,
+                        focus_topics=(request.focus_topics or "").strip() or None,
+                        custom_instructions=(request.custom_instructions or "").strip() or None,
+                        selected_weeks=request.selected_weeks,
+                        source_type="ai",
                         status="under_review",
                         workflow_state="teacher_review",
                         total_marks=total_marks,
@@ -1251,6 +1273,12 @@ TEACHER'S CUSTOM INSTRUCTIONS
                     created_by_user_id=created_by_user_id,
                     subject=request.subject,
                     grade_level=request.grade_level,
+                    title=(request.title or "").strip() or None,
+                    term=request.term,
+                    focus_topics=(request.focus_topics or "").strip() or None,
+                    custom_instructions=(request.custom_instructions or "").strip() or None,
+                    selected_weeks=request.selected_weeks,
+                    source_type="ai",
                     status="under_review",
                     workflow_state="teacher_review",
                     total_marks=total_marks,

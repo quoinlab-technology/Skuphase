@@ -78,6 +78,7 @@ def test_curriculum_authenticated_renders(monkeypatch):
 
     r = client.get("/app/curriculum")
     assert r.status_code == 200
+    assert "<title>Curriculum — SkuPhase</title>" in r.text
     assert "National Curriculum" in r.text
     assert "Primary 4" in r.text
     assert "Place Values" in r.text

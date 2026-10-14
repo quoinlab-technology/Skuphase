@@ -7,7 +7,7 @@ lesson, question, exam, and export work self-service for teachers.
 
 import asyncio
 
-from fasthtml.common import A, Div, H1, P, Span, Strong
+from fasthtml.common import A, Div, H1, P, Span, Strong, Title
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -148,6 +148,7 @@ def register_routes(app):
         )
 
         return AppShell(
+            Title("Administration — SkuPhase"),
             header,
             metrics,
             guidance,

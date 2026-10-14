@@ -53,7 +53,7 @@ def _relative_time(iso_str: str) -> str:
 
 async def _load_exams(req: Request, status: str | None = None, workflow_state: str | None = None):
     """Fetch exams list; returns (ok, data)."""
-    params = {"limit": "50"}
+    params = {"limit": "100"}
     if status:
         params["status"] = status
     if workflow_state:
@@ -105,18 +105,22 @@ def _recent_exam_item(exam: dict):
     total_marks = exam.get("total_marks", 0)
     workflow_state = exam.get("workflow_state") or exam.get("status") or "draft"
 
-    if workflow_state == "approved":
+    if exam.get("status") == "failed" or workflow_state == "failed":
+        st_text, st_type = "Failed", "failed"
+    elif workflow_state == "approved":
         st_text, st_type = "Approved", "approved"
     elif workflow_state in {"teacher_review", "final_submitted_by_teacher", "refinement_requested"}:
         st_text, st_type = "Under Review", "under review"
     elif workflow_state == "generation_requested":
         st_text, st_type = "Generating", "generating"
-    elif exam.get("status") == "failed":
-        st_text, st_type = "Failed", "failed"
     else:
         st_text, st_type = "Draft", "draft"
 
-    title_text = f"{grade} {subject} — Term Examination" if "Exam" not in subject else f"{grade} {subject}"
+    title_text = (exam.get("title") or "").strip() or (
+        f"{grade} {subject} — {exam.get('term')} Examination"
+        if exam.get("term") else f"{grade} {subject} — Term Examination"
+    )
+    creator = exam.get("creator_name") or "Unknown"
     created_at = exam.get("created_at") or ""
     time_str = _relative_time(created_at) if created_at else f"{total_marks} marks"
 
@@ -127,7 +131,7 @@ def _recent_exam_item(exam: dict):
                 href=f"/app/exams/{eid}",
                 cls="text-decoration-none",
             ),
-            Div(f"{grade} · {time_str}", cls="text-muted small"),
+            Div(f"{grade} · by {creator.split()[0]} · {time_str}", cls="text-muted small"),
             cls="flex-grow-1",
         ),
         _status_badge_pill(st_text, st_type),
@@ -164,10 +168,10 @@ def register_routes(app):
         )
 
         exams_all = (data_total.get("exams") or []) if ok_total else []
-        generating_count = len(data_gen.get("exams") or []) if ok_gen else 0
-        review_count = len(data_review.get("exams") or []) if ok_review else 0
-        approved_count = len(data_approved.get("exams") or []) if ok_approved else 0
-        failed_count = len(data_failed.get("exams") or []) if ok_failed else 0
+        generating_count = int(data_gen.get("total") or 0) if ok_gen else 0
+        review_count = int(data_review.get("total") or 0) if ok_review else 0
+        approved_count = int(data_approved.get("total") or 0) if ok_approved else 0
+        failed_count = int(data_failed.get("total") or 0) if ok_failed else 0
 
         # Greeting matching Dashboard.png
         user_first = (user.get("full_name") or user.get("email") or "there").split()[0]

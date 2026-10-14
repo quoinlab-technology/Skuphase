@@ -32,7 +32,7 @@ dependencies = [
     "reportlab",
     "svglib",
     "python-dotenv",
-    "python-docx",
+    "python-docx==1.2.0",
 ]
 
 [tool.setuptools]
