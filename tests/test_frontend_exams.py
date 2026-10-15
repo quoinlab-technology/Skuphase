@@ -478,6 +478,17 @@ def test_export_action(client, logged_in):
     assert r.status_code in (200, 303)
 
 
+def test_student_pdf_export_legacy_request_routes_to_katex_print_view(client, logged_in):
+    calls = logged_in(FakeResp(500, {"message": "must not call the PDF exporter"}))
+
+    response = client.post("/ui/exams/e1/export", data={"doc_type": "exam"})
+
+    assert response.status_code == 200
+    assert 'href="/app/exams/e1/print/student"' in response.text
+    assert "Open Print / Save Student Paper" in response.text
+    assert calls["history"] == []
+
+
 def test_delete_action(client, logged_in):
     logged_in(FakeResp(204, {}))
     r = client.delete("/ui/exams/e1", follow_redirects=False)
@@ -561,6 +572,20 @@ def test_exam_student_print_handles_missing_term_without_printing_none(client, l
     assert response.status_code == 200
     assert "TERM: TERM NOT SET" in response.text
     assert "TERM: NONE" not in response.text
+
+
+def test_exam_print_tab_uses_katex_print_for_student_paper_and_staff_only_exports(client, logged_in):
+    logged_in(FakeResp(200, EXAM))
+
+    response = client.get("/ui/exams/e1/tab/print")
+
+    assert response.status_code == 200
+    assert "Print / Save Student Paper" in response.text
+    assert "/app/exams/e1/print/student" in response.text
+    assert 'value="exam"' not in response.text
+    assert 'value="marking_guide"' in response.text
+    assert 'value="omr"' in response.text
+    assert "mathematical notation keeps its full formatting" in response.text
 
 
 def test_omr_print_metadata_uses_responsive_fields(client, logged_in):

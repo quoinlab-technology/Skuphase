@@ -2759,7 +2759,7 @@ def _tab_strip(exam_id: str, exam: dict = None, active_tab: str = "questions") -
 
 
 def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
-    """Print & Paper Economy workspace: 2-column student paper, marking guide, OMR sheet & PDF exports."""
+    """Print workspace: KaTeX student paper, marking guide, OMR sheet & staff PDF exports."""
     eco_card = Card(
         H5("Print Ready Documents (Nigerian Classroom Standard)", cls="fw-bold text-dark mb-2"),
         P("Optimized for monochrome laser printers and photocopiers to cut examination paper consumption by up to 60%.", cls="text-muted small mb-4"),
@@ -2772,7 +2772,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                         P("2-column examination layout without answer leak. Ready for invigilation.", cls="text-muted small mb-3"),
                         A(
                             Icon("printer", cls="bi me-2"),
-                            "Print Exam Paper",
+                            "Print / Save Student Paper",
                             href=f"/app/exams/{exam_id}/print/student",
                             target="_blank",
                             cls="btn btn-sm btn-brand rounded-pill px-3 w-100 text-white",
@@ -2827,36 +2827,20 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
     )
 
     pdf_card = Card(
-        H5("Official PDF Export & WhatsApp Sharing", cls="fw-bold text-dark mb-2"),
-        P("Generate branded downloadable PDF documents and share directly with department teachers via WhatsApp.", cls="text-muted small mb-3"),
+        H5("Teacher PDF Export & WhatsApp Sharing", cls="fw-bold text-dark mb-2"),
+        P("Generate a downloadable marking guide or OMR sheet and share it with department teachers via WhatsApp. For the student paper, use Print / Save Student Paper above so mathematical notation keeps its full formatting.", cls="text-muted small mb-3"),
         Form(
             Row(
                 Col(
                     Label("Document Type", cls="form-label small fw-semibold text-muted mb-1"),
                     HtmlSelect(
-                        Option("Exam Question Paper (Students)", value="exam", selected=True),
-                        Option("Teacher Marking Guide & Rubrics", value="marking_guide"),
+                        Option("Teacher Marking Guide & Rubrics", value="marking_guide", selected=True),
                         Option("OMR Bubble Sheet (50 Q)", value="omr"),
                         name="doc_type",
                         id="tab-export-doc-type",
                         cls="form-select form-select-sm",
                     ),
                     span=12, md=5, cls="mb-3",
-                ),
-                Col(
-                    Label("Options", cls="form-label small fw-semibold text-muted mb-1 d-block"),
-                    Label(
-                        Input(
-                            name="include_answers",
-                            type="checkbox",
-                            value="1",
-                            id="tab-export-answers",
-                            cls="form-check-input me-2",
-                        ),
-                        "Include answer key (Exam paper only)",
-                        cls="form-check-label small",
-                    ),
-                    span=12, md=4, cls="mb-3 pt-md-4",
                 ),
                 Col(
                     Button(
@@ -2871,7 +2855,7 @@ def _print_tab_content(exam_id: str, exam: dict, user: dict) -> Div:
                 ),
             ),
             hx_post=f"/ui/exams/{exam_id}/export",
-            hx_include="#tab-export-doc-type, #tab-export-answers",
+            hx_include="#tab-export-doc-type",
             hx_target="#tab-export-result",
             hx_swap="innerHTML",
             hx_indicator="#tab-export-spinner",
@@ -3333,28 +3317,13 @@ def _export_panel(exam_id: str) -> Div:
                 Div(
                     Label("Document Type", cls="form-label small fw-semibold text-muted mb-1"),
                     HtmlSelect(
-                        Option("Exam Paper (Students)", value="exam", selected=True),
-                        Option("Teacher Marking Guide & Rubrics", value="marking_guide"),
+                        Option("Teacher Marking Guide & Rubrics", value="marking_guide", selected=True),
                         Option("OMR Bubble Sheet (50 Q)", value="omr"),
                         name="doc_type",
                         id="export-doc-type",
                         cls="form-select form-select-sm mb-2",
                     ),
                     cls="mb-2",
-                ),
-                Div(
-                    Label(
-                        Input(
-                            name="include_answers",
-                            type="checkbox",
-                            value="1",
-                            id="export-answers",
-                            cls="form-check-input me-2",
-                        ),
-                        "Include answer key (Exam paper only)",
-                        cls="form-check-label small",
-                    ),
-                    cls="form-check mb-2",
                 ),
                 Div(
                     Button(
@@ -3367,7 +3336,7 @@ def _export_panel(exam_id: str) -> Div:
                     cls="d-flex justify-content-end",
                 ),
                 hx_post=f"/ui/exams/{exam_id}/export",
-                hx_include="#export-answers, #export-doc-type",
+                hx_include="#export-doc-type",
                 hx_target="#export-result",
                 hx_swap="innerHTML",
                 hx_indicator="#export-spinner",
@@ -5826,8 +5795,16 @@ def register_action_routes(app):
         if guard:
             return guard
         form = await req.form()
+        doc_type = str(form.get("doc_type") or "marking_guide").strip()
+        if doc_type == "exam":
+            return Div(
+                P("Student question papers use the formatted print view to preserve equations and matrices."),
+                A("Open Print / Save Student Paper", href=f"/app/exams/{exam_id}/print/student", target="_blank", cls="btn btn-sm btn-brand text-white"),
+                id="export-result",
+            )
+        if doc_type not in {"marking_guide", "omr"}:
+            return show_toast("Choose a supported staff document to export.", "danger", title="Export unavailable")
         include_answers = form.get("include_answers") == "1"
-        doc_type = form.get("doc_type") or "exam"
         payload = {"format": "pdf", "include_answers": include_answers, "doc_type": doc_type}
         resp = await call_api(req, "POST", f"/exams/{exam_id}/export", payload)
         ok, data = unwrap(resp)
