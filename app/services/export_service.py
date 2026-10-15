@@ -16,6 +16,7 @@ from app.services.svg_safety import sanitize_svg
 from app.services.math_rendering import (
     extract_display_formulas,
     formula_to_svg,
+    matrix_to_inline_text,
     split_matrix_expressions,
 )
 from app.services.branding import logo_flowable
@@ -342,31 +343,15 @@ class ExportService:
             return cleaned.replace("\n", "<br/>")
 
         def text_with_math_flowables(raw: str, paragraph_style, prefix: str = "", suffix: str = "") -> list:
-            """Render matrix environments as typeset SVG between text runs."""
+            """Keep inline matrices with their surrounding question/option text."""
             segments = split_matrix_expressions(raw)
-            if not any(kind == "matrix" for kind, _ in segments):
-                return [Paragraph(prefix + esc(raw) + suffix, paragraph_style)]
-            result = []
-            first_text = True
-            last_text_segment = max(
-                (idx for idx, (kind, _) in enumerate(segments) if kind == "text"),
-                default=-1,
+            rendered_text = "".join(
+                matrix_to_inline_text(value) if kind == "matrix" else value
+                for kind, value in segments
             )
-            for segment_idx, (kind, value) in enumerate(segments):
-                if kind == "text":
-                    segment_suffix = suffix if segment_idx == last_text_segment else ""
-                    if value.strip() or (first_text and prefix) or segment_suffix:
-                        result.append(Paragraph((prefix if first_text else "") + esc(value) + segment_suffix, paragraph_style))
-                    first_text = False
-                    continue
-                drawing = _svg_to_flowable(formula_to_svg(value), max_width_pt=380, max_height_pt=100)
-                if drawing is not None:
-                    result.extend([Spacer(1, 0.5 * mm), drawing, Spacer(1, 0.5 * mm)])
-            if suffix and last_text_segment < 0:
-                result.append(Paragraph(suffix, paragraph_style))
-            return result
+            return [Paragraph(prefix + esc(rendered_text) + suffix, paragraph_style)]
 
-        def structured_block_flowables(question) -> list:
+        def structured_block_flowables(question, *, skip_matrix_blocks: bool = False) -> list:
             """Render persisted Faststrap blocks with safe legacy fallbacks."""
             raw_blocks = getattr(question, "content_blocks", None) or []
             if isinstance(raw_blocks, dict):
@@ -381,13 +366,29 @@ class ExportService:
                         flowables.append(Paragraph(esc(text), question_style))
                 elif kind == "math":
                     latex = value.get("latex", "")
-                    drawing = _svg_to_flowable(
-                        formula_to_svg(latex), max_width_pt=380, max_height_pt=80
-                    )
-                    if drawing is not None:
-                        flowables.extend([Spacer(1, 1 * mm), drawing, Spacer(1, 1 * mm)])
+                    latex = latex.replace(r"\(", "").replace(r"\)", "")
+                    matrix_segments = split_matrix_expressions(latex)
+                    if any(segment_kind == "matrix" for segment_kind, _ in matrix_segments):
+                        if skip_matrix_blocks:
+                            continue
+                        # Matrix SVGs are legible in the app, but as standalone
+                        # PDF drawings they consume a full line and can strand
+                        # the question stem/options across pages. Linearize just
+                        # matrices so they stay compact in the exam flow.
+                        compact = "".join(
+                            matrix_to_inline_text(segment)
+                            if segment_kind == "matrix" else segment
+                            for segment_kind, segment in matrix_segments
+                        )
+                        flowables.append(Paragraph(esc(compact), question_style))
                     elif latex:
-                        flowables.append(Paragraph(esc(latex), question_style))
+                        drawing = _svg_to_flowable(
+                            formula_to_svg(latex), max_width_pt=380, max_height_pt=80
+                        )
+                        if drawing is not None:
+                            flowables.extend([Spacer(1, 1 * mm), drawing, Spacer(1, 1 * mm)])
+                        else:
+                            flowables.append(Paragraph(esc(latex), question_style))
                 elif kind == "svg":
                     drawing = _svg_to_flowable(
                         value.get("svg", ""), max_width_pt=A4[0] - 28 * mm, max_height_pt=180
@@ -550,16 +551,40 @@ class ExportService:
 
             # ── Question text ─────────────────────────────────────────────────
             marks_bit = f"&nbsp;&nbsp;<b>[{q.marks}m]</b>" if q.marks else ""
+            question_text = q.question_text or ""
+            raw_blocks = getattr(q, "content_blocks", None) or []
+            if isinstance(raw_blocks, dict):
+                raw_blocks = raw_blocks.get("blocks", [])
+            has_matrix_blocks = False
+            inline_matrices = []
+            for block in raw_blocks:
+                block_kind = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+                if block_kind != "math":
+                    continue
+                latex = block.get("latex", "") if isinstance(block, dict) else getattr(block, "latex", "")
+                latex = latex.replace(r"\(", "").replace(r"\)", "")
+                segments = split_matrix_expressions(latex)
+                if any(segment_kind == "matrix" for segment_kind, _ in segments):
+                    has_matrix_blocks = True
+                    inline = "".join(
+                        matrix_to_inline_text(segment)
+                        if segment_kind == "matrix" else segment
+                        for segment_kind, segment in segments
+                    ).strip()
+                    if inline and inline not in question_text:
+                        inline_matrices.append(inline)
+            if inline_matrices:
+                question_text = f"{question_text.rstrip()} {' '.join(inline_matrices)}".strip()
             story.extend(
                 text_with_math_flowables(
-                    q.question_text or "",
+                    question_text,
                     question_style,
                     prefix=f"<b>{q_num}.</b>&nbsp;",
                     suffix=marks_bit,
                 )
             )
 
-            story.extend(structured_block_flowables(q))
+            story.extend(structured_block_flowables(q, skip_matrix_blocks=has_matrix_blocks))
 
             # Keep display equations visible in PDF exports even when a TeX
             # binary is unavailable. The browser continues to use KaTeX, but
@@ -595,13 +620,9 @@ class ExportService:
                 raw_opts = [format_mcq_option(str(opt), idx) for idx, opt in enumerate(q.options)]
                 # Use 2-column layout only if ALL options are short (<= 55 chars each)
                 _all_short = all(len(o) <= 55 for o in raw_opts)
-                _has_matrix = any(
-                    any(kind == "matrix" for kind, _ in split_matrix_expressions(option))
-                    for option in raw_opts
-                )
-                if len(raw_opts) == 4 and _all_short and not _has_matrix:
+                if len(raw_opts) == 4 and _all_short:
                     # Compact 2×2 table — A/B on row 1, C/D on row 2
-                    fmt_opts = [Paragraph(esc(o), option_style) for o in raw_opts]
+                    fmt_opts = [text_with_math_flowables(o, option_style)[0] for o in raw_opts]
                     usable_w = A4[0] - 28 * mm   # page width minus margins
                     col_w = usable_w / 2
                     opt_table = Table(

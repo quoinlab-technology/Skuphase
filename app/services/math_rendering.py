@@ -32,6 +32,33 @@ def split_matrix_expressions(text: str | None) -> list[tuple[str, str]]:
     return segments or [("text", value)]
 
 
+def matrix_to_inline_text(formula: str) -> str:
+    """Linearize a matrix for space-efficient inline exam text.
+
+    Semicolons separate rows and commas separate cells, e.g. ``[1, 2; 3, 4]``.
+    This keeps the question and its options together instead of forcing each
+    matrix onto a tall display row in a printable exam.
+    """
+    match = _MATRIX_RE.search(str(formula or ""))
+    if not match:
+        return _readable_formula(formula)
+    rows = [
+        [cell.strip() for cell in row.split("&")]
+        for row in re.split(r"(?:\\\\)+", match.group("body").strip().strip("\\"))
+    ]
+    if not rows or not all(rows) or len(rows) > 8 or max(map(len, rows)) > 8:
+        return _readable_formula(formula)
+    kind = match.group("kind")
+    delimiters = {
+        "pmatrix": ("(", ")"), "bmatrix": ("[", "]"),
+        "Bmatrix": ("{", "}"), "vmatrix": ("|", "|"),
+        "Vmatrix": ("||", "||"), "matrix": ("[", "]"),
+    }
+    left, right = delimiters[kind]
+    rows_text = "; ".join(", ".join(_readable_formula(cell) for cell in row) for row in rows)
+    return f"{left}{rows_text}{right}"
+
+
 def extract_display_formulas(text: str | None) -> list[str]:
     if not text:
         return []
@@ -61,7 +88,7 @@ def formula_to_svg(formula: str, *, width: int = 640) -> str:
     if matrix:
         rows = [
             [cell.strip() for cell in row.split("&")]
-            for row in re.split(r"\\\\", matrix.group("body").strip().strip("\\"))
+            for row in re.split(r"(?:\\\\)+", matrix.group("body").strip().strip("\\"))
         ]
         if rows and all(rows) and len(rows) <= 8 and max(map(len, rows)) <= 8:
             columns = max(map(len, rows))

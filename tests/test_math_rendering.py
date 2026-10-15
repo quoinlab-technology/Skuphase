@@ -1,6 +1,7 @@
 from app.services.math_rendering import (
     extract_display_formulas,
     formula_to_svg,
+    matrix_to_inline_text,
     split_matrix_expressions,
 )
 from app.services.formula_catalog import get_all_formulas, validate_formula_catalog
@@ -43,6 +44,11 @@ def test_matrix_segments_preserve_surrounding_question_text():
     assert segments[0] == ("text", "Given A = ")
     assert segments[1][0] == "matrix"
     assert segments[2] == ("text", ", find det(A).")
+
+
+def test_matrix_inline_text_is_compact_and_keeps_row_boundaries():
+    formula = r"\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}"
+    assert matrix_to_inline_text(formula) == "(1, 2; 3, 4)"
 
 
 def test_formula_catalog_has_reviewable_metadata():

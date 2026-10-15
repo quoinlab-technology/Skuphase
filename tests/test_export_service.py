@@ -207,6 +207,41 @@ def test_export_exam_pdf_renders_structured_question_blocks(tmp_path):
     assert "Result" in text
 
 
+def test_export_exam_pdf_keeps_structured_matrices_compact(tmp_path):
+    exam = _exam()
+    question = SimpleNamespace(
+        question_number=1,
+        type="short_answer",
+        question_text="If A =",
+        marks=2,
+        options=None,
+        correct_answer=None,
+        explanation=None,
+        marking_scheme=None,
+        diagram_svg=None,
+        content_blocks=[
+            {"type": "math", "latex": r"\(\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}\)"},
+        ],
+    )
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_exam_pdf(exam=exam, questions=[question])
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(created_path))
+    text = " ".join((page.extract_text() or "") for page in reader.pages)
+    assert len(reader.pages) == 1
+    assert "1, 2; 3, 4" in text
+    assert "If A = (1, 2; 3, 4)" in text
+    assert "pmatrix" not in text
+    assert r"\(" not in text and r"\)" not in text
+
+
 def test_export_exam_pdf_preserves_naira_and_typesets_matrix_questions(tmp_path):
     exam = _exam()
     question = SimpleNamespace(
@@ -237,10 +272,11 @@ def test_export_exam_pdf_preserves_naira_and_typesets_matrix_questions(tmp_path)
     from pypdf import PdfReader
 
     reader = PdfReader(str(created_path))
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = " ".join("\n".join(page.extract_text() or "" for page in reader.pages).split())
     assert "₦50,000" in text or "NGN 50,000" in text
     assert "■" not in text
     assert "pmatrix" not in text
+    assert "1, 2; 3, 4" in text
     assert "find det(A)" in text
 
 
