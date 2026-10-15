@@ -315,7 +315,7 @@ def _row_actions(exam: dict, user: dict = None):
 
     Dropdown items matching P05_exams_list_default_desktop_table_menu_open.png:
       - View           always shown
-      - Export PDF     always shown
+      - Print / Save Student Paper     always shown
       - Duplicate      always shown
       - Retry          only when status == "failed"
       - Delete         only when user is admin/school_admin (separated by divider)
@@ -335,7 +335,7 @@ def _row_actions(exam: dict, user: dict = None):
         ),
         DropdownItem(
             Icon("download", cls="me-2"),
-            "Export PDF",
+            "Print / Save Student Paper",
             href=f"/app/exams/{exam_id}/print",
             target="_blank",
         ),
@@ -914,7 +914,7 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
         # Question block
         marks_bit = f" [{q['marks']} marks]" if q.get("marks") else ""
         q_parts = [
-            Div(Strong(f"Q{idx}. "), Span(q.get("question_text", "")), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 3px; font-size: 0.88rem;"),
+            Div(Strong(f"Q{idx}. "), Span(q.get("question_text", ""), cls="math-content"), Span(marks_bit, style="font-weight: 600; float: right; font-size: 0.82rem;"), style="margin-bottom: 3px; font-size: 0.88rem;"),
         ]
 
         structured = render_structured_blocks(q.get("content_blocks"))
@@ -933,7 +933,7 @@ def _render_clean_print_paper(exam: dict, user: dict) -> Div:
             opts = []
             for o_idx, opt in enumerate(q["options"]):
                 opt_str = format_mcq_option(opt, o_idx)
-                opts.append(Span(opt_str, style="margin-right: 14px; display: inline-block; font-size: 0.84rem;"))
+                opts.append(Span(opt_str, cls="math-content", style="margin-right: 14px; display: inline-block; font-size: 0.84rem;"))
             q_parts.append(Div(*opts, cls="print-inline-options", style="margin-left: 16px; margin-bottom: 4px;"))
 
         if q.get("sub_parts"):
@@ -2239,7 +2239,7 @@ def register_page_routes(app):
         if not files:
             return Div(
                 Icon("file-earmark-pdf", cls="bi text-muted fs-1 mb-2 d-block text-center"),
-                P("No exported files yet for this exam. Use 'Export PDF' to generate printable papers.", cls="text-muted small text-center mb-0"),
+                P("No exported files yet for this exam. Use Print / Save Student Paper for the student copy, or choose a staff document in the Print & Eco-Sheets tab.", cls="text-muted small text-center mb-0"),
                 cls="p-4",
             )
         
@@ -2403,7 +2403,7 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
 
     Layout:
     - Top header: Status badge, AI-generated badge, Title, Meta text, and
-      elevated Top-Right action buttons (Export PDF for Approved; Run Preflight + Approve for Under Review).
+      elevated Top-Right action buttons (student print for Approved; Run Preflight + Approve for Under Review).
     - Section Summary Cards Strip (above tabs strip): Section A, B, C cards with book icon, questions count & marks.
     - 4-tab bar: Questions [count], Preflight, Quality Report, Audit Comments [count].
     - Lazy loaded tab content.
@@ -2460,14 +2460,12 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
     primary_actions = []
     if state == "approved":
         primary_actions.append(
-            Button(
+            A(
                 Icon("download", cls="bi me-2"),
-                "Export PDF",
-                type="button",
+                "Print / Save Student Paper",
+                href=f"/app/exams/{exam_id}/print/student",
+                target="_blank",
                 cls="btn btn-brand rounded-pill px-4 py-2 fw-semibold d-inline-flex align-items-center",
-                hx_post=f"/ui/exams/{exam_id}/export",
-                hx_target="#export-result",
-                hx_swap="innerHTML",
             )
         )
     elif state in ("teacher_review", "final_submitted_by_teacher", "draft"):
@@ -5795,7 +5793,9 @@ def register_action_routes(app):
         if guard:
             return guard
         form = await req.form()
-        doc_type = str(form.get("doc_type") or "marking_guide").strip()
+        # Unspecified export requests historically mean the student question paper.
+        # Keep that semantic, but route it through the KaTeX browser print view.
+        doc_type = str(form.get("doc_type") or "exam").strip()
         if doc_type == "exam":
             return Div(
                 P("Student question papers use the formatted print view to preserve equations and matrices."),

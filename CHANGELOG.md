@@ -10,7 +10,8 @@ features, operational changes, security fixes, and important migrations.
 - Routed student exam printing through the browser's KaTeX-enabled two-column
   print view instead of the ReportLab export that flattened matrix notation.
   Direct PDF export is now limited to teacher marking guides and OMR sheets;
-  stale student-paper export requests are redirected to the formatted print view.
+  approved-exam print actions open that student-paper view, and stale or
+  unspecified student-paper export requests cannot silently become a marking guide.
 
 - Fixed the notification badge to count durable unread notifications instead of
   exams awaiting review; the badge now stays hidden when the inbox is empty.

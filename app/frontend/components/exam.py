@@ -245,14 +245,11 @@ def action_buttons(exam: dict, user: dict) -> list:
 
     if is_admin and state not in {"draft", "generation_requested", "failed"}:
         buttons.append(
-            Button(
-                "Export PDF",
-                hx_post=f"/ui/exams/{exam['id']}/export",
-                hx_include="#export-answers",
-                hx_target="#export-result",
-                hx_swap="innerHTML",
-                hx_indicator="#export-spinner",
-                variant="outline-success",
+            A(
+                "Print / Save Student Paper",
+                href=f"/app/exams/{exam['id']}/print/student",
+                target="_blank",
+                cls="btn btn-sm btn-outline-success rounded-pill",
             )
         )
 

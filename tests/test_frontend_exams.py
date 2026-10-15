@@ -473,9 +473,38 @@ def test_approve_action_preflight_block(client, logged_in):
 
 
 def test_export_action(client, logged_in):
-    logged_in(FakeResp(200, {"export_id": "x1", "file_name": "abc.pdf"}))
-    r = client.post("/ui/exams/e1/export", follow_redirects=False)
-    assert r.status_code in (200, 303)
+    calls = logged_in(FakeResp(200, {"export_id": "x1", "file_name": "a" * 32 + ".pdf"}))
+    r = client.post("/ui/exams/e1/export", data={"doc_type": "marking_guide"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert calls["history"] == [("POST", "/exams/e1/export", {
+        "format": "pdf", "include_answers": False, "doc_type": "marking_guide"
+    })]
+
+
+@pytest.mark.parametrize("doc_type", ["marking_guide", "omr"])
+def test_staff_export_forwards_selected_document_type(client, logged_in, doc_type):
+    calls = logged_in(FakeResp(200, {"file_name": "b" * 32 + ".pdf"}))
+
+    response = client.post("/ui/exams/e1/export", data={"doc_type": doc_type})
+
+    assert response.status_code == 200
+    assert calls["history"][0][2] == {
+        "format": "pdf", "include_answers": False, "doc_type": doc_type
+    }
+    assert f"/app/exams/e1/exports/{'b' * 32}.pdf" in response.text
+
+
+def test_generated_pdf_download_proxy_returns_pdf_attachment(client, logged_in):
+    file_name = "c" * 32 + ".pdf"
+    calls = logged_in(FakeResp(200, {}, content=b"%PDF-1.4 test document"))
+
+    response = client.get(f"/app/exams/e1/exports/{file_name}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == f'attachment; filename="{file_name}"'
+    assert response.content == b"%PDF-1.4 test document"
+    assert calls["history"] == [("GET", f"/exams/e1/exports/{file_name}", None)]
 
 
 def test_student_pdf_export_legacy_request_routes_to_katex_print_view(client, logged_in):
@@ -486,6 +515,26 @@ def test_student_pdf_export_legacy_request_routes_to_katex_print_view(client, lo
     assert response.status_code == 200
     assert 'href="/app/exams/e1/print/student"' in response.text
     assert "Open Print / Save Student Paper" in response.text
+    assert calls["history"] == []
+
+
+def test_unspecified_export_request_defaults_to_student_paper_not_marking_guide(client, logged_in):
+    calls = logged_in(FakeResp(500, {"message": "must not call the PDF exporter"}))
+
+    response = client.post("/ui/exams/e1/export")
+
+    assert response.status_code == 200
+    assert 'href="/app/exams/e1/print/student"' in response.text
+    assert calls["history"] == []
+
+
+def test_unknown_export_document_type_is_rejected_without_api_call(client, logged_in):
+    calls = logged_in(FakeResp(500, {"message": "must not call the PDF exporter"}))
+
+    response = client.post("/ui/exams/e1/export", data={"doc_type": "unexpected"})
+
+    assert response.status_code == 200
+    assert "Choose a supported staff document" in response.text
     assert calls["history"] == []
 
 
@@ -512,7 +561,9 @@ def test_exam_detail_approved_header_actions(client, logged_in):
     logged_in(FakeResp(200, approved_exam))
     r = client.get("/app/exams/e1")
     assert r.status_code == 200
-    assert "Export PDF" in r.text
+    assert "Print / Save Student Paper" in r.text
+    assert 'href="/app/exams/e1/print/student"' in r.text
+    assert 'hx-post="/ui/exams/e1/export"' not in r.text
 
 
 def test_exam_detail_handles_nullable_legacy_metadata(client, logged_in):
@@ -572,6 +623,21 @@ def test_exam_student_print_handles_missing_term_without_printing_none(client, l
     assert response.status_code == 200
     assert "TERM: TERM NOT SET" in response.text
     assert "TERM: NONE" not in response.text
+
+
+def test_student_print_view_contains_math_rendering_markup(client, logged_in):
+    exam = {**EXAM, "questions": [{
+        **EXAM["questions"][0], "question_text": "Evaluate $x^2 + 1$"
+    }]}
+    logged_in(FakeResp(200, exam))
+
+    response = client.get("/app/exams/e1/print/student")
+
+    assert response.status_code == 200
+    assert 'class="math-content"' in response.text
+    assert "x^2 + 1" in response.text
+    assert "katex" in response.text.lower()
+    assert "renderMathInElement" in response.text
 
 
 def test_exam_print_tab_uses_katex_print_for_student_paper_and_staff_only_exports(client, logged_in):
