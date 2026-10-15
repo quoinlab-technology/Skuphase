@@ -2452,3 +2452,104 @@ body {
 .remove-worksheet-question {
   padding-inline: 0.5rem;
 }
+
+/* School-facing support and feedback workspace. */
+.support-page .support-panel {
+  min-width: 0;
+  border: 1px solid rgba(0, 65, 46, .08) !important;
+  box-shadow: 0 .5rem 1.5rem rgba(20, 39, 31, .07) !important;
+}
+.support-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+}
+.support-panel-icon-wrap,
+.support-empty-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: .9rem;
+  color: var(--brand-primary);
+  background: rgba(0, 65, 46, .08);
+}
+.support-panel-icon { font-size: 1.15rem; }
+.support-feedback-form .form-label {
+  display: block;
+  margin-bottom: .45rem;
+  color: #27332d;
+}
+.support-feedback-form .form-control,
+.support-feedback-form .form-select {
+  min-height: 2.9rem;
+  border-color: #d8e0dc;
+  background-color: #fbfcfb;
+}
+.support-feedback-form textarea.form-control {
+  min-height: 8.5rem;
+  resize: vertical;
+}
+.support-feedback-form .form-control:focus,
+.support-feedback-form .form-select:focus {
+  border-color: var(--brand-primary);
+  background-color: #fff;
+  box-shadow: 0 0 0 .2rem rgba(0, 65, 46, .12);
+}
+.support-feedback-form > .form-label:not(:first-child) { margin-top: 1rem; }
+.support-feedback-form > .form-select,
+.support-feedback-form > textarea { margin-bottom: .25rem; }
+.support-form-field { margin-bottom: 1rem; }
+.support-form-field .form-text { display: block; margin-top: .35rem; }
+.support-feedback-form .btn-brand { min-height: 2.8rem; font-weight: 600; }
+.support-report-list { display: grid; gap: .75rem; }
+.support-report-link {
+  display: block;
+  min-width: 0;
+  padding: 1rem 1.05rem;
+  border: 1px solid #e2e9e5;
+  border-radius: .9rem;
+  color: inherit;
+  background: #fff;
+  text-decoration: none;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+.support-report-link:hover,
+.support-report-link:focus-visible {
+  border-color: rgba(0, 65, 46, .38);
+  background: #f8fbf9;
+  color: inherit;
+  transform: translateY(-1px);
+}
+.support-report-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.support-report-content { flex: 1 1 auto; min-width: 0; }
+.support-report-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; min-width: 0; }
+.support-report-subject { min-width: 0; color: #202a25; line-height: 1.4; overflow-wrap: anywhere; }
+.support-report-category,
+.support-report-date { color: #69756f; font-size: .85rem; }
+.support-status-badge { flex: 0 0 auto; white-space: nowrap; }
+.support-report-arrow { flex: 0 0 auto; color: var(--brand-primary); }
+.support-empty-state {
+  display: flex;
+  min-height: 16rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  border: 1px dashed #d6e1da;
+  border-radius: 1rem;
+  background: #f8faf8;
+  text-align: center;
+}
+.support-empty-icon-wrap { width: 3.25rem; height: 3.25rem; margin-bottom: 1rem; border-radius: 1rem; }
+.support-empty-icon { font-size: 1.35rem; }
+@media (max-width: 575.98px) {
+  .support-page-heading { margin-bottom: 1.1rem !important; }
+  .support-page .support-panel { padding: 1.25rem !important; }
+  .support-panel-heading { align-items: flex-start; }
+  .support-submit-row .btn { width: 100%; }
+  .support-submit-row .text-muted { display: block !important; margin: .6rem 0 0 !important; }
+  .support-empty-state { min-height: 13rem; }
+}

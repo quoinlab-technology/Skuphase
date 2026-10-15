@@ -1,10 +1,10 @@
 """School-facing feedback and durable notification inbox pages."""
 
-from fasthtml.common import A, Div, Form, H1, Input, Label, Option, P, Select as HtmlSelect, Span, Strong, Textarea, Title
+from fasthtml.common import A, Div, Form, H1, H2, Input, Label, Option, P, Select as HtmlSelect, Span, Strong, Textarea, Title
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from faststrap import Badge, Button, Card, Col, EmptyState, Icon, Row, Spinner, Table, TBody, TCell, THead, TRow
+from faststrap import Badge, Button, Card, Col, EmptyState, Icon, Row
 
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
@@ -31,24 +31,57 @@ def register_routes(app):
         response = await call_api(req, "GET", "/feedback/mine")
         ok, data = unwrap(response)
         tickets = data.get("tickets", []) if ok else []
-        rows = [
-            TRow(TCell(A(item["subject"], href=f"/app/feedback/{item['ticket_id']}", cls="text-decoration-none text-dark fw-semibold")), TCell(item["category"].replace("_", " ").title()), TCell(Badge(item["status"].replace("_", " ").title(), variant="secondary", pill=True)), TCell(item["created_at"][:10]))
+        report_cards = [
+            A(
+                Div(
+                    Div(
+                        Div(
+                            Strong(item.get("subject") or "Feedback report", cls="support-report-subject"),
+                            Badge(
+                                (item.get("status") or "new").replace("_", " ").title(),
+                                variant=("success" if item.get("status") in {"resolved", "closed"} else "warning" if item.get("status") in {"new", "investigating", "in_progress"} else "secondary"),
+                                pill=True,
+                                cls="support-status-badge",
+                            ),
+                            cls="support-report-title-row",
+                        ),
+                        Div(
+                            Span((item.get("category") or "general").replace("_", " ").title(), cls="support-report-category"),
+                            Span("·", aria_hidden="true", cls="text-muted"),
+                            Span((item.get("created_at") or "")[:10] or "Date unavailable", cls="support-report-date"),
+                            cls="d-flex align-items-center flex-wrap gap-2 mt-2",
+                        ),
+                        cls="support-report-content",
+                    ),
+                    Icon("arrow-up-right", cls="support-report-arrow"),
+                    cls="support-report-row",
+                ),
+                href=f"/app/feedback/{item.get('ticket_id', '')}",
+                cls="support-report-link",
+                aria_label=f"Open report: {item.get('subject') or 'Feedback report'}",
+            )
             for item in tickets
         ]
-        history = Table(
-            THead(TRow(TCell("Subject"), TCell("Category"), TCell("Status"), TCell("Date"))),
-            TBody(*rows), hover=True, cls="app-table mb-0",
-        ) if rows else EmptyState(title="No feedback submitted", description="When you report a problem, its status will appear here.")
+        history = (
+            Div(*report_cards, cls="support-report-list")
+            if report_cards
+            else Div(
+                Div(Icon("chat-square-text", cls="support-empty-icon"), cls="support-empty-icon-wrap"),
+                Strong("No reports yet", cls="d-block text-dark mb-2"),
+                P("When you send a report, you can follow its status and any reply here.", cls="text-muted small mb-3"),
+                A("Report a problem", href="#report-problem", cls="btn btn-outline-success btn-sm rounded-pill px-3"),
+                cls="support-empty-state",
+            )
+        )
         content = Div(
-            H1("Help & feedback", cls="fw-bold fs-2 mb-1 text-dark"),
-            P("Tell us what happened so the SkuPhase team can improve or assist you.", cls="text-muted mb-4"),
+            Div(H1("Help & feedback", cls="fw-bold fs-2 mb-1 text-dark"), P("Tell us what happened so the SkuPhase team can improve or assist you.", cls="text-muted mb-0"), cls="support-page-heading mb-4"),
             Row(
                 Col(
                     Card(
-                        Strong("Report a problem", cls="d-block text-dark mb-3"),
+                        Div(Div(Icon("chat-square-dots", cls="support-panel-icon"), cls="support-panel-icon-wrap"), Div(H2("Report a problem", cls="h5 fw-semibold text-dark mb-1"), P("A few details will help us understand and reproduce the issue.", cls="text-muted small mb-0")), cls="support-panel-heading mb-4", id="report-problem"),
                         Form(
                             _csrf(req),
-                            Label("Category", cls="form-label"),
+                            Label("Category", for_="feedback-category", cls="form-label fw-medium"),
                             HtmlSelect(
                                 Option("Something is not working", value="bug"),
                                 Option("Exam generation quality", value="exam_generation_quality"),
@@ -57,23 +90,24 @@ def register_routes(app):
                                 Option("Account or access issue", value="account"),
                                 Option("Feature request", value="feature_request"),
                                 Option("General complaint", value="general"),
-                                name="category", cls="form-select rounded-3 mb-3",
+                                name="category", id="feedback-category", cls="form-select rounded-3",
                             ),
-                            Input("subject", label="Short subject", required=True, maxlength=180, placeholder="What do you need help with?"),
-                            Label("What happened?", cls="form-label"),
+                            Div(Label("Short subject", for_="feedback-subject", cls="form-label fw-medium"), Input(type="text", name="subject", id="feedback-subject", required=True, maxlength="180", placeholder="e.g. Exam PDF downloads without a logo", cls="form-control rounded-3"), Span("Keep it brief; you can explain the details below.", cls="form-text"), cls="support-form-field"),
+                            Label("What happened?", cls="form-label fw-medium"),
                             Textarea(name="description", placeholder="Describe the problem in your own words…", required=True, rows=5, cls="form-control rounded-3 mb-3"),
-                            Label("Severity", cls="form-label"),
+                            Label("How urgent is it?", cls="form-label fw-medium"),
                             HtmlSelect(Option("Normal", value="normal"), Option("High — core work is blocked", value="high"), Option("Critical — system unavailable", value="critical"), Option("Low — suggestion or cosmetic issue", value="low"), name="severity", cls="form-select rounded-3 mb-3"),
-                            Input("page_url", input_type="hidden", value=str(req.url.path)),
+                            Input(type="hidden", name="page_url", value=str(req.url.path)),
                             Button("Submit feedback", type="submit", variant="success", cls="btn-brand rounded-pill px-4", **{"data-loading-label": "Sending…"}),
-                            action="/app/feedback", method="post",
+                            action="/app/feedback", method="post", cls="support-feedback-form",
                         ),
-                        cls="border-0 shadow-sm rounded-4 p-4 bg-white",
+                        cls="border-0 shadow-sm rounded-4 p-4 p-lg-5 bg-white h-100 support-panel support-compose-panel",
                     ), span=12, lg=6,
                 ),
-                Col(Card(Strong("Your recent reports", cls="d-block text-dark mb-3"), history, cls="border-0 shadow-sm rounded-4 p-4 bg-white"), span=12, lg=6),
-                cls="g-3",
+                Col(Card(Div(Div(Icon("inbox", cls="support-panel-icon"), cls="support-panel-icon-wrap"), Div(H2("Your recent reports", cls="h5 fw-semibold text-dark mb-1"), P("Check the latest status or open a report to read our reply.", cls="text-muted small mb-0")), cls="support-panel-heading mb-4"), history, cls="border-0 shadow-sm rounded-4 p-4 p-lg-5 bg-white h-100 support-panel support-history-panel"), span=12, lg=6),
+                cls="g-4 align-items-stretch",
             ),
+            cls="support-page",
         )
         return _shell(content, user, "support", pop_flash(req), [("Help & feedback", None)])
 

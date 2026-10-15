@@ -223,6 +223,12 @@ def test_feedback_and_notification_pages_render(monkeypatch):
     notifications = client.get("/app/notifications")
     assert feedback.status_code == 200
     assert "Report a problem" in feedback.text
+    assert "Your recent reports" in feedback.text
+    assert 'name="subject"' in feedback.text
+    assert 'id="feedback-subject"' in feedback.text
+    assert 'type="hidden" name="page_url"' in feedback.text
+    assert "No reports yet" in feedback.text
+    assert "name=\"page_url\" value=\"/app/feedback\"" in feedback.text
     assert notifications.status_code == 200
     assert "Feedback received" in notifications.text
 
@@ -242,6 +248,8 @@ def test_school_feedback_detail_shows_public_replies(monkeypatch):
     detail = client.get("/app/feedback/ticket-1")
     assert listing.status_code == 200
     assert "/app/feedback/ticket-1" in listing.text
+    assert "Export is slow" in listing.text
+    assert "Investigating" in listing.text
     assert detail.status_code == 200
     assert "We are checking the export worker." in detail.text
     assert "What happens next" in detail.text
