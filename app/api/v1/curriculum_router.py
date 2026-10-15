@@ -177,8 +177,9 @@ async def update_scheme_week(
 ):
     """Correct imported curriculum text and/or attach local notes.
 
-    Teachers may write notes and resources. Only a school administrator may
-    change the shared topic/subtopic text or archive a week. Sending ``null``
+    Teachers may write school-local notes and resources. Only a school
+    administrator may change this school's topic/subtopic override or archive
+    a week; the seeded national curriculum row remains unchanged. Sending ``null``
     for a correction field restores the seeded value.
     """
     try:

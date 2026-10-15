@@ -7,6 +7,7 @@ features, operational changes, security fixes, and important migrations.
 
 ### Added
 
+- Added a curriculum-week Prepare lesson shortcut that opens the existing Teaching workflow with class, subject, term, and week preselected; clarified school-local curriculum editing permissions.
 - Split weekly worksheet authoring and recent worksheets into a focused Teaching
   workspace page; the main teaching page now emphasizes lesson planning and
   school coverage. Worksheet authoring starts with one question, adds rows on

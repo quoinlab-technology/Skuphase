@@ -5,7 +5,7 @@ curricula, search topics/objectives, and trigger exam generation pre-seeded
 with selected scheme weeks.
 """
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fasthtml.common import (
     A,
@@ -219,8 +219,8 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
         state_badges = []
         if w.get("has_override"):
             state_badges.append(
-                Span("Corrected", cls="badge bg-warning-subtle text-warning border border-warning-subtle fw-normal",
-                     title=f"School-corrected. Seeded text: {w.get('seeded_topic', '')}",
+                Span("School edit", cls="badge bg-warning-subtle text-warning border border-warning-subtle fw-normal",
+                     title=f"School-specific adjustment; official NERDC text is unchanged. Seeded topic: {w.get('seeded_topic', '')}",
                      style="font-size: 0.72rem;")
             )
         if w.get("is_archived"):
@@ -267,6 +267,22 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                             "Draft Exam",
                             href=f"/app/exams/new?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}&weeks={w_num}",
                             cls="btn btn-sm btn-outline-brand rounded-pill px-3 me-2",
+                        ),
+                        A(
+                            Icon("journal-text", cls="bi me-1"),
+                            "Prepare lesson",
+                            href=(
+                                "/app/teaching?"
+                                + urlencode({
+                                    "class_level": class_level,
+                                    "subject": active_subject,
+                                    "term": term,
+                                    "scheme_id": str(week_id or ""),
+                                })
+                                + "#create-lesson-plan"
+                            ),
+                            cls="btn btn-sm btn-brand text-white rounded-pill px-3",
+                            title="Create a lesson plan and note for this curriculum week",
                         ),
 
                         cls="d-flex flex-wrap align-items-center gap-2 mt-2 mt-md-0",
@@ -572,6 +588,7 @@ def _authoring_panel(detail: dict) -> Div:
         header_bits.append(
             Span("School Customization", cls="badge bg-warning-subtle text-warning border border-warning-subtle ms-2")
         )
+
     if detail.get("is_archived"):
         header_bits.append(
             Span("Archived", cls="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-2")
@@ -616,7 +633,7 @@ def _authoring_panel(detail: dict) -> Div:
                 Label("Topic (read-only)", cls="form-label small fw-semibold text-muted mb-1"),
                 Input(type="text", value=detail.get("topic", ""),
                       cls="form-control form-control-sm rounded-3", disabled=True),
-                P("Only a school administrator can correct shared curriculum text.",
+                P("Only a school administrator can edit this school's topic and subtopics.",
                   cls="form-text small text-muted mb-0"),
                 cls="col-12 mb-3",
             )
@@ -672,7 +689,14 @@ def _authoring_panel(detail: dict) -> Div:
 
     return Div(
         Div(
-            Div(*header_bits, cls="d-flex flex-wrap align-items-center"),
+            Div(
+                Div(*header_bits, cls="d-flex flex-wrap align-items-center gap-2"),
+                P(
+                    "Changes here apply only to your school's copy; the official NERDC reference remains unchanged.",
+                    cls="small text-muted mt-2 mb-0",
+                ),
+                cls="flex-grow-1",
+            ),
             Button(Icon("x-lg"), type="button",
                    hx_get=f"/ui/curriculum/week/{week_id}/close",
                    hx_target=f"#week-editor-{week_id}", hx_swap="innerHTML",

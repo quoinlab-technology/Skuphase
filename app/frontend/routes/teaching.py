@@ -329,6 +329,7 @@ def teaching_routes(app):
         class_level: str = "Primary 4",
         subject: str = "",
         term: str = "First Term",
+        scheme_id: str = "",
         mode: str = "",
         output: str = "",
     ):
@@ -338,6 +339,16 @@ def teaching_routes(app):
         user = current_user(req) or {}
         classes, subjects, weeks, class_level, subject, scope_warnings = await _scope(
             req, class_level, subject, term
+        )
+        selected_week = next(
+            (week for week in weeks if scheme_id and str(week.get("id")) == scheme_id),
+            weeks[0] if weeks else {},
+        )
+        scheme_notice = (
+            "That curriculum week is not available for the selected class, subject, and term. "
+            "Choose a week below to continue."
+            if scheme_id and (not selected_week or str(selected_week.get("id")) != scheme_id)
+            else None
         )
         scope_notice = (
             f"{requested_subject} is not available for {class_level}. The subject has been changed to {subject or 'the first available subject'}; please confirm the scope before continuing."
@@ -376,10 +387,9 @@ def teaching_routes(app):
         )
 
         week_options = [
-            (str(w.get("id")), f"Week {w.get('week_number')}: {w.get('topic', '')}", w.get("id") == (weeks[0].get("id") if weeks else None))
+            (str(w.get("id")), f"Week {w.get('week_number')}: {w.get('topic', '')}", str(w.get("id")) == str(selected_week.get("id")))
             for w in weeks
         ]
-        selected_week = weeks[0] if weeks else {}
         create_form = Form(
             Input(type="hidden", name="curriculum_id", value=selected_week.get("curriculum_id", "")),
             Div(Label("Scheme week", for_="scheme_id", cls="small fw-semibold text-muted mb-1"), Select("scheme_id", *week_options, required=True, aria_describedby="scheme-week-help", cls=select_cls, style=select_style), P("Choose a teaching week. Open the topic list below to read the complete scheme wording.", id="scheme-week-help", cls="form-text small text-muted"), Details(Summary("Read full topics for this term", cls="small text-success fw-semibold"), Ul(*[Li(f"Week {w.get('week_number')}: {w.get('topic', '')}", cls="mb-1") for w in weeks], cls="small text-muted mb-0 ps-4") if weeks else P("No weeks are available for this scope.", cls="small text-muted mb-0"), cls="mt-2"), cls="col-12"),
@@ -424,6 +434,7 @@ def teaching_routes(app):
             action="/app/teaching/create",
             method="post",
             cls="row g-3",
+            id="create-lesson-plan",
         )
         plans_view = Div(*[_plan_card(plan, user) for plan in plans[:8]], cls="d-grid gap-3") if plans else Card(
             Div(
@@ -471,6 +482,12 @@ def teaching_routes(app):
                 cls="rounded-4 border-0",
             ) if source_warnings else None,
             Alert(scope_notice, variant="info", cls="rounded-4") if scope_notice else None,
+            Alert(
+                f"Lesson planning opened for Week {selected_week.get('week_number')}: {selected_week.get('topic', 'selected curriculum topic')}.",
+                variant="success",
+                cls="rounded-4",
+            ) if scheme_id and selected_week and not scheme_notice else None,
+            Alert(scheme_notice, variant="warning", cls="rounded-4") if scheme_notice else None,
             Card(Div(H2("Choose your teaching scope", cls="fs-5 fw-bold mb-3"), scope_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
             Row(
                 Col(Card(Div(Span("SCHOOL COVERAGE RECORDS", cls="small text-muted fw-semibold"), Strong("—" if summary_warning else str(summary.get("total", 0)), cls="d-block fs-2 text-dark"), P("Tracked scheme weeks across the school", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
