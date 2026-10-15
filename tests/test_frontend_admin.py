@@ -233,6 +233,23 @@ def test_feedback_and_notification_pages_render(monkeypatch):
     assert "Feedback received" in notifications.text
 
 
+def test_notification_badge_uses_durable_unread_count(monkeypatch):
+    client = _logged_in_client(monkeypatch, _teacher_tokens())
+    calls = []
+
+    async def support_call(req, method, path, **kwargs):
+        calls.append((method, path, kwargs.get("params")))
+        return FakeResp(200, {"unread": 8, "notifications": []})
+
+    monkeypatch.setattr("app.frontend.routes.support.call_api", support_call)
+    response = client.get("/ui/notifications/badge")
+
+    assert response.status_code == 200
+    assert "8" in response.text
+    assert 'id="app-notification-badge"' in response.text
+    assert calls == [("GET", "/notifications", {"unread_only": True, "limit": 1})]
+
+
 def test_school_feedback_detail_shows_public_replies(monkeypatch):
     client = _logged_in_client(monkeypatch, _teacher_tokens())
 

@@ -409,12 +409,20 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
             ),
             A(
                 Icon("bell", cls="bi fs-5"),
-                # Audit: badge count was hardcoded "3". Pages that know the
-                # live count pass bell_count; hide the badge when zero/unknown.
                 *(
                     [Span(str(bell_count), cls="app-bell-badge")]
                     if bell_count
-                    else []
+                    else [
+                        Span(
+                            "",
+                            id="app-notification-badge",
+                            cls="app-bell-badge d-none",
+                            hx_get="/ui/notifications/badge",
+                            hx_trigger="load",
+                            hx_swap="outerHTML",
+                            aria_hidden="true",
+                        )
+                    ] if not platform else []
                 ),
                 href="/internal/platform/notifications" if platform else "/app/notifications",
                 cls="app-topbar-bell me-3",

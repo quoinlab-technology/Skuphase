@@ -22,6 +22,23 @@ def _shell(content, user, active, flash, crumbs):
 
 
 def register_routes(app):
+    @app.get("/ui/notifications/badge")
+    async def notification_badge(req: Request):
+        """Render the navbar count from durable unread notifications only."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        response = await call_api(req, "GET", "/notifications", params={"unread_only": True, "limit": 1})
+        ok, data = unwrap(response)
+        unread = int(data.get("unread", 0) or 0) if ok else 0
+        return Span(
+            str(unread) if unread else "",
+            id="app-notification-badge",
+            cls="app-bell-badge" if unread else "app-bell-badge d-none",
+            aria_label=f"{unread} unread notifications" if unread else None,
+            aria_hidden="true" if not unread else None,
+        )
+
     @app.get("/app/feedback")
     async def feedback_page(req: Request):
         guard = ensure_login(req)

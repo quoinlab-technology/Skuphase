@@ -1290,10 +1290,6 @@ def register_page_routes(app):
         failed_cnt = counts.get("failed", sum(1 for e in all_exams if _state_of(e) == "failed"))
         all_cnt = counts.get("all", data.get("total", len(all_exams)))
 
-        # Live bell badge (audit: was hardcoded "3"): stash the under-review
-        # count in the session so every AppShell page can show a real number.
-        req.session["bell_count"] = review_cnt
-
         pills = Div(
             _pill("All", "", status, all_cnt),
             _pill("Approved", "approved", status, approved_cnt),
@@ -1410,7 +1406,6 @@ def register_page_routes(app):
             active="exams",
             flash=flash,
             crumbs=[("Exams", None)],
-            bell_count=req.session.get("bell_count"),
         )
 
     @app.get("/app/exams/new")
@@ -1463,7 +1458,6 @@ def register_page_routes(app):
             user=user,
             active="exams",
             flash=flash,
-            bell_count=req.session.get("bell_count"),
             crumbs=[("Exams", "/app/exams"), ("Generate with AI", None)],
         )
 
@@ -1484,6 +1478,7 @@ def register_page_routes(app):
         user = current_user(req) or {}
         prior_board = wiz.get("curriculum_board")
         prior_scope = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+        had_prior_scope = all(wiz.get(key) for key in ("grade_level", "subject", "term"))
         configured_board = await _load_workspace_curriculum_options(
             req, user, wiz.get("grade_level") or "Primary 4"
         )
@@ -1492,7 +1487,10 @@ def register_page_routes(app):
         source_or_scope_changed = (
             bool(prior_board and prior_board != configured_board)
             or bool(posted_board and posted_board != configured_board)
-            or prior_scope != _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+            or (
+                had_prior_scope
+                and prior_scope != _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+            )
         )
         if source_or_scope_changed:
             _wizard_save(req, wiz)
@@ -1671,7 +1669,6 @@ def register_page_routes(app):
             active="exams",
             flash=flash,
             crumbs=[("Exams", "/app/exams"), (exam.get("subject", "Exam"), None)],
-            bell_count=req.session.get("bell_count"),
         )
 
     @app.get("/app/exams/{exam_id}/print")
@@ -4199,7 +4196,9 @@ def _wizard_scope(request: Request) -> Div:
           if (!grade || !subject || grade.dataset.subjectLoaderBound) return;
           grade.dataset.subjectLoaderBound = 'true';
           grade.addEventListener('change', async () => {
+            const spinner = document.getElementById('curriculum-spinner');
             subject.disabled = true;
+            spinner?.classList.remove('d-none');
             try {
               const params = new URLSearchParams({class_level: grade.value, board: board?.value || 'NERDC'});
               const response = await fetch(`/ui/exams/curriculum-subjects?${params}`, {credentials:'same-origin'});
@@ -4213,6 +4212,7 @@ def _wizard_scope(request: Request) -> Div:
               // Retain the existing options if the catalogue is temporarily unavailable.
             } finally {
               subject.disabled = false;
+              document.getElementById('curriculum-spinner')?.classList.add('d-none');
             }
           });
           };
@@ -4241,8 +4241,19 @@ def _wizard_scope(request: Request) -> Div:
                       style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;"),
                 style="margin-bottom:1.15rem;",
             ),
-            # Subject + Grade / Class + Term responsive grid
+            # Grade / Class comes first because it determines available subjects.
             Div(
+                Div(
+                    Label("Grade / Class", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
+                    HtmlSelect(
+                        *[Option(g, value=g, selected=(default_grade == g)) for g in grade_names],
+                        name="grade_level",
+                        id="wizard-grade-select",
+                        cls="form-select",
+                        style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;",
+                    ),
+                    cls="col-12 col-md-4 mb-2 mb-md-0",
+                ),
                 Div(
                     Label("Subject", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
                     HtmlSelect(
@@ -4250,22 +4261,6 @@ def _wizard_scope(request: Request) -> Div:
                           for label, val in SUBJECT_OPTIONS],
                         name="subject",
                         id="wizard-subject-select",
-                        cls="form-select",
-                        style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;",
-                        hx_get="/ui/exams/curriculum-preview",
-                        hx_trigger="change",
-                        hx_target="#curriculum-status-container",
-                        hx_include="[name='subject'], [name='grade_level'], [name='term'], [name='curriculum_board']",
-                        hx_indicator="#curriculum-spinner",
-                    ),
-                    cls="col-12 col-md-4 mb-2 mb-md-0",
-                ),
-                Div(
-                    Label("Grade / Class", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
-                    HtmlSelect(
-                        *[Option(g, value=g, selected=(default_grade == g)) for g in grade_names],
-                        name="grade_level",
-                        id="wizard-grade-select",
                         cls="form-select",
                         style="background:#EDF2EC; border:none; border-radius:0.5rem; font-size:0.88rem; padding:0.65rem 1rem; color:#1e293b;",
                         hx_get="/ui/exams/curriculum-preview",
@@ -4395,6 +4390,7 @@ def _wizard_sources(request: Request) -> Div:
     subject = wiz.get("subject", "Mathematics")
     grade = wiz.get("grade_level", "Primary 4")
     term = wiz.get("term", "First Term")
+    curriculum_board = wiz.get("curriculum_board") or "NERDC"
 
     cached_weeks = getattr(request.state, "wizard_curriculum_weeks", None)
     weeks = cached_weeks if isinstance(cached_weeks, list) and cached_weeks else _get_curriculum_weeks_sync(wiz)
@@ -7380,7 +7376,6 @@ def register_manual_routes(app):
             user=user,
             active="exams",
             flash=flash,
-            bell_count=req.session.get("bell_count"),
             crumbs=[("Exams", "/app/exams"), ("Manual", None)],
         )
 

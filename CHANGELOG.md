@@ -7,6 +7,11 @@ features, operational changes, security fixes, and important migrations.
 
 ### Added
 
+- Fixed the notification badge to count durable unread notifications instead of
+  exams awaiting review; the badge now stays hidden when the inbox is empty.
+- Fixed the AI exam wizard's initial Step 1 → Step 2 transition, made class
+  selection refresh its dependent subject list without a duplicate curriculum
+  request, and placed Grade / Class before Subject.
 - Added configurable document branding: school administrators can set a print
   display name for the school, while personal-workspace owners can opt in to a
   custom document name and Supabase-hosted logo. Personal documents use the

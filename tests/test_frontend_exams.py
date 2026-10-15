@@ -254,6 +254,41 @@ def test_modern_wizard_preserves_scope_title_and_target_marks(client, logged_in)
     assert "60 marks" in r.text
 
 
+def test_wizard_step1_posts_to_curriculum_step_without_server_error(client, logged_in):
+    logged_in(FakeResp(404, {"detail": "no curriculum settings yet"}))
+
+    response = client.post(
+        "/app/exams/new?step=2",
+        data={
+            "exam_title": "SSS 3 Mathematics Examination",
+            "grade_level": "SSS 3",
+            "subject": "Mathematics",
+            "term": "First Term",
+            "total_marks": "100",
+            "difficulty_preset": "balanced",
+            "bloom_levels": ["Remember", "Understand", "Apply", "Analyse"],
+        },
+        headers={"HX-Request": "true", "HX-Target": "wizard-container"},
+    )
+
+    assert response.status_code == 200
+    assert 'id="wizard-step-2"' in response.text
+    assert "NERDC Curriculum Scope: SSS 3" in response.text
+
+
+def test_wizard_scope_places_class_before_subject(client, logged_in):
+    logged_in(FakeResp(404, {"detail": "no curriculum settings yet"}))
+
+    response = client.get("/app/exams/new?step=1")
+
+    assert response.status_code == 200
+    assert response.text.index('id="wizard-grade-select"') < response.text.index('id="wizard-subject-select"')
+    assert response.text.index('id="wizard-subject-select"') < response.text.index('id="wizard-term-select"')
+    grade_tag = response.text.split('id="wizard-grade-select"', 1)[0].rsplit("<select", 1)[-1]
+    grade_tag = grade_tag.split(">", 1)[0]
+    assert "hx-get" not in grade_tag
+
+
 def test_generation_recovers_sections_when_session_state_is_missing(client, logged_in):
     """The final confirm form must survive a dropped/oversized session cookie."""
     calls = logged_in(_gen_ok())
