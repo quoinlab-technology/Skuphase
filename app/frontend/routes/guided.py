@@ -8,7 +8,7 @@ query string for future progressive-disclosure work.
 
 from urllib.parse import quote
 
-from fasthtml.common import A, Div, Form, H1, H2, Label, P, Span, Strong, Title
+from fasthtml.common import A, Div, Form, H1, H2, Input, Label, P, Span, Strong, Title
 from starlette.requests import Request
 
 from faststrap import Button, Card, Col, Container, Icon, Row, Select
@@ -16,6 +16,7 @@ from faststrap import Button, Card, Col, Container, Icon, Row, Select
 from app.frontend.api import call_api, unwrap
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.frontend.curriculum_context import workspace_curriculum_board
 from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
@@ -45,25 +46,34 @@ def _terms() -> list[tuple[str, str]]:
 
 
 async def _scope_options(req: Request, class_level: str, subject: str):
-    classes_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": "NERDC"})
+    user = req.session.get("user") or {}
+    board = await workspace_curriculum_board(req, user)
+    classes_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": board})
     ok_classes, classes_data = unwrap(classes_resp)
     classes = classes_data.get("classes", []) if ok_classes and isinstance(classes_data, dict) else []
-    classes = classes or list(CLASS_LEVELS)
-    if class_level not in classes:
+    if not classes and board.casefold() == "nerdc":
+        classes = list(CLASS_LEVELS)
+    if classes and class_level not in classes:
         class_level = classes[0]
+    elif not classes:
+        class_level = ""
 
-    subjects_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level, "board": "NERDC"})
+    subjects_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level, "board": board})
     ok_subjects, subjects_data = unwrap(subjects_resp)
     subjects = subjects_data.get("subjects", []) if ok_subjects and isinstance(subjects_data, dict) else []
     subject_names = [item.get("subject_name", "") for item in subjects if item.get("subject_name")]
-    subject_names = subject_names or list(ALL_SUBJECTS)
-    if subject not in subject_names:
+    if not subject_names and board.casefold() == "nerdc":
+        subject_names = list(ALL_SUBJECTS)
+    if subject_names and subject not in subject_names:
         subject = subject_names[0]
-    return classes, subject_names, class_level, subject
+    elif not subject_names:
+        subject = ""
+    return classes, subject_names, class_level, subject, board
 
 
-def _context_form(classes: list[str], subjects: list[str], class_level: str, subject: str, term: str) -> Form:
+def _context_form(classes: list[str], subjects: list[str], class_level: str, subject: str, term: str, board: str) -> Form:
     return Form(
+        Input(name="board", type="hidden", value=board),
         Div(
             Label("Class", cls="small fw-semibold text-muted mb-1"),
             Select("class_level", *[(item, item, item == class_level) for item in classes], cls="form-select border-0 rounded-3", style="background:#F1F4F1;"),
@@ -86,8 +96,8 @@ def _context_form(classes: list[str], subjects: list[str], class_level: str, sub
     )
 
 
-def _output_href(output: str, class_level: str, subject: str, term: str) -> str:
-    context = f"class_level={quote(class_level)}&subject={quote(subject)}&term={quote(term)}"
+def _output_href(output: str, class_level: str, subject: str, term: str, board: str = "NERDC") -> str:
+    context = f"class_level={quote(class_level)}&subject={quote(subject)}&term={quote(term)}&board={quote(board)}"
     if output == "lesson":
         return f"/app/teaching?mode=guided&output=lesson&{context}"
     if output == "exercise":
@@ -111,7 +121,7 @@ def guided_routes(app):
             return guard
         user = current_user(req) or {}
         name = (user.get("full_name") or user.get("email") or "teacher").split()[0]
-        classes, subjects, class_level, subject = await _scope_options(req, class_level, subject)
+        classes, subjects, class_level, subject, board = await _scope_options(req, class_level, subject)
         output_labels = {"lesson": "Lesson note", "exercise": "Classwork", "exam": "Examination", "review": "Review and export"}
         output_label = output_labels.get(output)
 
@@ -119,17 +129,17 @@ def guided_routes(app):
             Div(
                 H2("1. Set your teaching context", cls="fs-5 fw-bold mb-1"),
                 P("SkuPhase will keep this class, subject, and term with the work you create.", cls="small text-muted mb-3"),
-                _context_form(classes, subjects, class_level, subject, term),
+                _context_form(classes, subjects, class_level, subject, term, board),
                 cls="p-4",
             ),
             cls="border-0 shadow-sm rounded-4 mb-4",
         )
 
         output_choices = Row(
-            Col(_task_card(icon="journal-bookmark", title="Prepare a lesson", description="Draft a curriculum-grounded lesson note with activities and resources.", href=_output_href("lesson", class_level, subject, term)), span=12, md=6, lg=3),
-            Col(_task_card(icon="file-earmark-plus", title="Create classwork", description="Turn the selected context into a practical exercise or worksheet.", href=_output_href("exercise", class_level, subject, term), tone="primary"), span=12, md=6, lg=3),
-            Col(_task_card(icon="lightning-charge", title="Create an exam", description="Generate curriculum-aligned questions and review them before export.", href=_output_href("exam", class_level, subject, term)), span=12, md=6, lg=3),
-            Col(_task_card(icon="check2-square", title="Review and export", description="Return to drafts and submitted work that needs your attention.", href=_output_href("review", class_level, subject, term), tone="secondary"), span=12, md=6, lg=3),
+            Col(_task_card(icon="journal-bookmark", title="Prepare a lesson", description="Draft a curriculum-grounded lesson note with activities and resources.", href=_output_href("lesson", class_level, subject, term, board)), span=12, md=6, lg=3),
+            Col(_task_card(icon="file-earmark-plus", title="Create classwork", description="Turn the selected context into a practical exercise or worksheet.", href=_output_href("exercise", class_level, subject, term, board), tone="primary"), span=12, md=6, lg=3),
+            Col(_task_card(icon="lightning-charge", title="Create an exam", description="Generate curriculum-aligned questions and review them before export.", href=_output_href("exam", class_level, subject, term, board)), span=12, md=6, lg=3),
+            Col(_task_card(icon="check2-square", title="Review and export", description="Return to drafts and submitted work that needs your attention.", href=_output_href("review", class_level, subject, term, board), tone="secondary"), span=12, md=6, lg=3),
             g=3,
             cls="mb-4",
         )

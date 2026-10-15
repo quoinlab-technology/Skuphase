@@ -43,6 +43,10 @@ class SchoolSettings(BaseModel):
     logo_url = Column(String(500))
     # Exact Supabase object key, used for safe replacement and removal.
     logo_storage_path = Column(String(500))
+    # Optional name printed on generated documents; does not rename the account/school.
+    document_display_name = Column(String(150))
+    # Personal workspaces use registered name by default until their owner opts in.
+    personal_document_branding_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     primary_color = Column(String(7))  # Hex color
     secondary_color = Column(String(7))
     
@@ -53,6 +57,9 @@ class SchoolSettings(BaseModel):
     # Exam settings
     default_total_marks = Column(String(3), default="100")
     exam_format = Column(String(50), default="nigerian")  # Nigerian WAEC format
+    # One curriculum source per workspace. Curriculum rows are per class and
+    # subject; this selects their shared source/board (for example NERDC).
+    curriculum_board = Column(String(50), nullable=False, default="NERDC", server_default="NERDC")
     document_style = Column(JSON, nullable=False, default=dict, server_default="{}")
     
     # Relationships

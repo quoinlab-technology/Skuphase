@@ -75,11 +75,12 @@ def test_curriculum_authenticated_renders(monkeypatch):
         return FakeResp(404, {})
 
     monkeypatch.setattr("app.frontend.routes.curriculum.call_api", fake_call)
+    monkeypatch.setattr("app.frontend.curriculum_context.call_api", fake_call)
 
     r = client.get("/app/curriculum")
     assert r.status_code == 200
     assert "<title>Curriculum — SkuPhase</title>" in r.text
-    assert "National Curriculum" in r.text
+    assert "Curriculum &amp; Scheme of Work" in r.text
     assert "Primary 4" in r.text
     assert "Place Values" in r.text
 
@@ -97,11 +98,73 @@ def test_curriculum_search(monkeypatch):
         return FakeResp(404, {})
 
     monkeypatch.setattr("app.frontend.routes.curriculum.call_api", fake_call)
+    monkeypatch.setattr("app.frontend.curriculum_context.call_api", fake_call)
 
     r = client.get("/app/curriculum?q=Fractions")
     assert r.status_code == 200
     assert "Search results for" in r.text
     assert "Fractions and Decimals" in r.text
+
+
+def test_school_admin_can_choose_workspace_curriculum(monkeypatch):
+    tokens = _teacher_tokens()
+    tokens["user"]["role"] = "school_admin"
+    client = _logged_in_client(monkeypatch, tokens)
+
+    async def fake_call(req, method, path, **kwargs):
+        if path == "/auth/me":
+            return FakeResp(200, tokens["user"])
+        if path == "/schools/s1":
+            return FakeResp(200, {"name": "Greenfield Academy", "state": "Lagos"})
+        if path == "/schools/s1/settings":
+            return FakeResp(200, {"curriculum_board": "Cambridge"})
+        if path == "/curriculum/boards":
+            return FakeResp(200, {"boards": ["Cambridge", "NERDC"]})
+        if path == "/auth/me/preferences":
+            return FakeResp(200, {"preferences": {}})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.settings.call_api", fake_call)
+    response = client.get("/app/settings?tab=policy")
+
+    assert response.status_code == 200
+    assert "Workspace curriculum" in response.text
+    assert 'value="Cambridge" selected' in response.text
+    assert 'value="NERDC"' in response.text
+
+
+def test_individual_teacher_gets_personal_curriculum_and_document_settings(monkeypatch):
+    tokens = _teacher_tokens()
+    tokens["user"]["account_type"] = "individual_teacher"
+    client = _logged_in_client(monkeypatch, tokens)
+
+    async def fake_call(req, method, path, **kwargs):
+        if path == "/auth/me":
+            return FakeResp(200, tokens["user"])
+        if path == "/schools/s1":
+            return FakeResp(200, {"name": "Personal Workspace", "state": "Lagos"})
+        if path == "/schools/s1/settings":
+            return FakeResp(200, {"curriculum_board": "Cambridge", "document_display_name": "Tutor Emeka", "personal_document_branding_enabled": False})
+        if path == "/curriculum/boards":
+            return FakeResp(200, {"boards": ["Cambridge", "NERDC"]})
+        if path == "/auth/me/preferences":
+            return FakeResp(200, {"preferences": {}})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr("app.frontend.routes.settings.call_api", fake_call)
+    response = client.get("/app/settings")
+
+    assert response.status_code == 200
+    assert "Personal Settings" in response.text
+    assert "Save Curriculum Choice" in response.text
+    assert "School Profile" not in response.text
+    assert "Current Academic Year" not in response.text
+    assert "Document branding" in response.text
+
+    branding_response = client.get("/app/settings?tab=documents")
+    assert branding_response.status_code == 200
+    assert "Use custom name and logo on my documents" in branding_response.text
+    assert 'value="Tutor Emeka"' in branding_response.text
 
 
 def test_curriculum_htmx_partial_returns_content(monkeypatch):
@@ -119,6 +182,7 @@ def test_curriculum_htmx_partial_returns_content(monkeypatch):
         return FakeResp(404, {})
 
     monkeypatch.setattr("app.frontend.routes.curriculum.call_api", fake_call)
+    monkeypatch.setattr("app.frontend.curriculum_context.call_api", fake_call)
 
     r = client.get("/ui/curriculum/content?class_level=Primary%204&subject=Mathematics&term=first")
     assert r.status_code == 200

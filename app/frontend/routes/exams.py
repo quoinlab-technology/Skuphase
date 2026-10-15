@@ -92,6 +92,7 @@ from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 from app.frontend.components.feedback import Flash, pop_flash, set_flash, show_toast
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.frontend.curriculum_context import workspace_curriculum_board
 from app.services.svg_safety import sanitize_svg
 
 logger = logging.getLogger("skuphase.frontend.exams")
@@ -1440,9 +1441,14 @@ def register_page_routes(app):
             # never block the exam wizard.
             req.session["coverage_warning"] = ""
         wiz = _wizard_state(req)
+        configured_board = await _load_workspace_curriculum_options(
+            req, user, req.query_params.get("class_level") or req.query_params.get("grade_level") or wiz.get("grade_level") or "Primary 4"
+        )
+        _reconcile_wizard_curriculum_scope(req, wiz, configured_board)
+        _wizard_save(req, wiz)
         if step == "2":
             try:
-                weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"))
+                weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"), configured_board)
                 if weeks:
                     req.state.wizard_curriculum_weeks = weeks
                     if not wiz.get("selected_weeks"):
@@ -1473,12 +1479,43 @@ def register_page_routes(app):
         # Parse step parameter from query or default
         next_step = req.query_params.get("step") or step or "2"
 
+        # A curriculum setting may have changed in another tab while this
+        # wizard was open. Never reinterpret week numbers against a new board.
+        user = current_user(req) or {}
+        prior_board = wiz.get("curriculum_board")
+        prior_scope = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+        configured_board = await _load_workspace_curriculum_options(
+            req, user, wiz.get("grade_level") or "Primary 4"
+        )
+        posted_board = (form.get("curriculum_board") or "").strip()
+        _reconcile_wizard_curriculum_scope(req, wiz, configured_board)
+        source_or_scope_changed = (
+            bool(prior_board and prior_board != configured_board)
+            or bool(posted_board and posted_board != configured_board)
+            or prior_scope != _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
+        )
+        if source_or_scope_changed:
+            _wizard_save(req, wiz)
+            set_flash(
+                req.session,
+                "warning",
+                "The workspace curriculum or available class scope changed. Review the exam scope and select curriculum weeks again.",
+            )
+            if req.headers.get("hx-request") == "true":
+                if req.headers.get("hx-target") == "wizard-panel":
+                    return _wizard_panel("1", req)
+                return _render_wizard_full("1", req)
+            return RedirectResponse("/app/exams/new?step=1", status_code=303)
+
         if next_step == "2":
             previous_context = _wizard_scope_key(wiz.get("grade_level"), wiz.get("subject"), wiz.get("term"))
             previous_title = wiz.get("exam_title") or ""
             wiz["grade_level"] = (form.get("grade_level") or wiz.get("grade_level") or "Primary 4").strip()
             wiz["subject"] = (form.get("subject") or wiz.get("subject") or "Mathematics").strip()
             wiz["term"] = (form.get("term") or wiz.get("term") or "First Term").strip()
+            # The posted value is display context only. Generation re-reads the
+            # authoritative workspace value from school settings.
+            wiz["curriculum_board"] = wiz.get("curriculum_board") or "NERDC"
             current_context = _wizard_scope_key(wiz["grade_level"], wiz["subject"], wiz["term"])
             if previous_context and previous_context != current_context:
                 # Curriculum and selected weeks belong to the old scope.
@@ -1568,6 +1605,18 @@ def register_page_routes(app):
             target_step = "4"
         else:
             target_step = next_step
+
+        if target_step == "2":
+            board = await _load_workspace_curriculum_options(req, user, wiz.get("grade_level") or "Primary 4")
+            _reconcile_wizard_curriculum_scope(req, wiz, board)
+            try:
+                weeks = await _get_curriculum_weeks(req, wiz.get("grade_level", "Primary 4"), wiz.get("subject", "Mathematics"), wiz.get("term", "First Term"), board)
+                req.state.wizard_curriculum_weeks = weeks
+                if weeks and not wiz.get("selected_weeks"):
+                    wiz["selected_weeks"] = [str(week["week_number"]) for week in weeks]
+                _wizard_save(req, wiz)
+            except Exception:
+                pass
 
         if req.headers.get("hx-request") == "true":
             if req.headers.get("hx-target") == "wizard-panel":
@@ -3914,10 +3963,11 @@ def _load_curriculum_cache() -> dict[tuple[str, str, str], list[dict]]:
     return _CURRICULUM_CACHE
 
 
-async def _get_curriculum_weeks(request: Request, class_level: str, subject: str, term: str) -> list[dict]:
+async def _get_curriculum_weeks(request: Request, class_level: str, subject: str, term: str, board: str | None = None) -> list[dict]:
     """Fetch weekly breakdown from curriculum API, or fall back to standard module scheme."""
+    board = board or _wizard_state(request).get("curriculum_board") or await workspace_curriculum_board(request)
     try:
-        resp = await call_api(request, "GET", "/curriculum/weeks", params={"class_level": class_level, "subject": subject, "term": term})
+        resp = await call_api(request, "GET", "/curriculum/weeks", params={"class_level": class_level, "subject": subject, "term": term, "board": board})
         ok, data = unwrap(resp)
         if ok and isinstance(data, dict):
             raw_weeks = data.get("weeks") or []
@@ -3938,7 +3988,63 @@ async def _get_curriculum_weeks(request: Request, class_level: str, subject: str
     except Exception:
         pass
 
-    return _get_curriculum_weeks_sync({"subject": subject, "grade_level": class_level, "term": term})
+    return _get_curriculum_weeks_sync({"subject": subject, "grade_level": class_level, "term": term, "curriculum_board": board})
+
+
+async def _load_workspace_curriculum_options(request: Request, user: dict, class_level: str) -> str:
+    """Load class/subject options from the configured source for this render."""
+    board = await workspace_curriculum_board(request, user)
+    classes_resp = await call_api(request, "GET", "/curriculum/classes", params={"board": board})
+    classes_ok, classes_data = unwrap(classes_resp)
+    classes = classes_data.get("classes", []) if classes_ok and isinstance(classes_data, dict) else []
+    if not classes:
+        classes = GRADE_LEVELS if board.casefold() == "nerdc" else []
+    if class_level not in classes and classes:
+        class_level = classes[0]
+    subjects_resp = await call_api(
+        request, "GET", "/curriculum/subjects",
+        params={"class_level": class_level, "board": board},
+    ) if class_level else None
+    subjects_ok, subjects_data = unwrap(subjects_resp) if subjects_resp is not None else (False, {})
+    subjects = [
+        item.get("subject_name") for item in (subjects_data.get("subjects", []) if isinstance(subjects_data, dict) else [])
+        if isinstance(item, dict) and item.get("subject_name")
+    ] if subjects_ok else []
+    if not subjects and board.casefold() == "nerdc":
+        subjects = ALL_SUBJECTS
+    request.state.workspace_curriculum_board = board
+    request.state.curriculum_grade_options = classes
+    request.state.curriculum_subject_options = subjects
+    return board
+
+
+def _reconcile_wizard_curriculum_scope(request: Request, wizard: dict, board: str) -> None:
+    """Keep a resumed wizard on a valid class/subject in its workspace source."""
+    previous_scope = _wizard_scope_key(
+        wizard.get("grade_level"), wizard.get("subject"), wizard.get("term")
+    )
+    board_changed = bool(wizard.get("curriculum_board") and wizard["curriculum_board"] != board)
+    classes = getattr(request.state, "curriculum_grade_options", []) or []
+    subjects = getattr(request.state, "curriculum_subject_options", []) or []
+
+    if classes and wizard.get("grade_level") not in classes:
+        wizard["grade_level"] = classes[0]
+    elif not classes and board.casefold() != "nerdc":
+        wizard["grade_level"] = ""
+    if subjects and wizard.get("subject") not in subjects:
+        wizard["subject"] = subjects[0]
+    elif not subjects and board.casefold() != "nerdc":
+        wizard["subject"] = ""
+
+    current_scope = _wizard_scope_key(
+        wizard.get("grade_level"), wizard.get("subject"), wizard.get("term")
+    )
+    if board_changed or (previous_scope and previous_scope != current_scope):
+        wizard["curriculum_weeks"] = []
+        wizard["selected_weeks"] = []
+        wizard.pop("selected_documents", None)
+        wizard.pop("curriculum_scope", None)
+    wizard["curriculum_board"] = board
 
 
 def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
@@ -3954,6 +4060,11 @@ def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
     subject = wiz.get("subject", "Mathematics")
     grade = wiz.get("grade_level", "Primary 4")
     term = wiz.get("term", "First Term")
+    curriculum_board = wiz.get("curriculum_board") or "NERDC"
+    if (wiz.get("curriculum_board") or "NERDC").casefold() != "nerdc":
+        # The bundled offline dataset is specifically NERDC. Never present it
+        # as though it belonged to another workspace curriculum source.
+        return []
 
     cache = _load_curriculum_cache()
     key = (grade.strip().lower(), subject.strip().lower(), term.strip().lower())
@@ -3978,16 +4089,21 @@ def _get_curriculum_weeks_sync(wiz: dict) -> list[dict]:
 def _wizard_scope(request: Request) -> Div:
     qp = request.query_params
     wiz = _wizard_state(request)
-    default_grade = qp.get("grade") or qp.get("grade_level") or qp.get("class_level") or wiz.get("grade_level") or "Primary 4"
-    default_subject = qp.get("subject") or wiz.get("subject") or "Mathematics"
+    subject_names = getattr(request.state, "curriculum_subject_options", None) or []
+    grade_names = getattr(request.state, "curriculum_grade_options", None) or []
+    requested_grade = qp.get("grade") or qp.get("grade_level") or qp.get("class_level") or wiz.get("grade_level")
+    default_grade = requested_grade if requested_grade in grade_names else (grade_names[0] if grade_names else "")
+    requested_subject = qp.get("subject") or wiz.get("subject")
+    default_subject = requested_subject if requested_subject in subject_names else (subject_names[0] if subject_names else "")
     default_term = qp.get("term") or wiz.get("term") or "First Term"
+    default_board = wiz.get("curriculum_board") or "NERDC"
     default_total_marks = wiz.get("total_marks") or "100"
     stored_title = (wiz.get("exam_title") or "").strip()
     # Leave the title genuinely optional. A generated title used to look
     # convenient, but it made stale class/subject values appear authoritative.
     default_title = stored_title
 
-    SUBJECT_OPTIONS = [(label, label) for label in ALL_SUBJECTS]
+    SUBJECT_OPTIONS = [(label, label) for label in subject_names]
 
     current_preset = wiz.get("difficulty_preset") or "balanced"
 
@@ -4074,6 +4190,37 @@ def _wizard_scope(request: Request) -> Div:
     ) if coverage_warning else None
 
     return Div(
+        Script("""
+        (() => {
+          const init = () => {
+          const grade = document.getElementById('wizard-grade-select');
+          const subject = document.getElementById('wizard-subject-select');
+          const board = document.querySelector('[name=curriculum_board]');
+          if (!grade || !subject || grade.dataset.subjectLoaderBound) return;
+          grade.dataset.subjectLoaderBound = 'true';
+          grade.addEventListener('change', async () => {
+            subject.disabled = true;
+            try {
+              const params = new URLSearchParams({class_level: grade.value, board: board?.value || 'NERDC'});
+              const response = await fetch(`/ui/exams/curriculum-subjects?${params}`, {credentials:'same-origin'});
+              if (!response.ok) return;
+              const data = await response.json();
+              const oldValue = subject.value;
+              subject.replaceChildren(...(data.subjects || []).map(name => new Option(name, name)));
+              if ((data.subjects || []).includes(oldValue)) subject.value = oldValue;
+              subject.dispatchEvent(new Event('change', {bubbles:true}));
+            } catch (_) {
+              // Retain the existing options if the catalogue is temporarily unavailable.
+            } finally {
+              subject.disabled = false;
+            }
+          });
+          };
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true});
+          else init();
+          document.addEventListener('htmx:afterSettle', init);
+        })();
+        """),
         guided_context,
         coverage_advisory,
         # Card header
@@ -4084,6 +4231,7 @@ def _wizard_scope(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="curriculum_board", type="hidden", value=default_board),
             # Exam Title
             Div(
                 Label("Exam Title", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
@@ -4107,7 +4255,7 @@ def _wizard_scope(request: Request) -> Div:
                         hx_get="/ui/exams/curriculum-preview",
                         hx_trigger="change",
                         hx_target="#curriculum-status-container",
-                        hx_include="[name='subject'], [name='grade_level'], [name='term']",
+                        hx_include="[name='subject'], [name='grade_level'], [name='term'], [name='curriculum_board']",
                         hx_indicator="#curriculum-spinner",
                     ),
                     cls="col-12 col-md-4 mb-2 mb-md-0",
@@ -4115,7 +4263,7 @@ def _wizard_scope(request: Request) -> Div:
                 Div(
                     Label("Grade / Class", style="font-size:0.84rem; font-weight:500; color:#334155; margin-bottom:0.45rem; display:block;"),
                     HtmlSelect(
-                        *[Option(g, value=g, selected=(default_grade == g)) for g in GRADE_LEVELS],
+                        *[Option(g, value=g, selected=(default_grade == g)) for g in grade_names],
                         name="grade_level",
                         id="wizard-grade-select",
                         cls="form-select",
@@ -4123,7 +4271,7 @@ def _wizard_scope(request: Request) -> Div:
                         hx_get="/ui/exams/curriculum-preview",
                         hx_trigger="change",
                         hx_target="#curriculum-status-container",
-                        hx_include="[name='subject'], [name='grade_level'], [name='term']",
+                        hx_include="[name='subject'], [name='grade_level'], [name='term'], [name='curriculum_board']",
                         hx_indicator="#curriculum-spinner",
                     ),
                     cls="col-12 col-md-4 mb-2 mb-md-0",
@@ -4139,7 +4287,7 @@ def _wizard_scope(request: Request) -> Div:
                         hx_get="/ui/exams/curriculum-preview",
                         hx_trigger="change",
                         hx_target="#curriculum-status-container",
-                        hx_include="[name='subject'], [name='grade_level'], [name='term']",
+                        hx_include="[name='subject'], [name='grade_level'], [name='term'], [name='curriculum_board']",
                         hx_indicator="#curriculum-spinner",
                     ),
                     cls="col-12 col-md-4 mb-2 mb-md-0",
@@ -4391,10 +4539,10 @@ def _wizard_sources(request: Request) -> Div:
             Span("Curriculum Coverage", style="font-weight:700; font-size:1.05rem; color:#0f172a;"),
             style="display:flex; align-items:center; margin-bottom:0.35rem;",
         ),
-        # NERDC curriculum scope badge
+        # Workspace curriculum scope badge
         Div(
             Icon("mortarboard", cls="bi me-2", style="font-size:0.85rem; color:#00412E;"),
-            Span(f"NERDC Curriculum Scope: {grade} · {subject} ({term})", style="font-size:0.82rem; color:#00412E; font-weight:600;"),
+            Span(f"{curriculum_board} Curriculum Scope: {grade} · {subject} ({term})", style="font-size:0.82rem; color:#00412E; font-weight:600;"),
             style="display:flex; align-items:center; margin-bottom:1rem; padding:0.4rem 0.85rem; background:#EDF2EC; border-radius:999px; width:fit-content;",
         ),
         Div(
@@ -4419,6 +4567,7 @@ def _wizard_sources(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="curriculum_board", type="hidden", value=str(wiz.get("curriculum_board") or "NERDC")),
             Input(name="subject", type="hidden", value=str(wiz.get("subject") or "")),
             Input(name="grade_level", type="hidden", value=str(wiz.get("grade_level") or "")),
             Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
@@ -4749,6 +4898,7 @@ def _wizard_structure(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="curriculum_board", type="hidden", value=str(wiz.get("curriculum_board") or "NERDC")),
             Input(name="subject", type="hidden", value=str(wiz.get("subject") or "")),
             Input(name="grade_level", type="hidden", value=str(wiz.get("grade_level") or "")),
             Input(name="term", type="hidden", value=str(wiz.get("term") or "")),
@@ -4905,6 +5055,7 @@ def _wizard_confirm(request: Request) -> Div:
         ),
         Form(
             _csrf_input(request),
+            Input(name="curriculum_board", type="hidden", value=str(wiz.get("curriculum_board") or "NERDC")),
             # Key-Value summary list
             Div(
                 _review_row("Title", exam_title),
@@ -5327,6 +5478,7 @@ def register_action_routes(app):
             "subject": (form.get("subject") or wiz.get("subject") or "").strip(),
             "grade_level": (form.get("grade_level") or wiz.get("grade_level") or "").strip(),
             "term": form.get("term") or wiz.get("term") or None,
+            "curriculum_board": wiz.get("curriculum_board") or "NERDC",
             "selected_weeks": weeks_list or None,
             "focus_topics": (form.get("focus_topics") or wiz.get("focus_topics") or "").strip() or None,
             "sections": sections,
@@ -5431,6 +5583,26 @@ def register_action_routes(app):
         # Reset poll count when done
         return _render_generated_screen(exam_id, exam)
 
+    @app.get("/ui/exams/curriculum-subjects")
+    async def exam_curriculum_subjects(req: Request):
+        """Return subjects for the selected class under the configured source."""
+        guard = ensure_login(req)
+        if guard:
+            return JSONResponse({"subjects": []}, status_code=401)
+        user = current_user(req) or {}
+        board = await workspace_curriculum_board(req, user)
+        class_level = (req.query_params.get("class_level") or "").strip()
+        response = await call_api(
+            req, "GET", "/curriculum/subjects",
+            params={"class_level": class_level, "board": board},
+        )
+        ok, data = unwrap(response)
+        subjects = [
+            item.get("subject_name") for item in (data.get("subjects", []) if isinstance(data, dict) else [])
+            if isinstance(item, dict) and item.get("subject_name")
+        ] if ok else []
+        return JSONResponse({"subjects": subjects, "curriculum_board": board})
+
     @app.get("/ui/exams/curriculum-preview")
     async def exam_curriculum_preview(req: Request):
         """HTMX endpoint to preload curriculum weeks when subject, grade, or term changes."""
@@ -5453,11 +5625,15 @@ def register_action_routes(app):
                 style="background:#FEF3C7; min-height:2.2rem; width:fit-content; max-width:100%;",
             )
 
-        weeks = await _get_curriculum_weeks(req, grade, subject, term)
+        user = current_user(req) or {}
+        board = await workspace_curriculum_board(req, user)
+        weeks = await _get_curriculum_weeks(req, grade, subject, term, board)
         wiz = _wizard_state(req)
         wiz["subject"] = subject
         wiz["grade_level"] = grade
         wiz["term"] = term
+        wiz["curriculum_board"] = board
+        _wizard_save(req, wiz)
 
         if weeks:
             wiz["selected_weeks"] = [str(w["week_number"]) for w in weeks]
@@ -5994,7 +6170,7 @@ def _build_diagram_modal() -> Div:
         aria_hidden="true",
     )
 
-def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
+def _manual_exam_composer(req: Request, subject_options: list[str], grade_options: list[str] | None = None, board: str = "NERDC") -> Div:
     from app.services.diagram_catalog import get_all_diagrams
     from app.services.formula_catalog import get_all_formulas
     from app.services.library_service import LibraryService
@@ -6011,6 +6187,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         catalog_diagrams.append(d_dict)
 
     catalog_formulas = [f.model_dump() for f in get_all_formulas()]
+    grade_options = grade_options or GRADE_LEVELS
     diag_json = json.dumps(catalog_diagrams, ensure_ascii=True)
     form_json = json.dumps(catalog_formulas, ensure_ascii=True)
 
@@ -6937,7 +7114,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
                 Label("Grade", cls="form-label text-muted small fw-medium mb-1"),
                 HtmlSelect(
                     Option("Grade", value=""),
-                    *[Option(x, value=x) for x in GRADE_LEVELS],
+                    *[Option(x, value=x) for x in grade_options],
                     name="grade_level",
                     id="manual-grade",
                     required=True,
@@ -7046,6 +7223,36 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
     )
 
     return Div(
+        Script("""
+        (() => {
+          const init = () => {
+          const grade = document.getElementById('manual-grade');
+          const subject = document.getElementById('manual-subject');
+          const board = document.querySelector('#manual-exam-form [name=curriculum_board]');
+          if (!grade || !subject || grade.dataset.subjectLoaderBound) return;
+          grade.dataset.subjectLoaderBound = 'true';
+          grade.addEventListener('change', async () => {
+            subject.disabled = true;
+            try {
+              const params = new URLSearchParams({class_level: grade.value, board: board?.value || 'NERDC'});
+              const response = await fetch(`/ui/exams/curriculum-subjects?${params}`, {credentials:'same-origin'});
+              if (!response.ok) return;
+              const data = await response.json();
+              const previous = subject.value;
+              subject.replaceChildren(new Option('Subject', ''), ...(data.subjects || []).map(name => new Option(name, name)));
+              if ((data.subjects || []).includes(previous)) subject.value = previous;
+            } catch (_) {
+              // Retain the existing choices during temporary catalogue outages.
+            } finally {
+              subject.disabled = false;
+            }
+          });
+          };
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true});
+          else init();
+          document.addEventListener('htmx:afterSettle', init);
+        })();
+        """),
         Div(
             Div(
                 H1("Manual Exam", cls="app-section-title fs-3 mb-1"),
@@ -7075,6 +7282,7 @@ def _manual_exam_composer(req: Request, subject_options: list[str]) -> Div:
         ),
         Form(
             _csrf_input(req),
+            Input(name="curriculum_board", type="hidden", value=board),
             Input(name="questions_json", type="hidden", id="manual-questions-json"),
             Row(
                 Col(
@@ -7141,7 +7349,14 @@ def register_manual_routes(app):
         user = current_user(req) or {}
         flash = pop_flash(req)
         class_level = req.query_params.get("class_level", "Primary 4")
-        board = req.query_params.get("board", "NERDC")
+        board = await workspace_curriculum_board(req, user)
+        classes_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": board})
+        classes_ok, classes_data = unwrap(classes_resp)
+        grade_options = classes_data.get("classes", []) if classes_ok and isinstance(classes_data, dict) else []
+        if not grade_options and board.casefold() == "nerdc":
+            grade_options = GRADE_LEVELS
+        if grade_options and class_level not in grade_options:
+            class_level = grade_options[0]
         subjects_resp = await call_api(
             req, "GET", "/curriculum/subjects",
             params={"class_level": class_level, "board": board},
@@ -7157,8 +7372,8 @@ def register_manual_routes(app):
             "Physical & Health Education", "Home Economics", "Christian Religious Studies",
             "Islamic Religious Studies", "Hausa", "Igbo", "Yoruba",
         ]
-        subject_options = list(dict.fromkeys(api_subjects + primary_fallback + MANUAL_SECONDARY_SUBJECTS))
-        body = _manual_exam_composer(req, subject_options)
+        subject_options = list(dict.fromkeys(api_subjects + (primary_fallback + MANUAL_SECONDARY_SUBJECTS if board.casefold() == "nerdc" else [])))
+        body = _manual_exam_composer(req, subject_options, grade_options, board)
         return AppShell(
             Title("Manual Exam - SkuPhase"),
             body,
@@ -7283,6 +7498,7 @@ def register_manual_routes(app):
         payload = {
             "subject": (form.get("subject") or "").strip(),
             "grade_level": (form.get("grade_level") or "").strip(),
+            "curriculum_board": (form.get("curriculum_board") or "").strip() or None,
             "duration_minutes": duration,
             "language": form.get("language") or "English",
             "instructions": (form.get("instructions") or "").strip() or None,

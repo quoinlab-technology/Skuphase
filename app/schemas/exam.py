@@ -94,6 +94,7 @@ class ExamGenerationRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=100, description="Subject name")
     grade_level: str = Field(..., description="Grade level (e.g., Primary 4)")
     term: Optional[str] = Field(None, description="Term (First Term, Second Term, Third Term)")
+    curriculum_board: Optional[str] = Field(None, min_length=2, max_length=50)
     selected_weeks: Optional[List[int]] = Field(None, description="Selected Scheme of Work weeks (e.g. [1, 2, 3, 4])")
     focus_topics: Optional[str] = Field(None, max_length=1000, description="Topics the teacher wants emphasized")
 
@@ -259,6 +260,7 @@ class ExamResponse(BaseModel):
     grade_level: str
     title: Optional[str] = None
     term: Optional[str] = None
+    curriculum_board: Optional[str] = None
     focus_topics: Optional[str] = None
     custom_instructions: Optional[str] = None
     selected_weeks: Optional[List[int]] = None
@@ -503,6 +505,7 @@ class ManualExamSubmissionRequest(BaseModel):
     title: Optional[str] = Field(None, max_length=180)
     subject: str = Field(..., min_length=1, max_length=100)
     grade_level: str = Field(..., min_length=1, max_length=50)
+    curriculum_board: Optional[str] = Field(None, min_length=2, max_length=50)
     duration_minutes: Optional[int] = Field(120, ge=30, le=300)
     instructions: Optional[str] = Field(default=None, max_length=2000)
     language: str = Field(

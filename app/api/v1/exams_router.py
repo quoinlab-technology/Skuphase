@@ -65,6 +65,7 @@ from app.services.curriculum_service import CurriculumService
 from app.services.exam_generator import ExamGenerator
 from app.services.exam_quality_report import ExamQualityReportService
 from app.services.export_service import ExportService
+from app.services.document_branding import resolve_document_branding
 from app.services.job_queue import enqueue_generation_job
 from app.services.blueprint_service import build_blueprint
 from app.services.question_exchange import export_csv, export_gift, export_qti, import_csv, import_gift, import_qti, export_docx, import_docx
@@ -353,6 +354,15 @@ async def generate_exam(
                 detail="Only teachers and school administrators can generate exams",
             )
 
+        workspace_settings = await db.scalar(
+            select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id)
+        )
+        # The workspace setting is authoritative. Never let stale wizard state
+        # or a modified client payload silently select a different curriculum.
+        configured_board = getattr(workspace_settings, "curriculum_board", None)
+        curriculum_board = configured_board if isinstance(configured_board, str) and configured_board.strip() else "NERDC"
+        request.curriculum_board = curriculum_board
+
         warnings: List[str] = []
         blueprint_data = None
         if request.blueprint:
@@ -370,12 +380,13 @@ async def generate_exam(
                 term=request.term,
                 selected_weeks=request.selected_weeks,
                 db=db,
+                board=curriculum_board,
             )
             if not scheme_data:
-                class_list = await CurriculumService.get_all_classes(db)
+                class_list = await CurriculumService.get_all_classes(db, board=curriculum_board)
                 available = ", ".join(class_list)
                 warnings.append(
-                    f"No official NERDC scheme data found for {request.grade_level} "
+                    f"No official {curriculum_board} scheme data found for {request.grade_level} "
                     f"{request.subject} {request.term}. Generating from general "
                     f"curriculum knowledge instead. Available classes: {available}"
                 )
@@ -395,6 +406,7 @@ async def generate_exam(
                     )
                     .where(
                         Curriculum.class_level == request.grade_level,
+                        Curriculum.board == curriculum_board,
                         Curriculum.subject_name == request.subject,
                         SchemeOfWork.term == request.term,
                         SchemeOfWork.week_number.in_(request.selected_weeks),
@@ -467,6 +479,7 @@ async def generate_exam(
             grade_level=request.grade_level,
             title=(request.title or "").strip() or None,
             term=request.term,
+            curriculum_board=curriculum_board,
             focus_topics=(request.focus_topics or "").strip() or None,
             custom_instructions=(request.custom_instructions or "").strip() or None,
             selected_weeks=request.selected_weeks,
@@ -536,6 +549,12 @@ async def submit_manual_exam(
             detail="Only school administrators and teachers can submit manual exams",
         )
 
+    settings_row = await db.scalar(
+        select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id)
+    )
+    configured_board = getattr(settings_row, "curriculum_board", None)
+    curriculum_board = configured_board if isinstance(configured_board, str) and configured_board.strip() else "NERDC"
+
     exam = Exam(
         id=uuid.uuid4(),
         school_id=current_user.school_id,
@@ -552,6 +571,7 @@ async def submit_manual_exam(
         duration_minutes=request.duration_minutes,
         instructions=request.instructions,
         language=(request.language or "English"),
+        curriculum_board=curriculum_board,
     )
     db.add(exam)
     await db.flush()
@@ -615,6 +635,7 @@ async def submit_manual_exam(
         grade_level=exam.grade_level,
         title=getattr(exam, "title", None),
         term=getattr(exam, "term", None),
+        curriculum_board=getattr(exam, "curriculum_board", None),
         focus_topics=getattr(exam, "focus_topics", None),
         custom_instructions=getattr(exam, "custom_instructions", None),
         selected_weeks=getattr(exam, "selected_weeks", None),
@@ -1441,6 +1462,7 @@ async def get_exam(
             grade_level=exam.grade_level,
             title=getattr(exam, "title", None),
             term=getattr(exam, "term", None),
+            curriculum_board=getattr(exam, "curriculum_board", None),
             focus_topics=getattr(exam, "focus_topics", None),
             custom_instructions=getattr(exam, "custom_instructions", None),
             selected_weeks=getattr(exam, "selected_weeks", None),
@@ -1585,6 +1607,7 @@ async def update_exam(
             grade_level=exam.grade_level,
             title=getattr(exam, "title", None),
             term=getattr(exam, "term", None),
+            curriculum_board=getattr(exam, "curriculum_board", None),
             focus_topics=getattr(exam, "focus_topics", None),
             custom_instructions=getattr(exam, "custom_instructions", None),
             selected_weeks=getattr(exam, "selected_weeks", None),
@@ -2622,10 +2645,13 @@ async def export_exam(
                 school_address = getattr(school_obj, "address", None)
             settings_res = await db.execute(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
             settings_obj = settings_res.scalar_one_or_none()
-            if settings_obj and isinstance(settings_obj, SchoolSettings) and getattr(settings_obj, "logo_url", None):
-                school_logo_url = getattr(settings_obj, "logo_url", None)
+            branding = resolve_document_branding(school=school_obj, settings=settings_obj, user=current_user)
+            school_name = branding.display_name
+            school_logo_url = branding.logo_url
             if settings_obj and isinstance(settings_obj, SchoolSettings):
                 document_style = getattr(settings_obj, "document_style", None) or {}
+            if getattr(current_user, "account_type", None) == "individual_teacher":
+                school_address = None
 
         doc_type = (getattr(request, "doc_type", None) or "exam").lower()
         if doc_type == "marking_guide":

@@ -128,6 +128,11 @@ class CoverageResponse(BaseModel):
     completed_at: datetime | None = None
     verified_by_user_id: UUID | None = None
     verified_at: datetime | None = None
+    class_level: str | None = None
+    subject: str | None = None
+    term: str | None = None
+    week_number: int | None = None
+    topic: str | None = None
     created_at: datetime
     updated_at: datetime
 

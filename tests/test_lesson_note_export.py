@@ -5,7 +5,11 @@ from docx import Document
 from starlette.testclient import TestClient
 
 from app.main import app
-from app.services.lesson_note_export_service import export_lesson_note_docx, export_lesson_note_pdf
+from app.services.lesson_note_export_service import (
+    export_lesson_note_docx,
+    export_lesson_note_pdf,
+    lesson_note_filename,
+)
 
 
 def test_lesson_note_pdf_renders_markdown_and_readable_inline_math():
@@ -31,11 +35,48 @@ def test_lesson_note_pdf_renders_markdown_and_readable_inline_math():
 
     assert "LESSON NOTE: MATHEMATICS" in text
     assert "Recall:" in text
-    assert "log_10(100)=2" in text
-    assert "x^2 + (1)/(2)" in text
+    assert "log10(100)=2" in text
+    assert "x2 + 1/2" in text
     assert "**" not in text
     assert "\\log" not in text
     assert "---" not in text
+
+
+def test_lesson_note_pdf_embeds_uploaded_school_logo_and_watermark():
+    from pypdf import PdfReader
+
+    payload = export_lesson_note_pdf(
+        title="Quadratic Equations",
+        subject="Mathematics",
+        class_level="SSS 3",
+        term="First Term",
+        week_number=2,
+        school_name="QA School",
+        school_logo="app/assets/img/skuphase_logo.png",
+        content=r"Apply $x^2 + \frac{1}{2}$ and log_a(xy).",
+    )
+    page = PdfReader(BytesIO(payload)).pages[0]
+    text = page.extract_text()
+
+    assert page.images
+    assert text.count("QA School") >= 2  # document heading plus faint diagonal watermark
+    assert "x2" in text and "1/2" in text and "loga(xy)" in text
+
+
+def test_lesson_note_filename_uses_safe_title_and_short_unique_id():
+    assert lesson_note_filename("Primary 6: Quadratic Equations!", "12345678-90ab", "pdf") == "primary-6-quadratic-equations-12345678.pdf"
+
+
+def test_school_webp_logo_is_normalized_for_pdf_and_word_export(tmp_path):
+    from PIL import Image
+    from app.services.branding import get_logo_bytes
+
+    path = tmp_path / "school-logo.webp"
+    Image.new("RGB", (48, 24), (24, 100, 70)).save(path, format="WEBP")
+
+    normalized = get_logo_bytes(str(path))
+
+    assert normalized.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_lesson_note_docx_preserves_metadata_and_structured_content():
@@ -57,6 +98,7 @@ def test_lesson_note_docx_preserves_metadata_and_structured_content():
             "| Fractions | 1/2 |\n"
             "---\n"
         ),
+        school_logo="app/assets/img/skuphase_logo.png",
     )
 
     document = Document(BytesIO(payload))
@@ -84,9 +126,31 @@ def test_lesson_note_docx_preserves_metadata_and_structured_content():
         assert expected in text
 
     assert len(document.tables) == 1
+    assert len(document.inline_shapes) == 1
+    assert "Official school copy" in document.sections[0].footer.paragraphs[0].text
+    assert "QA SCHOOL" in document.sections[0].header.paragraphs[0].text
     assert "---" not in text
     assert any(paragraph.style.name == "List Bullet" for paragraph in document.paragraphs)
     assert any(paragraph.style.name == "List Number" for paragraph in document.paragraphs)
+
+
+def test_lesson_note_docx_marks_personal_branding_as_personal_copy():
+    payload = export_lesson_note_docx(
+        title="Custom lesson",
+        subject="Science",
+        class_level="Primary 5",
+        term="First Term",
+        week_number=1,
+        school_name="Tutor Ada",
+        content="A short note.",
+        is_personal_workspace=True,
+    )
+
+    document = Document(BytesIO(payload))
+    footer = document.sections[0].footer.paragraphs[0].text
+    assert "Tutor Ada" in footer
+    assert "Personal teaching copy" in footer
+    assert "Official school copy" not in footer
 
 
 def test_lesson_note_docx_frontend_proxy_requires_session_and_preserves_download(monkeypatch):
@@ -148,5 +212,47 @@ def test_lesson_note_docx_frontend_proxy_requires_session_and_preserves_download
     assert response.headers["content-type"].startswith(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-    assert response.headers["content-disposition"] == f'attachment; filename="lesson-note-{lesson_id}.docx"'
+    assert response.headers["content-disposition"] == f'attachment; filename="lesson-note-{str(lesson_id)[:8]}.docx"'
     assert download_stub.calls == [("GET", f"/lesson-plans/{lesson_id}/lesson-note/export.docx")]
+
+
+def test_lesson_note_pdf_frontend_proxy_keeps_title_based_filename(monkeypatch):
+    client = TestClient(app, follow_redirects=False)
+    lesson_id = uuid4()
+
+    class StubResponse:
+        def __init__(self, status_code, payload=None, content=b"", headers=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+            self.content = content
+            self.headers = headers or {}
+            self.is_success = 200 <= status_code < 300
+
+        def json(self):
+            return self._payload
+
+    class StubApi:
+        def __init__(self, response):
+            self.response = response
+
+        async def __call__(self, req, method, path, json=None, params=None):
+            return self.response
+
+    token_stub = StubApi(StubResponse(200, {
+        "access_token": "at", "refresh_token": "rt", "token_type": "bearer", "expires_in": 3600,
+        "user": {"user_id": "u1", "full_name": "QA Teacher", "email": "qa@example.test", "role": "teacher", "account_type": "school_staff", "is_active": True, "is_verified": True},
+    }))
+    pdf_stub = StubApi(StubResponse(
+        200,
+        content=b"%PDF-test",
+        headers={"content-type": "application/pdf", "content-disposition": 'attachment; filename="quadratic-equations-12345678.pdf"'},
+    ))
+    monkeypatch.setattr("app.frontend.routes.auth.call_api", token_stub)
+    monkeypatch.setattr("app.frontend.routes.teaching.call_api", pdf_stub)
+    assert client.post("/login", data={"email": "qa@example.test", "password": "pw"}).status_code == 303
+
+    response = client.get(f"/app/teaching/{lesson_id}/lesson-note/export.pdf")
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-test"
+    assert response.headers["content-disposition"] == 'attachment; filename="quadratic-equations-12345678.pdf"'

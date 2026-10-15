@@ -219,6 +219,7 @@ def test_individual_teacher_can_generate():
     exam = None
     db = _dispatching_db(exam, [])
     db.execute = AsyncMock(return_value=SimpleNamespace(scalar=lambda: 0))
+    db.scalar = AsyncMock(return_value=SimpleNamespace(curriculum_board="Cambridge"))
 
     client = _build_test_app(db, user)
     with patch("app.api.v1.exams_router.enqueue_generation_job") as mock_enqueue, \
@@ -242,6 +243,8 @@ def test_individual_teacher_can_generate():
 
     assert response.status_code == 202
     mock_enqueue.assert_called_once()
+    assert mock_curr.get_objectives_for_weeks.await_args.kwargs["board"] == "Cambridge"
+    assert mock_enqueue.call_args.kwargs["request_data"]["curriculum_board"] == "Cambridge"
 
 
 def test_approve_exam_endpoint_not_found():

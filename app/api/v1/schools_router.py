@@ -136,11 +136,25 @@ async def update_school_settings(
             detail="You don't have access to this school",
         )
 
-    # Check if current user is a school admin
-    if current_user.role != "school_admin":
+    # A personal teacher may manage settings only for their personal workspace.
+    # School staff cannot change the shared source; that remains an admin choice.
+    personal_owner = current_user.account_type == "individual_teacher"
+    if current_user.role != "school_admin" and not personal_owner:
         raise HTTPException(
             status_code=403,
-            detail="Only school administrators can update school settings",
+            detail="Only a school administrator or personal workspace owner can update settings",
+        )
+    personal_settings_fields = {
+        "curriculum_board",
+        "document_display_name",
+        "personal_document_branding_enabled",
+        "logo_url",
+        "logo_storage_path",
+    }
+    if personal_owner and request.model_fields_set - personal_settings_fields:
+        raise HTTPException(
+            status_code=403,
+            detail="Personal workspace owners can update only their curriculum source and document branding",
         )
 
     try:
@@ -151,6 +165,7 @@ async def update_school_settings(
         )
         return response
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        status_code = 422 if "curriculum source" in str(e).lower() else 404
+        raise HTTPException(status_code=status_code, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")

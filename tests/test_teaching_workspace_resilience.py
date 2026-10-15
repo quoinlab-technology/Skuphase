@@ -75,14 +75,25 @@ class TeachingApiStub:
                 "term": "First Term",
                 "status": "draft",
                 "learning_objectives": [],
+                "ai_lesson_note": "## Introduction\nDiscuss one key idea.",
             }],
             "/lesson-plans/coverage/summary": {
-                "total": 10,
-                "completed": 2,
-                "verified": 1,
+                "total": 1,
+                "planned": 1,
+                "in_progress": 0,
+                "completed": 0,
+                "verified": 0,
             },
             "/lesson-plans/exercises": [],
-            "/lesson-plans/coverage": [],
+            "/lesson-plans/coverage": [{
+                "id": "qa-coverage",
+                "class_level": "Primary 4",
+                "subject": "Mathematics",
+                "term": "First Term",
+                "week_number": 1,
+                "topic": "Fractions and equivalent values",
+                "status": "planned",
+            }],
         }
         return StubResponse(payloads.get(path, {}))
 
@@ -139,8 +150,11 @@ def test_teaching_workspace_explains_subject_reset_and_school_wide_coverage(monk
 
     assert response.status_code == 200
     assert "Physics is not available for Primary 4" in response.text
-    assert "school-wide syllabus record" in response.text
-    assert "School records marked completed" in response.text
+    assert "Use this shared tracker after choosing a lesson week" in response.text
+    assert "mark it as taught when delivered" in response.text
+    assert "Changing class refreshes the available subjects" in response.text
+    assert 'data-scope-reload="true"' in response.text
+    assert "Updating subjects and lesson weeks" in response.text
 
 
 def test_worksheet_form_exposes_question_type_marks_and_answer_key(monkeypatch):
@@ -179,6 +193,12 @@ def test_teaching_workspace_links_to_focused_worksheet_page_and_uses_full_width_
     assert "Your teaching plans" in response.text
     assert 'name="question_type_1"' not in response.text
     assert "Coverage progress" in response.text
+    assert "Start coverage tracking" in response.text
+    assert "Fractions and equivalent values" in response.text
+    assert "Preview lesson note" in response.text
+    assert "Quick refinements" in response.text
+    assert 'data-note-preview="lesson-note-qa-plan"' in response.text
+    assert 'id="coverage-progress"' in response.text
 
 
 def test_worksheet_creation_persists_type_marks_options_and_answer_key(monkeypatch):
@@ -228,6 +248,7 @@ def test_worksheet_pdf_prints_mcq_options_but_not_answer_key(tmp_path):
         grade_level="Primary 4",
         term="First Term",
         instructions=None,
+        school_name="Tutor Ada",
         questions=[{
             "type": "mcq",
             "question_text": "Which is a source of light?",
@@ -241,6 +262,7 @@ def test_worksheet_pdf_prints_mcq_options_but_not_answer_key(tmp_path):
     pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(tmp_path / "worksheets" / filename).pages)
     assert "Sun" in pdf_text and "Moon" in pdf_text
     assert "Which is a source of light?" in pdf_text
+    assert "TUTOR ADA" in pdf_text
     assert "Private key" not in pdf_text
 
 

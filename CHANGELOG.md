@@ -7,7 +7,26 @@ features, operational changes, security fixes, and important migrations.
 
 ### Added
 
-- Added a curriculum-week Prepare lesson shortcut that opens the existing Teaching workflow with class, subject, term, and week preselected; clarified school-local curriculum editing permissions.
+- Added configurable document branding: school administrators can set a print
+  display name for the school, while personal-workspace owners can opt in to a
+  custom document name and Supabase-hosted logo. Personal documents use the
+  registered account name and no custom logo until branding is enabled; this
+  setting never renames the account.
+- Added a workspace-wide curriculum source setting: school administrators select
+  the school's source and individual teachers select theirs from Personal
+  Settings. Curriculum browsing, guided teaching, and new exam workflows use
+  that source; AI and manual exam records retain source provenance. The setting
+  rejects sources absent from the curriculum catalogue.
+- Connected teaching scope changes to an in-place loading indicator and refreshed
+  class-specific subjects, weeks, and lesson-plan defaults; clarified the shared
+  syllabus tracker and return teachers to its expanded records after updates.
+- Rebalanced the Teaching workspace tools and coverage panel for wide screens,
+  removed the extra wrapper around lesson-plan cards, added a safe formatted
+  lesson-note preview, and compacted refinement/export actions on phones.
+- Branded lesson-note PDF and Word exports with the school's uploaded logo,
+  school-name PDF watermark, and title-based filenames; PDF math now renders
+  common TeX and plain-text sub/superscripts typographically instead of flattening
+  formula source to ordinary text.
 - Split weekly worksheet authoring and recent worksheets into a focused Teaching
   workspace page; the main teaching page now emphasizes lesson planning and
   school coverage. Worksheet authoring starts with one question, adds rows on

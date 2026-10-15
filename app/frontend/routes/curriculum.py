@@ -1,8 +1,8 @@
 """Curriculum and Scheme of Work Explorer (/app/curriculum).
 
-Allows teachers and school admins to browse official NERDC primary school
-curricula, search topics/objectives, and trigger exam generation pre-seeded
-with selected scheme weeks.
+Allows teachers and school admins to browse their workspace curriculum,
+search topics/objectives, and open teaching or exam workflows with the
+selected scheme weeks.
 """
 
 from urllib.parse import quote, urlencode
@@ -33,6 +33,7 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.frontend.curriculum_context import workspace_curriculum_board
 from app.services.curriculum_taxonomy import ALL_SUBJECTS, CLASS_LEVELS
 
 
@@ -50,31 +51,38 @@ async def _fetch_curriculum_data(req: Request, class_level: str, subject: str, t
     cls_resp = await call_api(req, "GET", "/curriculum/classes", params={"board": board})
     ok_cls, cls_data = unwrap(cls_resp)
     all_classes = (cls_data.get("classes") or []) if ok_cls else []
-    if not all_classes:
+    if not all_classes and board.casefold() == "nerdc":
         all_classes = _ALL_CLASSES[:]
 
     if class_level not in all_classes and all_classes:
         class_level = all_classes[0]
+    elif not all_classes and board.casefold() != "nerdc":
+        class_level = ""
 
-    sub_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level, "board": board})
-    ok_sub, sub_data = unwrap(sub_resp)
-    subjects_list = (sub_data.get("subjects") or []) if ok_sub else []
-    subject_names = [s["subject_name"] for s in subjects_list if isinstance(s, dict)] or _DEFAULT_SUBJECTS[:]
+    if class_level:
+        sub_resp = await call_api(req, "GET", "/curriculum/subjects", params={"class_level": class_level, "board": board})
+        ok_sub, sub_data = unwrap(sub_resp)
+        subjects_list = (sub_data.get("subjects") or []) if ok_sub else []
+        subject_names = [s["subject_name"] for s in subjects_list if isinstance(s, dict)]
+    else:
+        subject_names = []
+    if not subject_names and board.casefold() == "nerdc":
+        subject_names = _DEFAULT_SUBJECTS[:]
 
     # Ensure active subject exists in this class level's subjects
     if subject and subject in subject_names:
         active_subject = subject
     else:
-        active_subject = subject_names[0] if subject_names else "Mathematics"
+        active_subject = subject_names[0] if subject_names else ""
 
     weeks_resp = await call_api(
         req, "GET", "/curriculum/school/weeks",
         params={"class_level": class_level, "subject": active_subject, "term": term, "board": board},
-    )
-    ok_w, w_data = unwrap(weeks_resp)
+    ) if class_level and active_subject else None
+    ok_w, w_data = unwrap(weeks_resp) if weeks_resp is not None else (False, {})
     # Keep the explorer usable for deployments that have not yet migrated the
     # school-overlay endpoint, and for read-only/public curriculum fixtures.
-    if not ok_w:
+    if not ok_w and class_level and active_subject:
         weeks_resp = await call_api(
             req, "GET", "/curriculum/weeks",
             params={"class_level": class_level, "subject": active_subject, "term": term, "board": board},
@@ -96,7 +104,8 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
         Row(
             Col(
                 Label("Curriculum Board", cls="form-label text-muted small fw-medium mb-1"),
-                Select("board", *[(b, b, b == board) for b in (boards or ["NERDC"])], id="curriculum-board-select", cls="form-select rounded-3 border-0 py-2 px-3 fw-medium", style="background-color: #F4F6F4; font-size: 0.92rem;", hx_get="/ui/curriculum/content", hx_target="#curriculum-content", hx_swap="outerHTML", hx_trigger="change", hx_include="#curriculum-filter-form", hx_indicator="#curr-spinner"),
+                Input(type="hidden", name="board", value=board),
+                Div(Strong(board, cls="form-control border-0 rounded-3 fw-medium"), cls="workspace-curriculum-source"),
                 span=12, md=4,
             ),
             Col(
@@ -174,7 +183,7 @@ def _build_filter_card(all_classes, subject_names, class_level, active_subject, 
     )
 
 
-def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_local=False):
+def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_local=False, board="NERDC"):
     """Render the weekly scheme timeline list.
 
     ``can_edit_local`` adds the per-week authoring affordance; teachers may
@@ -220,7 +229,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
         if w.get("has_override"):
             state_badges.append(
                 Span("School edit", cls="badge bg-warning-subtle text-warning border border-warning-subtle fw-normal",
-                     title=f"School-specific adjustment; official NERDC text is unchanged. Seeded topic: {w.get('seeded_topic', '')}",
+                     title=f"School-specific adjustment; the official {board} text is unchanged. Seeded topic: {w.get('seeded_topic', '')}",
                      style="font-size: 0.72rem;")
             )
         if w.get("is_archived"):
@@ -278,6 +287,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                                     "subject": active_subject,
                                     "term": term,
                                     "scheme_id": str(week_id or ""),
+                                    "board": board,
                                 })
                                 + "#create-lesson-plan"
                             ),
@@ -298,9 +308,14 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
         return Div(
             Div(
                 Icon("journal-bookmark", cls="bi text-muted fs-1 mb-2 d-block"),
-                Strong(f"Scheme of Work for {active_subject} ({class_level})", cls="d-block text-dark mb-1"),
+                Strong(
+                    f"Scheme of Work for {active_subject} ({class_level})" if active_subject and class_level else f"{board} curriculum not available yet",
+                    cls="d-block text-dark mb-1",
+                ),
                 P(
-                    f"Standard NERDC curriculum topics for {class_level} {active_subject} are fully available for AI exam generation.",
+                    f"No {board} scheme-of-work weeks are available for {class_level} {active_subject} yet."
+                    if active_subject and class_level
+                    else f"There are no classes or subjects seeded for the workspace's {board} source yet. Ask an administrator to choose an available curriculum source or load its catalogue.",
                     cls="text-muted small mb-4",
                 ),
                 Button(
@@ -310,7 +325,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
                     href=f"/app/exams/new?class_level={quote(class_level)}&subject={quote(active_subject)}&term={quote(term)}",
                     variant="success",
                     cls="btn-brand rounded-pill px-4",
-                ),
+                ) if active_subject and class_level else None,
                 cls="p-5 text-center bg-white rounded-4 border shadow-sm",
             )
         )
@@ -382,7 +397,7 @@ def _build_timeline(weeks_list, class_level, active_subject, term, can_edit_loca
 def _build_curriculum_content(all_classes, subject_names, class_level, active_subject, term, weeks_list, board="NERDC", boards=None, can_edit_local=False):
     """Build the full filter card + timeline, wrapped in the HTMX swap target div."""
     filter_card = _build_filter_card(all_classes, subject_names, class_level, active_subject, term, board, boards)
-    timeline = _build_timeline(weeks_list, class_level, active_subject, term, can_edit_local)
+    timeline = _build_timeline(weeks_list, class_level, active_subject, term, can_edit_local, board)
     return Div(
         filter_card,
         timeline,
@@ -412,6 +427,7 @@ def curriculum_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
+        board = await workspace_curriculum_board(req, user)
 
         all_classes, subject_names, active_subject, class_level, weeks_list = await _fetch_curriculum_data(
             req, class_level, subject, term, board
@@ -439,14 +455,15 @@ def curriculum_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
+        board = await workspace_curriculum_board(req, user)
 
         # Hero Header
         header = Div(
             Div(
                 Div(Icon("journal-bookmark", cls="bi"), cls="app-curriculum-hero-icon"),
-                H1("National Curriculum & Scheme of Work", cls="fs-3 fw-bold text-dark mb-1"),
+                H1("Curriculum & Scheme of Work", cls="fs-3 fw-bold text-dark mb-1"),
                 P(
-                    "Browse the official NERDC syllabus by class, subject, term and week, or search competencies directly.",
+                    f"Browse your workspace's {board} curriculum by class, subject, term and week, or search competencies directly.",
                     cls="text-muted small mb-0",
                 ),
                 cls="app-curriculum-hero-copy",
@@ -666,7 +683,7 @@ def _authoring_panel(detail: dict) -> Div:
     if detail.get("has_override"):
         actions.append(
             Button(Icon("arrow-counterclockwise", cls="bi me-1"),
-                   "Revert to official national curriculum", type="button",
+                   "Revert to source curriculum", type="button",
                    hx_post=f"/ui/curriculum/week/{week_id}/revert",
                    hx_target=f"#week-editor-{week_id}", hx_swap="innerHTML",
                    cls="btn btn-sm btn-outline-secondary rounded-pill px-3")
@@ -692,7 +709,7 @@ def _authoring_panel(detail: dict) -> Div:
             Div(
                 Div(*header_bits, cls="d-flex flex-wrap align-items-center gap-2"),
                 P(
-                    "Changes here apply only to your school's copy; the official NERDC reference remains unchanged.",
+                    f"Changes here apply only to your school's copy; the official {detail.get('board') or detail.get('curriculum_board') or 'source'} reference remains unchanged.",
                     cls="small text-muted mt-2 mb-0",
                 ),
                 cls="flex-grow-1",

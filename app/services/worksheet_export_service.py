@@ -47,7 +47,7 @@ def _append_rich_text(story: list, value: str, body: ParagraphStyle, *, prefix: 
         story.append(Paragraph(suffix.lstrip(), body))
 
 
-def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_level: str, term: str | None = None, instructions: str | None, questions: list[dict], school_logo_path: str | None = None) -> str:
+def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_level: str, term: str | None = None, instructions: str | None, questions: list[dict], school_name: str | None = None, school_logo_path: str | None = None) -> str:
     folder = export_dir / "worksheets"
     folder.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}.pdf"
@@ -68,9 +68,14 @@ def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_le
         except (TypeError, ValueError):
             continue
     logo_image = logo_flowable(school_logo_path, width=18 * mm, height=18 * mm)
-    if logo_image:
+    if logo_image or school_name:
         from reportlab.platypus import Table, TableStyle
-        story.append(Table([[logo_image]], colWidths=[170 * mm], style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")])) )
+        identity = []
+        if logo_image:
+            identity.append(logo_image)
+        if school_name:
+            identity.append(Paragraph(escape(school_name.upper()), ParagraphStyle("WorksheetBrand", parent=styles["Normal"], fontSize=10, alignment=1, spaceAfter=2 * mm)))
+        story.append(Table([identity], colWidths=[170 * mm], style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")])) )
     story.extend([
         Paragraph(escape(title), heading),
         Paragraph(
@@ -115,5 +120,17 @@ def export_worksheet_pdf(*, export_dir: Path, title: str, subject: str, grade_le
             answer_lines = 2
         for _ in range(answer_lines):
             story.append(Paragraph("________________________________________________________________________________", body))
-    doc.build(story)
+    def _watermark(canvas, _doc):
+        if not school_name:
+            return
+        from reportlab.lib.colors import HexColor
+        canvas.saveState()
+        canvas.setFillColor(HexColor("#E5ECE8"))
+        canvas.setFont("Helvetica-Bold", 27)
+        canvas.translate(A4[0] / 2, A4[1] / 2)
+        canvas.rotate(35)
+        canvas.drawCentredString(0, 0, school_name.upper()[:60])
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_watermark, onLaterPages=_watermark)
     return filename

@@ -86,6 +86,14 @@ async def _load_settings_context(req: Request, user: dict):
             school_settings = d2
 
     notif_state = {key: default for key, _, _, default in NOTIF_PREFS}
+    curriculum_boards = ["NERDC"]
+    if school_id:
+        boards_resp = await call_api(req, "GET", "/curriculum/boards")
+        boards_ok, boards_data = unwrap(boards_resp)
+        if boards_ok and isinstance(boards_data, dict):
+            available = boards_data.get("boards") or []
+            if available:
+                curriculum_boards = [str(board) for board in available if board]
     r_prefs = await call_api(req, "GET", "/auth/me/preferences")
     ok_prefs, d_prefs = unwrap(r_prefs)
     if ok_prefs and isinstance(d_prefs.get("preferences"), dict):
@@ -93,7 +101,7 @@ async def _load_settings_context(req: Request, user: dict):
             if key in d_prefs["preferences"]:
                 notif_state[key] = bool(d_prefs["preferences"][key])
 
-    return school_data, school_settings, notif_state
+    return school_data, school_settings, notif_state, curriculum_boards
 
 
 def _build_settings_content(
@@ -103,6 +111,7 @@ def _build_settings_content(
     notif_state: dict,
     active_tab: str = "profile",
     csrf_token: str | None = None,
+    curriculum_boards: list[str] | None = None,
 ):
     """Build the settings navigation and active tab body using native Faststrap components."""
     name = school_data.get("name") or user.get("school_name") or ("Personal Workspace" if user.get("account_type") == "individual_teacher" else "Your School")
@@ -115,6 +124,13 @@ def _build_settings_content(
     address = school_data.get("address") or ""
     logo_url = school_settings.get("logo_url") or ""
     document_style = school_settings.get("document_style") or {}
+    document_display_name = school_settings.get("document_display_name") or ""
+    personal_branding_enabled = bool(school_settings.get("personal_document_branding_enabled", False))
+    curriculum_board = school_settings.get("curriculum_board") or "NERDC"
+    curriculum_boards = curriculum_boards or ["NERDC"]
+    if curriculum_board not in curriculum_boards:
+        curriculum_boards = [curriculum_board, *curriculum_boards]
+    is_personal_owner = user.get("account_type") == "individual_teacher"
     csrf_field = Input(name="csrf_token", value=csrf_token or "", type="hidden") if csrf_token else None
 
     def _tab_link(key: str, label: str, icon_name: str) -> A:
@@ -134,14 +150,24 @@ def _build_settings_content(
             **({"aria-current": "true"} if is_curr else {}),
         )
 
-    tabs_nav = Div(
-        Div(
+    tab_links = (
+        [
+            _tab_link("policy", "Curriculum", "mortarboard"),
+            _tab_link("documents", "Document branding", "file-earmark-richtext"),
+        ]
+        if is_personal_owner
+        else [
             _tab_link("profile", "School Profile", "building"),
             _tab_link("account", "My Account", "person"),
             _tab_link("notifications", "Notifications", "bell"),
             _tab_link("integrations", "API & Integrations", "plug"),
             _tab_link("policy", "Academic Policy", "mortarboard"),
             _tab_link("security", "Security", "shield-lock"),
+        ]
+    )
+    tabs_nav = Div(
+        Div(
+            *tab_links,
             cls="d-flex flex-nowrap overflow-x-auto pb-2",
             style="scrollbar-width: none; -ms-overflow-style: none;",
         ),
@@ -190,6 +216,7 @@ def _build_settings_content(
             ),
             Strong("Exam document defaults", cls="fs-6 text-dark d-block mt-3 mb-2"),
             P("These settings apply to exam papers, marking guides, and OMR exports for all staff.", cls="text-muted small mb-2"),
+            Input("document_display_name", label="Name printed on documents", value=document_display_name, placeholder=name),
             Row(
                 Col(Input("doc_margin_mm", label="Page margin (mm)", value=str(document_style.get("margin_mm", 14)), input_type="number", min=8, max=30), span=12, md=4),
                 Col(Input("doc_font_size", label="Body font size", value=str(document_style.get("font_size", 10)), input_type="number", min=8, max=14, step="0.5"), span=12, md=4),
@@ -238,7 +265,7 @@ def _build_settings_content(
     logo_preview = (
         Img(
             src=logo_url,
-            alt=f"{name} school logo",
+            alt=f"{name} document logo",
             cls="school-logo-preview img-fluid rounded-3 school-logo-image",
             **{"data-school-logo": "true", "data-fallback-src": "/assets/img/skuphase_logo.png"},
         )
@@ -252,8 +279,8 @@ def _build_settings_content(
     logo_actions = Card(
         Div(
             Div(
-                Strong("School logo", cls="d-block text-dark"),
-                P("This logo is used on school-generated documents.", cls="text-muted small mb-0"),
+                Strong("School logo" if not is_personal_owner else "Personal document logo", cls="d-block text-dark"),
+                P("This logo is used on school-generated documents." if not is_personal_owner else "This logo is used when custom document branding is enabled.", cls="text-muted small mb-0"),
                 cls="flex-grow-1",
             ),
             Span(
@@ -298,12 +325,12 @@ def _build_settings_content(
         Div(
             Div(
                 Div(
-                    Strong("Reset school logo", cls="modal-title"),
+                    Strong("Reset document logo" if is_personal_owner else "Reset school logo", cls="modal-title"),
                     Button("", type="button", cls="btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}),
                     cls="modal-header border-0",
                 ),
                 Div(
-                    P("This removes the current logo from school settings and Supabase Storage. You can upload a new logo afterwards.", cls="text-muted mb-0"),
+                    P("This removes the current document logo from workspace settings and Supabase Storage. You can upload a new logo afterwards.", cls="text-muted mb-0"),
                     cls="modal-body",
                 ),
                 Div(
@@ -327,6 +354,32 @@ def _build_settings_content(
         **{"aria-hidden": "true"},
     )
     profile_content = Div(profile_content, logo_actions, reset_logo_modal)
+
+    personal_documents_content = Div(
+        Form(
+            Card(
+                csrf_field,
+                Strong("Document branding", cls="fs-6 text-dark d-block mb-2"),
+                P("By default, your documents use the name on your account. Turn on custom branding to use a professional or business name and an optional logo instead. This does not change your account name.", cls="text-muted small mb-3"),
+                Switch(
+                    "personal_document_branding_enabled",
+                    label="Use custom name and logo on my documents",
+                    checked=personal_branding_enabled,
+                ),
+                Input("document_display_name", label="Custom name on documents", value=document_display_name, placeholder=user.get("full_name") or "Your professional name"),
+                P("Leave the custom name blank to use your registered name. The custom logo is applied only while this option is on.", cls="form-text small text-muted"),
+                Div(
+                    Button("Save document branding", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold"),
+                    cls="d-flex justify-content-end mt-3",
+                ),
+                cls="p-4 border-0 shadow-sm rounded-4",
+            ),
+            action="/app/settings?tab=documents",
+            method="post",
+        ),
+        logo_actions,
+        reset_logo_modal,
+    )
 
     # Tab 2: My Account
     account_content = Card(
@@ -408,31 +461,47 @@ def _build_settings_content(
     )
 
     # Tab 5: Academic Policy
+    academic_policy_fields = [] if is_personal_owner else [
+        Strong("Academic Session & Policies", cls="fs-6 text-dark d-block mb-3"),
+        Row(
+            Col(
+                Input("academic_year", label="Current Academic Year", value=academic_year, placeholder="2025/2026"),
+                span=12,
+                md=6,
+            ),
+            Col(
+                Select("active_term", *terms, value=active_term, label="Active Term"),
+                span=12,
+                md=6,
+            ),
+            cls="g-3 mb-3",
+        ),
+        Input("min_pass_mark", input_type="number", label="Minimum Pass Mark (%)", value=min_pass_mark, min="1", max="100"),
+    ]
     policy_content = Form(
         Card(
             csrf_field,
-            Strong("Academic Session & Policies", cls="fs-6 text-dark d-block mb-3"),
-            Row(
-                Col(
-                    Input("academic_year", label="Current Academic Year", value=academic_year, placeholder="2025/2026"),
-                    span=12,
-                    md=6,
-                ),
-                Col(
-                    Select("active_term", *terms, value=active_term, label="Active Term"),
-                    span=12,
-                    md=6,
-                ),
-                cls="g-3 mb-3",
-            ),
-            Input("min_pass_mark", input_type="number", label="Minimum Pass Mark (%)", value=min_pass_mark, min="1", max="100"),
+            *academic_policy_fields,
             Div(
-                Strong("National Curriculum Scope", cls="small fw-bold d-block mb-1"),
-                P("Active: NERDC curriculum from Pre-Nursery through SSS 3. Primary, JSS, and SSS scheme-of-work data is available.", cls="text-muted small mb-0"),
+                Strong("Workspace curriculum", cls="small fw-bold d-block mb-1"),
+                P(
+                    "Choose the curriculum source used for new teaching and exam work. Existing exams and lesson plans keep the source they were created with."
+                    if is_personal_owner
+                    else "Choose the curriculum source used by this school. Teachers and staff inherit the school's choice; existing exams and lesson plans keep the source they were created with.",
+                    cls="text-muted small mb-2",
+                ),
+                Select(
+                    "curriculum_board",
+                    *[(board, board, board == curriculum_board) for board in curriculum_boards],
+                    label="Curriculum source",
+                    required=True,
+                    cls="form-select rounded-3",
+                ),
+                P("This applies to new curriculum browsing, lesson planning, and exam generation.", cls="form-text small text-muted mb-0"),
                 cls="p-3 rounded-3 bg-light border-start border-3 border-success mb-3",
             ),
             Div(
-                Button("Save Academic Policies", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold w-100 w-md-auto"),
+                Button("Save Curriculum Choice" if is_personal_owner else "Save Academic Policies", type="submit", variant="success", cls="btn-brand px-4 py-2 fw-semibold w-100 w-md-auto"),
                 cls="d-flex justify-content-end mt-3",
             ),
             cls="p-4 border-0 shadow-sm rounded-4",
@@ -476,8 +545,9 @@ def _build_settings_content(
         "integrations": integrations_content,
         "policy": policy_content,
         "security": security_content,
+        "documents": personal_documents_content,
     }
-    active_content = tab_bodies.get(active_tab, profile_content)
+    active_content = tab_bodies.get(active_tab, policy_content if is_personal_owner else profile_content)
 
     return Div(
         tabs_nav,
@@ -501,8 +571,10 @@ def register_routes(app):
         if role != "school_admin" and user.get("account_type") != "individual_teacher":
             return RedirectResponse("/app", status_code=303)
 
-        school_data, school_settings, notif_state = await _load_settings_context(req, user)
-        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=tab.lower(), csrf_token=req.session.get("csrf"))
+        school_data, school_settings, notif_state, curriculum_boards = await _load_settings_context(req, user)
+        if user.get("account_type") == "individual_teacher" and tab not in {"policy", "documents"}:
+            tab = "policy"
+        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=tab.lower(), csrf_token=req.session.get("csrf"), curriculum_boards=curriculum_boards)
         push_url = f"/app/settings?tab={tab.lower()}"
         return HTMLResponse(to_xml(content), headers={"HX-Push-Url": push_url})
 
@@ -522,19 +594,21 @@ def register_routes(app):
 
         flash = pop_flash(req)
         active_tab = req.query_params.get("tab", "profile").lower()
-        school_data, school_settings, notif_state = await _load_settings_context(req, user)
+        if user.get("account_type") == "individual_teacher" and active_tab not in {"policy", "documents"}:
+            active_tab = "policy"
+        school_data, school_settings, notif_state, curriculum_boards = await _load_settings_context(req, user)
 
         # Support direct HTMX requests to /app/settings
         if req.headers.get("hx-request") or req.headers.get("HX-Request"):
-            content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"))
+            content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"), curriculum_boards=curriculum_boards)
             return HTMLResponse(to_xml(content), headers={"HX-Push-Url": f"/app/settings?tab={active_tab}"})
 
         header = Div(
-            H1("School Settings", cls="fw-bold fs-2 text-dark mb-1"),
-            P("Configure school profile, academic sessions, security, and exam quality requirements.", cls="text-muted small mb-4"),
+            H1("Personal Settings" if user.get("account_type") == "individual_teacher" else "School Settings", cls="fw-bold fs-2 text-dark mb-1"),
+            P("Configure your workspace curriculum and account preferences." if user.get("account_type") == "individual_teacher" else "Configure school profile, academic sessions, curriculum, security, and exam quality requirements.", cls="text-muted small mb-4"),
         )
 
-        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"))
+        content = _build_settings_content(user, school_data, school_settings, notif_state, active_tab=active_tab, csrf_token=req.session.get("csrf"), curriculum_boards=curriculum_boards)
 
         return AppShell(
             Title("School Settings — SkuPhase"),
@@ -597,9 +671,28 @@ def register_routes(app):
                 push_flash(req, data.get("message", "Failed to save notification preferences."), "danger")
             return RedirectResponse("/app/settings?tab=notifications", status_code=303)
 
-        if user.get("role") != "school_admin":
+        is_personal_owner = user.get("account_type") == "individual_teacher"
+        if user.get("role") != "school_admin" and not (is_personal_owner and target_tab in {"policy", "documents"}):
             push_flash(req, "Only administrators can update school settings.", "danger")
             return RedirectResponse("/app/settings", status_code=303)
+
+        if school_id and is_personal_owner and target_tab == "documents":
+            enabled_value = str(form.get("personal_document_branding_enabled") or "").lower()
+            response = await call_api(
+                req,
+                "PUT",
+                f"/schools/{school_id}/settings",
+                json={
+                    "personal_document_branding_enabled": enabled_value in {"1", "true", "on", "yes"},
+                    "document_display_name": (form.get("document_display_name") or "").strip() or None,
+                },
+            )
+            ok, data = unwrap(response)
+            if not ok:
+                push_flash(req, data.get("message", "Could not save document branding."), "danger")
+                return RedirectResponse("/app/settings?tab=documents", status_code=303)
+            push_flash(req, "Document branding saved. Your next document export will use the updated setting.", "success")
+            return RedirectResponse("/app/settings?tab=documents", status_code=303)
 
         if school_id and target_tab == "profile":
             payload: dict = {}
@@ -632,27 +725,37 @@ def register_routes(app):
             logo_url_val = (form.get("logo_url") or "").strip()
             settings_payload = {
                 "logo_url": logo_url_val,
+                "document_display_name": (form.get("document_display_name") or "").strip() or None,
                 "document_style": {
                     "margin_mm": form.get("doc_margin_mm", 14),
                     "font_size": form.get("doc_font_size", 10),
                     "question_spacing_mm": form.get("doc_question_spacing", 2),
                 },
             }
-            await call_api(req, "PUT", f"/schools/{school_id}/settings", json=settings_payload)
+            settings_response = await call_api(req, "PUT", f"/schools/{school_id}/settings", json=settings_payload)
+            settings_ok, settings_data = unwrap(settings_response)
+            if not settings_ok:
+                push_flash(req, settings_data.get("message", "Failed to save document settings."), "danger")
+                return RedirectResponse("/app/settings?tab=profile", status_code=303)
 
             push_flash(req, "School profile saved successfully.", "success")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
 
-        if school_id:
+        if school_id and target_tab == "policy":
             payload = {
                 "active_term": form.get("active_term", "First Term"),
                 "academic_year": form.get("academic_year", "2025/2026"),
                 "min_pass_mark": int(form.get("min_pass_mark", 50)) if form.get("min_pass_mark") else 50,
+                "curriculum_board": (form.get("curriculum_board") or "").strip(),
             }
-            await call_api(req, "PUT", f"/schools/{school_id}/settings", json=payload)
+            response = await call_api(req, "PUT", f"/schools/{school_id}/settings", json=payload)
+            ok, data = unwrap(response)
+            if not ok:
+                push_flash(req, data.get("message", "Could not save the workspace curriculum."), "danger")
+                return RedirectResponse("/app/settings?tab=policy", status_code=303)
 
-        push_flash(req, "School settings saved successfully.", "success")
-        return RedirectResponse("/app/settings", status_code=303)
+        push_flash(req, "Workspace curriculum and academic policies saved successfully." if target_tab == "policy" else "School settings saved successfully.", "success")
+        return RedirectResponse("/app/settings?tab=policy" if target_tab == "policy" else "/app/settings", status_code=303)
 
     @app.post("/app/settings/logo-upload")
     async def upload_school_logo(req: Request):
@@ -660,8 +763,10 @@ def register_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
-        if user.get("role") != "school_admin":
-            push_flash(req, "Only administrators can update school settings.", "danger")
+        is_personal_owner = user.get("account_type") == "individual_teacher"
+        target_tab = "documents" if is_personal_owner else "profile"
+        if user.get("role") != "school_admin" and not is_personal_owner:
+            push_flash(req, "Only the school administrator or personal workspace owner can update document branding.", "danger")
             return RedirectResponse("/app/settings?tab=profile", status_code=303)
         school_id = user.get("school_id")
         form = await req.form()
@@ -669,15 +774,15 @@ def register_routes(app):
         allowed_types = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
         if not upload or not getattr(upload, "filename", None):
             push_flash(req, "Choose a logo file before uploading.", "warning")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         extension = allowed_types.get(getattr(upload, "content_type", ""))
         if not extension:
             push_flash(req, "Logo must be a PNG, JPG, or WebP image.", "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         content = await upload.read()
         if len(content) > 5 * 1024 * 1024:
             push_flash(req, "Logo must be 5 MB or smaller.", "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         settings = get_settings()
         object_path = f"schools/{school_id}/logo/{secrets.token_urlsafe(12)}{extension}"
         old_path = ""
@@ -695,7 +800,7 @@ def register_routes(app):
         except Exception:
             logger.exception("School logo upload failed for school_id=%s", school_id)
             push_flash(req, "The logo could not be uploaded to Supabase Storage.", "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
 
         response = await call_api(
             req,
@@ -710,7 +815,7 @@ def register_routes(app):
             except Exception:
                 pass
             push_flash(req, data.get("message", "Could not save the uploaded logo."), "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         if old_path and old_path != object_path:
             try:
                 await delete_logo(settings, old_path)
@@ -723,7 +828,7 @@ def register_routes(app):
             session_user["school_logo_url"] = logo_url
             req.session["user"] = session_user
         push_flash(req, "School logo uploaded successfully.", "success")
-        return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
 
     @app.post("/app/settings/logo-reset")
     async def reset_school_logo(req: Request):
@@ -731,9 +836,11 @@ def register_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
-        if user.get("role") != "school_admin":
-            push_flash(req, "Only administrators can update school settings.", "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        is_personal_owner = user.get("account_type") == "individual_teacher"
+        target_tab = "documents" if is_personal_owner else "profile"
+        if user.get("role") != "school_admin" and not is_personal_owner:
+            push_flash(req, "Only the school administrator or personal workspace owner can update document branding.", "danger")
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         school_id = user.get("school_id")
         settings = get_settings()
         current_response = await call_api(req, "GET", f"/schools/{school_id}/settings")
@@ -748,7 +855,7 @@ def register_routes(app):
         saved, data = unwrap(response)
         if not saved:
             push_flash(req, data.get("message", "Could not reset the school logo."), "danger")
-            return RedirectResponse("/app/settings?tab=profile", status_code=303)
+            return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)
         if old_path:
             try:
                 await delete_logo(settings, old_path)
@@ -759,4 +866,4 @@ def register_routes(app):
             session_user["school_logo_url"] = None
             req.session["user"] = session_user
         push_flash(req, "School logo reset. You can upload a new one at any time.", "success")
-        return RedirectResponse("/app/settings?tab=profile", status_code=303)
+        return RedirectResponse(f"/app/settings?tab={target_tab}", status_code=303)

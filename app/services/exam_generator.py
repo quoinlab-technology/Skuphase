@@ -334,6 +334,7 @@ class ExamGenerator:
                 term=request.term,
                 selected_weeks=request.selected_weeks,
                 db=db,
+                board=request.curriculum_board or "NERDC",
             )
             logger.info(
                 "generation.context_ready exam_id=%s scheme=%s few_shot=%s",
@@ -489,6 +490,7 @@ class ExamGenerator:
         term: Optional[str],
         selected_weeks: Optional[List[int]],
         db: AsyncSession,
+        board: str = "NERDC",
     ) -> Dict[str, Any]:
         """
         Retrieve curriculum context: official NERDC Scheme of Work objectives
@@ -498,7 +500,7 @@ class ExamGenerator:
         has_scheme_data = False
         few_shot_count = 0
 
-        # 1. Fetch official NERDC Scheme of Work objectives if weeks/term specified
+        # 1. Fetch the workspace's configured Scheme of Work objectives.
         if selected_weeks and term:
             try:
                 scheme_data = await CurriculumService.get_objectives_for_weeks(
@@ -507,10 +509,11 @@ class ExamGenerator:
                     term=term,
                     selected_weeks=selected_weeks,
                     db=db,
+                    board=board,
                 )
                 if scheme_data:
                     has_scheme_data = True
-                    lines = [f"OFFICIAL NERDC SCHEME OF WORK ({grade_level} {subject} - {term}):"]
+                    lines = [f"OFFICIAL {board} SCHEME OF WORK ({grade_level} {subject} - {term}):"]
                     for item in scheme_data:
                         lines.append(f"\n[Week {item['week_number']}: {item['topic']}]")
                         for obj in item.get("subtopics", []):
@@ -1230,6 +1233,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
                     exam.focus_topics = (request.focus_topics or "").strip() or None
                     exam.custom_instructions = (request.custom_instructions or "").strip() or None
                     exam.selected_weeks = request.selected_weeks
+                    exam.curriculum_board = request.curriculum_board or "NERDC"
                     exam.source_type = "ai"
                     exam.blueprint = request.blueprint.model_dump(mode="json") if request.blueprint else getattr(exam, "blueprint", None)
                     exam.total_marks = total_marks
@@ -1254,6 +1258,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
                         focus_topics=(request.focus_topics or "").strip() or None,
                         custom_instructions=(request.custom_instructions or "").strip() or None,
                         selected_weeks=request.selected_weeks,
+                        curriculum_board=request.curriculum_board or "NERDC",
                         source_type="ai",
                         status="under_review",
                         workflow_state="teacher_review",
@@ -1278,6 +1283,7 @@ TEACHER'S CUSTOM INSTRUCTIONS
                     focus_topics=(request.focus_topics or "").strip() or None,
                     custom_instructions=(request.custom_instructions or "").strip() or None,
                     selected_weeks=request.selected_weeks,
+                    curriculum_board=request.curriculum_board or "NERDC",
                     source_type="ai",
                     status="under_review",
                     workflow_state="teacher_review",

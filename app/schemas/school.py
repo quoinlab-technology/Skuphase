@@ -11,9 +11,12 @@ class SchoolSettingsUpdate(BaseModel):
     
     logo_url: Optional[str] = None
     logo_storage_path: Optional[str] = None
+    document_display_name: Optional[str] = Field(None, max_length=150)
+    personal_document_branding_enabled: Optional[bool] = None
     colors: Optional[Dict[str, str]] = None  # e.g., {"primary": "#0066cc", "secondary": "#ff6600"}
     llm_provider: Optional[str] = Field(None, pattern="^(grok|openrouter|openai)$")
     exam_format: Optional[str] = None  # e.g., "multiple_choice", "essay", "mixed"
+    curriculum_board: Optional[str] = Field(None, min_length=2, max_length=50)
     document_style: Optional[Dict[str, Any]] = None
 
 
@@ -23,9 +26,12 @@ class SchoolSettingsResponse(BaseModel):
     school_id: UUID
     logo_url: Optional[str] = None
     logo_storage_path: Optional[str] = None
+    document_display_name: Optional[str] = None
+    personal_document_branding_enabled: bool = False
     colors: Optional[Dict[str, str]] = None
     llm_provider: Optional[str] = None
     exam_format: Optional[str] = None
+    curriculum_board: str = "NERDC"
     document_style: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime

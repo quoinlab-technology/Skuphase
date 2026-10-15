@@ -21,6 +21,9 @@ class Exam(BaseModel):
     grade_level = Column(String(50), nullable=False)  # JSS1, JSS2, SSS1, etc
     title = Column(String(180), nullable=True)
     term = Column(String(30), nullable=True)
+    # Persist the selected source so later review/export stays auditable even
+    # if the workspace default changes.
+    curriculum_board = Column(String(50), nullable=True)
     focus_topics = Column(Text, nullable=True)
     custom_instructions = Column(Text, nullable=True)
     selected_weeks = Column(JSON, nullable=True)

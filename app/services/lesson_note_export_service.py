@@ -12,35 +12,92 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+from app.services.branding import get_logo_bytes, logo_flowable
 
 
 _INLINE_TOKEN_RE = re.compile(
-    r"(\$[^$]+\$|\\\(.+?\\\)|\*\*.+?\*\*|`[^`]+`|(?<!\*)\*[^*]+\*(?!\*))"
+    r"(\$[^$]+\$|\\\(.+?\\\)|\([^()]+\)/\([^()]+\)|\*\*.+?\*\*|`[^`]+`|(?<!\*)\*[^*]+\*(?!\*))"
 )
 
 
 def _readable_inline_formula(source: str) -> str:
-    """Turn common inline TeX into readable text without exposing delimiters."""
+    """Render common inline TeX with typographic sub/superscripts and symbols."""
     value = source.strip().strip("$")
     if value.startswith(r"\(") and value.endswith(r"\)"):
         value = value[2:-2]
-    value = re.sub(r"\\(?:left|right)\b", "", value)
-    value = re.sub(r"\\(?:text|mathrm|mathbf|operatorname)\{([^{}]*)\}", r"\1", value)
-    value = re.sub(r"\\frac\{([^{}]*)\}\{([^{}]*)\}", r"(\1)/(\2)", value)
-    value = re.sub(r"\\sqrt\{([^{}]*)\}", r"√(\1)", value)
-    for command, symbol in {
-        r"\times": "×", r"\div": "÷", r"\pm": "±", r"\cdot": "·",
-        r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\rightarrow": "→",
-        r"\to": "→", r"\pi": "π", r"\theta": "θ", r"\Delta": "Δ",
-        r"\lambda": "λ", r"\infty": "∞", r"\log": "log", r"\sin": "sin",
-        r"\cos": "cos", r"\tan": "tan", r"\ln": "ln",
-    }.items():
-        value = value.replace(command, symbol)
-    value = re.sub(r"\\[,;!]", " ", value)
-    value = re.sub(r"([_^])\{([^{}]*)\}", r"\1\2", value)
-    value = re.sub(r"\\([{}%&#_$])", r"\1", value)
-    value = re.sub(r"\\[a-zA-Z]+", "", value)
-    return re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"^\(([^()]+)\)/\(([^()]+)\)$", r"\\frac{\1}{\2}", value)
+    symbols = {
+        "times": "×", "div": "÷", "pm": "±", "cdot": "·", "leq": "≤",
+        "le": "≤", "geq": "≥", "ge": "≥", "neq": "≠", "rightarrow": "→",
+        "to": "→", "pi": "π", "theta": "θ", "Delta": "Δ", "lambda": "λ",
+        "infty": "∞", "alpha": "α", "beta": "β", "gamma": "γ", "mu": "μ",
+        "sigma": "σ", "omega": "ω", "sqrt": "√", "log": "log", "ln": "ln",
+        "sin": "sin", "cos": "cos", "tan": "tan",
+    }
+    symbols.update({
+        "times": "\u00d7", "div": "\u00f7", "pm": "\u00b1", "cdot": "\u00b7",
+        "leq": "\u2264", "le": "\u2264", "geq": "\u2265", "ge": "\u2265",
+        "neq": "\u2260", "rightarrow": "\u2192", "to": "\u2192", "pi": "\u03c0",
+        "theta": "\u03b8", "Delta": "\u0394", "lambda": "\u03bb", "infty": "\u221e",
+        "alpha": "\u03b1", "beta": "\u03b2", "gamma": "\u03b3", "mu": "\u03bc",
+        "sigma": "\u03c3", "omega": "\u03c9", "sqrt": "\u221a",
+    })
+
+    def group_at(text: str, start: int) -> tuple[str, int]:
+        if start >= len(text) or text[start] != "{":
+            return text[start:start + 1], start + 1
+        depth = 1
+        cursor = start + 1
+        while cursor < len(text) and depth:
+            if text[cursor] == "{": depth += 1
+            elif text[cursor] == "}": depth -= 1
+            cursor += 1
+        return text[start + 1:cursor - 1], cursor
+
+    def parse(text: str) -> str:
+        parts = []
+        i = 0
+        while i < len(text):
+            if text[i] == "\\":
+                match = re.match(r"\\([A-Za-z]+)", text[i:])
+                if match:
+                    command = match.group(1)
+                    i += len(match.group(0))
+                    if command in {"left", "right"}:
+                        continue
+                    if command in {"text", "mathrm", "mathbf", "operatorname"} and i < len(text) and text[i] == "{":
+                        group, i = group_at(text, i)
+                        parts.append(parse(group))
+                    elif command == "frac":
+                        numerator, i = group_at(text, i)
+                        denominator, i = group_at(text, i)
+                        parts.append(f"<super>{parse(numerator)}</super>/<sub>{parse(denominator)}</sub>")
+                    else:
+                        parts.append(escape(symbols.get(command, command)))
+                    continue
+                if i + 1 < len(text) and text[i + 1] in "{}%&#_$":
+                    parts.append(escape(text[i + 1]))
+                    i += 2
+                    continue
+            if text[i] in "_^":
+                tag = "sub" if text[i] == "_" else "super"
+                group, next_i = group_at(text, i + 1)
+                if next_i > i + 1:
+                    parts.append(f"<{tag}>{parse(group)}</{tag}>")
+                    i = next_i
+                    continue
+            if text[i] == "{":
+                group, i = group_at(text, i)
+                parts.append(parse(group))
+                continue
+            parts.append(escape(text[i]))
+            i += 1
+        return "".join(parts)
+
+    return re.sub(r"\\[,;!]", " ", parse(value))
 
 
 def _reportlab_inline(text: str) -> str:
@@ -49,8 +106,8 @@ def _reportlab_inline(text: str) -> str:
     for token in _INLINE_TOKEN_RE.split(text):
         if not token:
             continue
-        if token.startswith("$") or token.startswith(r"\("):
-            rendered.append(escape(_readable_inline_formula(token)))
+        if token.startswith("$") or token.startswith(r"\(") or re.fullmatch(r"\([^()]+\)/\([^()]+\)", token):
+            rendered.append(_readable_inline_formula(token))
         elif token.startswith("**") and token.endswith("**"):
             rendered.append(f"<b>{escape(token[2:-2])}</b>")
         elif token.startswith("*") and token.endswith("*"):
@@ -58,7 +115,10 @@ def _reportlab_inline(text: str) -> str:
         elif token.startswith("`") and token.endswith("`"):
             rendered.append(f'<font name="Courier">{escape(token[1:-1])}</font>')
         else:
-            rendered.append(escape(token))
+            plain = escape(token)
+            plain = re.sub(r"(?<![A-Za-z0-9])([A-Za-z]+)_([A-Za-z0-9]+)", r"\1<sub>\2</sub>", plain)
+            plain = re.sub(r"([A-Za-z0-9)])\^([A-Za-z0-9]+)", r"\1<super>\2</super>", plain)
+            rendered.append(plain)
     return "".join(rendered)
 
 
@@ -71,8 +131,10 @@ def export_lesson_note_pdf(
     week_number: int,
     content: str,
     school_name: str | None = None,
+    school_logo: str | None = None,
 ) -> bytes:
     """Render a saved lesson note to a printable, safely escaped PDF."""
+    _register_lesson_font()
     stream = BytesIO()
     document = SimpleDocTemplate(
         stream,
@@ -98,28 +160,33 @@ def export_lesson_note_pdf(
         fontSize=9, leading=13, textColor=colors.HexColor("#53615B"), spaceAfter=7 * mm,
     )
     body_style = ParagraphStyle(
-        "LessonNoteBody", parent=styles["BodyText"], fontSize=10, leading=15,
+        "LessonNoteBody", parent=styles["BodyText"], fontName="SkuVera", fontSize=10, leading=15,
         spaceAfter=2.5 * mm, wordWrap="CJK",
     )
     heading_style = ParagraphStyle(
-        "LessonNoteSection", parent=styles["Heading2"], fontSize=12, leading=16,
+        "LessonNoteSection", parent=styles["Heading2"], fontName="SkuVera-Bold", fontSize=12, leading=16,
         textColor=colors.HexColor("#064E3B"), spaceBefore=3 * mm, spaceAfter=1.5 * mm,
     )
 
     story = []
+    logo = logo_flowable(school_logo, width=34 * mm, height=17 * mm)
+    if logo is not None:
+        logo.hAlign = "CENTER"
+        story.extend((logo, Spacer(1, 2 * mm)))
     if school_name:
         story.append(Paragraph(escape(school_name), school_style))
     story.append(Paragraph(escape(title), title_style))
-    meta = " · ".join(
+    meta = " | ".join(
         part for part in (
-            f"{subject} · {class_level}" if subject or class_level else "",
+            f"{subject} | {class_level}" if subject or class_level else "",
             term,
             f"Week {week_number}",
         ) if part
     )
     story.append(Paragraph(escape(meta), meta_style))
 
-    for raw_line in (content or "").splitlines():
+    normalized_content = (content or "").replace("\u2022 ", "- ")
+    for raw_line in normalized_content.splitlines():
         line = raw_line.strip()
         if not line:
             story.append(Spacer(1, 2 * mm))
@@ -134,14 +201,29 @@ def export_lesson_note_pdf(
             "teaching materials", "resources", "conclusion",
         }:
             story.append(Paragraph(_reportlab_inline(heading), heading_style))
-        elif line.startswith(("- ", "* ", "• ")):
-            story.append(Paragraph(_reportlab_inline(line[2:]), body_style, bulletText="•"))
+        elif line.startswith(("- ", "* ", "• ", "â€¢ ")):
+            story.append(Paragraph(_reportlab_inline(line[2:]), body_style, bulletText="-"))
         elif re.match(r"^\d+[.)]\s+", line):
             story.append(Paragraph(_reportlab_inline(line), body_style))
         else:
             story.append(Paragraph(_reportlab_inline(line), body_style))
 
-    document.build(story)
+    def page_furniture(canvas, doc):
+        canvas.saveState()
+        if school_name:
+            canvas.setFillColor(colors.HexColor("#DCE7E0"))
+            canvas.setFont("SkuVera-Bold", 23)
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(34)
+            canvas.drawCentredString(0, 0, school_name[:42])
+            canvas.restoreState()
+            canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#64736C"))
+        canvas.setFont("SkuVera", 8)
+        canvas.drawCentredString(A4[0] / 2, 10 * mm, f"{school_name or 'SkuPhase'} | {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_furniture, onLaterPages=page_furniture)
     return stream.getvalue()
 
 
@@ -155,6 +237,8 @@ def export_lesson_note_docx(
     content: str,
     school_name: str | None = None,
     teacher_name: str | None = None,
+    school_logo: str | None = None,
+    is_personal_workspace: bool = False,
 ) -> bytes:
     """Build an editable Word lesson note from the saved Markdown-like text.
 
@@ -178,6 +262,16 @@ def export_lesson_note_docx(
     normal.font.size = Pt(10)
     normal.paragraph_format.space_after = Pt(5)
 
+    if school_logo:
+        try:
+            image_bytes = get_logo_bytes(school_logo)
+            if image_bytes:
+                paragraph = document.add_paragraph()
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                paragraph.add_run().add_picture(BytesIO(image_bytes), width=Inches(1.0))
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Word export school logo unavailable (%s)", type(exc).__name__)
     if school_name:
         school = document.add_paragraph()
         school.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -203,6 +297,20 @@ def export_lesson_note_docx(
         f"Teacher: {teacher_name}" if teacher_name else "",
     ) if part)
     metadata.add_run(meta).font.color.rgb = RGBColor(83, 97, 91)
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer_label = "Personal teaching copy" if is_personal_workspace else "Official school copy"
+    footer_run = footer.add_run(f"{school_name or 'SkuPhase'} · {footer_label}")
+    footer_run.font.color.rgb = RGBColor(175, 190, 181)
+    footer_run.font.size = Pt(8)
+
+    watermark = section.header.paragraphs[0]
+    watermark.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    watermark_run = watermark.add_run((school_name or "SkuPhase").strip().upper())
+    watermark_run.bold = True
+    watermark_run.font.color.rgb = RGBColor(224, 234, 228)
+    watermark_run.font.size = Pt(16)
 
     known_headings = {
         "objectives", "learning objectives", "starter", "introduction",
@@ -286,3 +394,22 @@ def export_lesson_note_docx(
     stream = BytesIO()
     document.save(stream)
     return stream.getvalue()
+
+
+def _register_lesson_font() -> None:
+    """Register ReportLab's bundled Vera fonts for reliable math symbols."""
+    import reportlab
+    from pathlib import Path
+
+    font_dir = Path(reportlab.__file__).parent / "fonts"
+    for name, filename in (("SkuVera", "Vera.ttf"), ("SkuVera-Bold", "VeraBd.ttf")):
+        if name not in pdfmetrics.getRegisteredFontNames():
+            font_path = font_dir / filename
+            if font_path.is_file():
+                pdfmetrics.registerFont(TTFont(name, str(font_path)))
+
+
+def lesson_note_filename(title: str, plan_id: str, extension: str) -> str:
+    """Make a portable, collision-resistant export filename from its title."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (title or "lesson-note").casefold()).strip("-")[:64]
+    return f"{slug or 'lesson-note'}-{plan_id[:8]}.{extension.lstrip('.')}"

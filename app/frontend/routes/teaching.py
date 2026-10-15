@@ -33,6 +33,7 @@ from app.frontend.api import call_api, unwrap
 from app.frontend.components.feedback import pop_flash, push_flash
 from app.frontend.components.layout import AppShell
 from app.frontend.deps import current_user, ensure_login
+from app.frontend.curriculum_context import workspace_curriculum_board
 
 logger = logging.getLogger(__name__)
 TEACHING_API_TIMEOUT_SECONDS = 5
@@ -73,23 +74,23 @@ def _terms() -> list[tuple[str, str]]:
     return [("First Term", "First Term"), ("Second Term", "Second Term"), ("Third Term", "Third Term")]
 
 
-async def _scope(req: Request, class_level: str, subject: str, term: str):
+async def _scope(req: Request, class_level: str, subject: str, term: str, board: str = "NERDC"):
     warnings = []
     classes_data, failed_source = await _fetch_data(
-        req, "/curriculum/classes", params={"board": "NERDC"}, source="curriculum classes"
+        req, "/curriculum/classes", params={"board": board}, source="curriculum classes"
     )
     if failed_source:
         warnings.append(failed_source)
     classes = classes_data.get("classes", []) if isinstance(classes_data, dict) else []
     if not classes:
-        classes = [class_level]
+        classes = [class_level] if board.casefold() == "nerdc" and class_level else []
     if class_level not in classes:
-        class_level = classes[0]
+        class_level = classes[0] if classes else ""
 
     subjects_data, failed_source = await _fetch_data(
         req,
         "/curriculum/subjects",
-        params={"class_level": class_level, "board": "NERDC"},
+        params={"class_level": class_level, "board": board},
         source="curriculum subjects",
     )
     if failed_source:
@@ -99,11 +100,16 @@ async def _scope(req: Request, class_level: str, subject: str, term: str):
         subject = subjects[0].get("subject_name", "")
     if subjects and subject not in {item.get("subject_name") for item in subjects}:
         subject = subjects[0].get("subject_name", "")
+    if not subjects and board.casefold() != "nerdc":
+        subject = ""
+
+    if not class_level or not subject:
+        return classes, subjects, [], class_level, subject, warnings
 
     weeks_data, weeks_warning = await _fetch_data(
         req,
         "/curriculum/school/weeks",
-        params={"class_level": class_level, "subject": subject, "term": term},
+        params={"class_level": class_level, "subject": subject, "term": term, "board": board},
         source="curriculum weeks",
     )
     weeks = weeks_data.get("weeks", []) if isinstance(weeks_data, dict) else []
@@ -111,7 +117,7 @@ async def _scope(req: Request, class_level: str, subject: str, term: str):
         fallback_data, fallback_warning = await _fetch_data(
             req,
             "/curriculum/weeks",
-            params={"class_level": class_level, "subject": subject, "term": term},
+            params={"class_level": class_level, "subject": subject, "term": term, "board": board},
             source="curriculum weeks fallback",
         )
         weeks = fallback_data.get("weeks", []) if isinstance(fallback_data, dict) else []
@@ -158,7 +164,7 @@ def _plan_card(plan: dict, user: dict) -> Card:
             ),
             cls="d-flex flex-wrap align-items-center mb-2",
         ),
-        cls="mb-2",
+        cls="mb-2 d-none d-lg-block",
     ) if ai_note else None
 
     return Card(
@@ -173,13 +179,29 @@ def _plan_card(plan: dict, user: dict) -> Card:
             Div(
                 Strong("Draft lesson note", cls="small text-success d-block mb-1"),
                 refinement_chips,
+                Details(
+                    Summary(Icon("sliders", cls="bi me-2"), "Quick refinements", cls="small fw-semibold text-success py-2"),
+                    Div(
+                        Form(Input(type="hidden", name="lesson_plan_id", value=plan_id), Input(type="hidden", name="guidance", value="Include relatable Nigerian examples, local market contexts, and cultural applications familiar to primary pupils."), Button(Icon("geo-alt-fill", cls="bi me-1"), "Nigerian context", type="submit", variant="outline-success", size="sm", cls="rounded-pill"), action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline-block me-2 mb-2"),
+                        Form(Input(type="hidden", name="lesson_plan_id", value=plan_id), Input(type="hidden", name="guidance", value="Make the lesson note concise, bulleted, and easy to deliver within a single 40-minute classroom period."), Button(Icon("scissors", cls="bi me-1"), "Make shorter", type="submit", variant="outline-success", size="sm", cls="rounded-pill"), action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline-block me-2 mb-2"),
+                        Form(Input(type="hidden", name="lesson_plan_id", value=plan_id), Input(type="hidden", name="guidance", value="Simplify vocabulary and explanations so slower learners and early ESL readers can follow easily."), Button(Icon("lightbulb", cls="bi me-1"), "Simplify language", type="submit", variant="outline-success", size="sm", cls="rounded-pill"), action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline-block me-2 mb-2"),
+                        Form(Input(type="hidden", name="lesson_plan_id", value=plan_id), Input(type="hidden", name="guidance", value="Add a step-by-step practical demonstration using everyday classroom items (chalk, cup, ruler, seeds)."), Button(Icon("tools", cls="bi me-1"), "Add activity", type="submit", variant="outline-success", size="sm", cls="rounded-pill"), action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline-block mb-2"),
+                        cls="pt-2",
+                    ),
+                    cls="mb-2 d-lg-none",
+                ) if ai_note else None,
                 Form(
                     Label("Lesson note draft", for_=f"lesson-note-{plan_id}", cls="small fw-semibold text-muted mb-1"),
                     Textarea(ai_note or "", id=f"lesson-note-{plan_id}", name="ai_lesson_note", rows="6", aria_describedby=f"lesson-note-help-{plan_id}", data_note_editor="true", cls="form-control form-control-sm border-0 rounded-3", style="background:#F1F8F2; font-size: 0.9rem; line-height: 1.5;"),
                     P("Your edits are saved when you choose Save & submit. Refinements replace the draft, so you will be asked before unsaved changes are discarded.", id=f"lesson-note-help-{plan_id}", cls="form-text small text-muted"),
+                    Details(
+                        Summary("Preview lesson note", cls="small fw-semibold text-success py-2"),
+                        Div(P("Open this preview to see the formatted lesson note.", cls="small text-muted mb-0"), data_note_preview=f"lesson-note-{plan_id}", cls="lesson-note-preview border rounded-3 bg-white p-3 mt-2"),
+                        cls="mb-2",
+                    ),
                     Input(type="hidden", name="status", value="submitted"),
                     Div(
-                        Button(Icon("check-lg", cls="bi me-1"), "Save & submit for review", type="submit", variant="success", size="sm", cls="rounded-pill"),
+                        Button(Icon("check-lg", cls="bi me-1"), Span("Save & submit for review", cls="d-none d-sm-inline"), Span("Submit", cls="d-inline d-sm-none"), type="submit", variant="success", size="sm", aria_label="Save and submit lesson note for review", cls="rounded-pill"),
                         cls="d-inline-block mt-2 me-2",
                     ),
                     action=f"/app/teaching/{plan_id}/save-note",
@@ -188,14 +210,18 @@ def _plan_card(plan: dict, user: dict) -> Card:
                 ),
                 A(
                     Icon("file-earmark-pdf", cls="bi me-1"),
-                    "Print / download PDF",
+                    Span("Print / download PDF", cls="d-none d-sm-inline"),
                     href=f"/app/teaching/{plan_id}/lesson-note/export.pdf",
+                    aria_label="Print or download lesson note PDF",
+                    title="Print or download PDF",
                     cls="btn btn-sm btn-outline-success rounded-pill mt-2 me-2",
                 ),
                 A(
                     Icon("file-earmark-word", cls="bi me-1"),
-                    "Download Word",
+                    Span("Download Word", cls="d-none d-sm-inline"),
                     href=f"/app/teaching/{plan_id}/lesson-note/export.docx",
+                    aria_label="Download lesson note Word document",
+                    title="Download Word document",
                     cls="btn btn-sm btn-outline-success rounded-pill mt-2 me-2",
                 ),
                 Form(
@@ -217,7 +243,7 @@ def _plan_card(plan: dict, user: dict) -> Card:
                 ),
                 Form(
                     Input(type="hidden", name="lesson_plan_id", value=plan_id),
-                    Button(Icon("check2-circle", cls="bi me-1"), "Track syllabus coverage", type="submit", variant="outline-secondary", size="sm", cls="rounded-pill"),
+                    Button(Icon("check2-circle", cls="bi me-1"), "Start coverage tracking", type="submit", variant="outline-success", size="sm", cls="rounded-pill"),
                     action=f"/app/teaching/{plan_id}/coverage",
                     method="post",
                     cls="d-inline ms-2",
@@ -313,8 +339,11 @@ def _coverage_card(row: dict, user: dict) -> Card:
 
     return Card(
         Div(
+            Strong(f"{row.get('class_level') or 'Class'} / {row.get('subject') or 'Subject'}", cls="d-block text-dark"),
+            Span(f"{row.get('term') or ''} / Week {row.get('week_number') or '-'}", cls="small text-muted d-block mt-1"),
+            P(row.get("topic") or "Curriculum week", cls="small fw-semibold text-dark mb-2 mt-2"),
             Span(badge_label, cls=f"badge rounded-pill bg-{tone}-subtle text-{tone} border border-{tone}-subtle px-3 py-1 fw-semibold"),
-            P("School-wide record · staff progress is shared; an administrator confirms completed coverage.", cls="small text-muted mb-1 mt-2"),
+            P("Shared school record. Staff mark a week taught; an administrator confirms it.", cls="small text-muted mb-1 mt-2"),
             action,
             cls="p-3",
         ),
@@ -332,13 +361,15 @@ def teaching_routes(app):
         scheme_id: str = "",
         mode: str = "",
         output: str = "",
+        show_coverage: bool = False,
     ):
         guard = ensure_login(req)
         if guard:
             return guard
         user = current_user(req) or {}
+        board = await workspace_curriculum_board(req, user)
         classes, subjects, weeks, class_level, subject, scope_warnings = await _scope(
-            req, class_level, subject, term
+            req, class_level, subject, term, board
         )
         selected_week = next(
             (week for week in weeks if scheme_id and str(week.get("id")) == scheme_id),
@@ -377,13 +408,14 @@ def teaching_routes(app):
         select_cls = "border-0 rounded-3"
         select_style = "background:#F1F4F1;"
         scope_form = Form(
-            Div(Label("Class", for_="class_level", cls="small fw-semibold text-muted mb-1"), Select("class_level", *[(c, c, c == class_level) for c in classes], cls=select_cls, style=select_style), cls="col-md-4"),
-            Div(Label("Subject", for_="subject", cls="small fw-semibold text-muted mb-1"), Select("subject", *[(s.get("subject_name", ""), s.get("subject_name", ""), s.get("subject_name") == subject) for s in subjects], cls=select_cls, style=select_style), P("Subjects are based on the selected class. Changing class may reset this subject if it is not taught there.", cls="form-text small text-muted"), cls="col-md-5"),
-            Div(Label("Term", for_="term", cls="small fw-semibold text-muted mb-1"), Select("term", *[(value, label, value == term) for label, value in _terms()], cls=select_cls, style=select_style), cls="col-md-3"),
+            Div(Label("Class", for_="class_level", cls="small fw-semibold text-muted mb-1"), Select("class_level", *[(c, c, c == class_level) for c in classes], cls=select_cls, style=select_style, data_scope_reload="true"), Span(Span("", cls="spinner-border spinner-border-sm me-1", aria_hidden="true"), "Updating subjects and lesson weeks…", id="scope-loading", cls="small text-success d-none mt-2", role="status"), cls="col-md-4"),
+            Div(Label("Subject", for_="subject", cls="small fw-semibold text-muted mb-1"), Select("subject", *[(s.get("subject_name", ""), s.get("subject_name", ""), s.get("subject_name") == subject) for s in subjects], cls=select_cls, style=select_style, data_scope_reload="true"), P("Changing class refreshes the available subjects and lesson-plan form automatically.", cls="form-text small text-muted"), cls="col-md-5"),
+            Div(Label("Term", for_="term", cls="small fw-semibold text-muted mb-1"), Select("term", *[(value, label, value == term) for label, value in _terms()], cls=select_cls, style=select_style, data_scope_reload="true"), cls="col-md-3"),
             Div(Button("Refresh scheme", type="submit", variant="success", cls="rounded-pill px-4 btn-brand mt-3"), cls="col-12"),
             action="/app/teaching",
             method="get",
             cls="row g-3 align-items-end",
+            data_scope_form="true",
         )
 
         week_options = [
@@ -392,8 +424,12 @@ def teaching_routes(app):
         ]
         create_form = Form(
             Input(type="hidden", name="curriculum_id", value=selected_week.get("curriculum_id", "")),
+            Input(type="hidden", name="return_class_level", value=class_level),
+            Input(type="hidden", name="return_subject", value=subject),
+            Input(type="hidden", name="return_term", value=term),
+            Input(type="hidden", name="return_board", value=board),
             Div(Label("Scheme week", for_="scheme_id", cls="small fw-semibold text-muted mb-1"), Select("scheme_id", *week_options, required=True, aria_describedby="scheme-week-help", cls=select_cls, style=select_style), P("Choose a teaching week. Open the topic list below to read the complete scheme wording.", id="scheme-week-help", cls="form-text small text-muted"), Details(Summary("Read full topics for this term", cls="small text-success fw-semibold"), Ul(*[Li(f"Week {w.get('week_number')}: {w.get('topic', '')}", cls="mb-1") for w in weeks], cls="small text-muted mb-0 ps-4") if weeks else P("No weeks are available for this scope.", cls="small text-muted mb-0"), cls="mt-2"), cls="col-12"),
-            Div(Label("Plan title", for_="plan-title", cls="small fw-semibold text-muted mb-1"), Input(name="title", id="plan-title", required=True, value=f"{subject} · {term}", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
+            Div(Label("Plan title", for_="plan-title", cls="small fw-semibold text-muted mb-1"), Input(name="title", id="plan-title", required=True, value=f"{subject} - {term}", cls="form-control border-0 rounded-3", style="background:#F1F4F1;"), cls="col-12"),
             Div(
                 Label("Learning activities (examples below)", for_="plan-activities", cls="small fw-semibold text-muted mb-1"),
                 Textarea(
@@ -487,35 +523,22 @@ def teaching_routes(app):
                 variant="success",
                 cls="rounded-4",
             ) if scheme_id and selected_week and not scheme_notice else None,
-            Alert(scheme_notice, variant="warning", cls="rounded-4") if scheme_notice else None,
             Card(Div(H2("Choose your teaching scope", cls="fs-5 fw-bold mb-3"), scope_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
             Row(
-                Col(Card(Div(Span("SCHOOL COVERAGE RECORDS", cls="small text-muted fw-semibold"), Strong("—" if summary_warning else str(summary.get("total", 0)), cls="d-block fs-2 text-dark"), P("Tracked scheme weeks across the school", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
-                Col(Card(Div(Span("MARKED AS TAUGHT", cls="small text-muted fw-semibold"), Strong("—" if summary_warning else str(summary.get("completed", 0)), cls="d-block fs-2 text-success"), P("School records marked completed", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
-                Col(Card(Div(Span("CONFIRMED BY ADMIN", cls="small text-muted fw-semibold"), Strong("—" if summary_warning else str(summary.get("verified", 0)), cls="d-block fs-2 text-primary"), P("School records verified by an administrator", cls="small text-muted mb-0"), cls="p-3"), cls="border-0 shadow-sm rounded-4"), span=12, md=4),
-                g=3,
-                cls="mb-4",
-            ),
-            Div(Icon("exclamation-triangle", cls="bi me-2"), summary.get("warning"), cls="alert alert-warning rounded-4 border-0") if summary.get("warning") else None,
-            Card(
-                Div(
-                    Div(H2("Teaching tools", cls="fs-5 fw-bold mb-2"), P("Create printable classwork from your lesson plans.", cls="small text-muted mb-0")),
-                    A(Icon("plus-lg", cls="bi me-1"), "Open worksheets", href=f"/app/teaching/worksheets?{urlencode({'class_level': class_level, 'subject': subject, 'term': term})}", cls="btn btn-brand rounded-pill px-4 flex-shrink-0"),
-                    cls="d-flex justify-content-between align-items-center gap-3 flex-wrap p-4",
-                ),
-                cls="border-0 shadow-sm rounded-4 mb-4",
-            ),
-            Card(
-                Details(
+                Col(Card(Div(H2("Teaching tools", cls="fs-5 fw-bold mb-2"), P("Create printable classwork from your lesson plans.", cls="small text-muted mb-3"), A(Icon("plus-lg", cls="bi me-1"), "Open worksheets", href=f"/app/teaching/worksheets?{urlencode({'class_level': class_level, 'subject': subject, 'term': term})}", cls="btn btn-brand rounded-pill px-4"), cls="p-4 h-100"), cls="border-0 shadow-sm rounded-4 h-100"), span=12, lg=4),
+                Col(Card(Details(
                     Summary("Coverage progress", cls="fs-5 fw-bold text-dark"),
-                    P("This is a school-wide syllabus record. Teachers update progress; an administrator confirms completed coverage.", cls="small text-muted mt-2 mb-3"),
-                    Row(*[Col(_coverage_card(row, user), span=12, md=6, xl=4) for row in coverage_rows[:12]], g=3) if coverage_rows else P("Coverage records could not be loaded. Use Refresh scheme to retry." if coverage_warning else "No coverage records have been started by staff yet.", cls="text-muted small mb-0"),
-                    cls="p-4",
-                ),
-                cls="border-0 shadow-sm rounded-4 mb-4",
+                    P("Use this shared tracker after choosing a lesson week: mark it as taught when delivered, then a school administrator confirms it. It tracks syllabus delivery, not lesson-note approval.", cls="small text-muted mt-2 mb-3"),
+                    Div(Span("Step 1: Start tracking", cls="badge rounded-pill bg-light text-dark me-2"), Span("Step 2: Mark taught", cls="badge rounded-pill bg-light text-dark me-2"), Span("Step 3: Admin confirms", cls="badge rounded-pill bg-light text-dark"), cls="mb-3"),
+                    P(f"{summary.get('total', 0)} weeks tracked | {summary.get('planned', 0)} not started | {summary.get('in_progress', 0)} in progress | {summary.get('completed', 0)} marked taught | {summary.get('verified', 0)} admin-confirmed" if not summary_warning else "Coverage counts are temporarily unavailable.", cls="small fw-semibold text-success mb-3", role="status"),
+                    Row(*[Col(_coverage_card(row, user), span=12, md=6, xl=4) for row in coverage_rows[:12]], g=3) if coverage_rows else P("Coverage records could not be loaded. Use Refresh scheme to retry." if coverage_warning else "No weeks are being tracked yet. Choose a lesson plan below and select Start coverage tracking; the new record will appear here.", cls="text-muted small mb-0"),
+                    cls="p-4", open=show_coverage, id="coverage-progress",
+                ), cls="border-0 shadow-sm rounded-4 h-100"), span=12, lg=8),
+                g=3, cls="mb-4 align-items-stretch",
             ),
-            Card(Div(H2("Create a lesson plan", cls="fs-5 fw-bold mb-3"), P(f"Grounded in {subject or 'your selected subject'} · {term}.", cls="small text-muted mb-3"), create_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
-            Card(Div(H2("Your teaching plans", cls="fs-5 fw-bold mb-3"), plans_view, cls="p-4"), cls="border-0 shadow-sm rounded-4"),
+            Alert(scheme_notice, variant="warning", cls="rounded-4") if scheme_notice else None,
+            Card(Div(H2("Create a lesson plan", cls="fs-5 fw-bold mb-3"), P(f"Grounded in {subject or 'your selected subject'} - {term}.", cls="small text-muted mb-3"), create_form, cls="p-4"), cls="border-0 shadow-sm rounded-4 mb-4"),
+            Div(H2("Your teaching plans", cls="fs-5 fw-bold mb-3"), plans_view, cls="teaching-plans-section"),
             cls="py-4 pt-lg-5 teaching-workspace",
         )
         confirmation = Div(
@@ -580,6 +603,100 @@ def teaching_routes(app):
             pending = null;
           });
         })();
+
+        (() => {
+          const scopeForm = document.querySelector('[data-scope-form="true"]');
+          const loading = document.getElementById('scope-loading');
+          scopeForm?.querySelectorAll('[data-scope-reload="true"]').forEach(control => {
+            control.addEventListener('change', () => {
+              if (loading) loading.classList.remove('d-none');
+              scopeForm.querySelectorAll('button[type="submit"]').forEach(button => {
+                button.disabled = true;
+                button.setAttribute('aria-busy', 'true');
+              });
+              scopeForm.requestSubmit();
+            });
+          });
+
+          function inlineMarkdown(parent, text) {
+            const pattern = /(\\$\\$[\\s\\S]+?\\$\\$|\\$[^$\\n]+\\$|\\\\\\([\\s\\S]+?\\\\\\)|\\([^()]+\\)\\/\\([^()]+\\)|\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|`[^`]+`|[A-Za-z]+_[A-Za-z0-9]+|[A-Za-z0-9]\\^[A-Za-z0-9]+)/g;
+            let cursor = 0;
+            for (const match of text.matchAll(pattern)) {
+              const at = match.index;
+              if (at > cursor) parent.append(document.createTextNode(text.slice(cursor, at)));
+              const token = match[0];
+              let element;
+              if (token.startsWith('**')) element = document.createElement('strong');
+              else if (token.startsWith('*')) element = document.createElement('em');
+              else if (token.startsWith('`')) element = document.createElement('code');
+              else if (/^[A-Za-z]+_[A-Za-z0-9]+$/.test(token) || /^[A-Za-z0-9]\\^[A-Za-z0-9]+$/.test(token)) {
+                const splitAt = token.includes('_') ? token.indexOf('_') : token.indexOf('^');
+                const base = document.createElement('span');
+                base.textContent = token.slice(0, splitAt);
+                const script = document.createElement(token[splitAt] === '_' ? 'sub' : 'sup');
+                script.textContent = token.slice(splitAt + 1);
+                parent.append(base, script);
+                cursor = at + token.length;
+                continue;
+              } else if (/^\\([^()]+\\)\\/\\([^()]+\\)$/.test(token)) {
+                const slashAt = token.indexOf('/');
+                const numerator = document.createElement('sup');
+                inlineMarkdown(numerator, token.slice(1, slashAt - 1));
+                const denominator = document.createElement('sub');
+                inlineMarkdown(denominator, token.slice(slashAt + 2, -1));
+                parent.append(numerator, document.createTextNode('/'), denominator);
+                cursor = at + token.length;
+                continue;
+              }
+              if (element) {
+                element.textContent = token.slice(token.startsWith('**') ? 2 : 1, token.startsWith('**') ? -2 : -1);
+                parent.append(element);
+              } else parent.append(document.createTextNode(token));
+              cursor = at + token.length;
+            }
+            if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+          }
+
+          function renderPreview(editor, target) {
+            target.replaceChildren();
+            let list = null;
+            (editor.value || '').split(/\\r?\\n/).forEach(raw => {
+              const line = raw.trim();
+              if (!line) { list = null; return; }
+              if (/^[-*]\\s+/.test(line) || /^\\d+[.)]\\s+/.test(line)) {
+                const ordered = /^\\d+[.)]\\s+/.test(line);
+                if (!list || list.tagName !== (ordered ? 'OL' : 'UL')) {
+                  list = document.createElement(ordered ? 'ol' : 'ul');
+                  list.className = 'mb-2 ps-4';
+                  target.append(list);
+                }
+                const item = document.createElement('li');
+                inlineMarkdown(item, line.replace(/^(?:[-*]|\\d+[.)])\\s+/, ''));
+                list.append(item);
+                return;
+              }
+              list = null;
+              const heading = line.match(/^(#{1,3})\\s+(.*)$/);
+              const el = heading ? document.createElement(`h${heading[1].length + 2}`) : document.createElement('p');
+              el.className = heading ? 'text-success mt-3 mb-2' : 'mb-2';
+              inlineMarkdown(el, heading ? heading[2] : line);
+              target.append(el);
+            });
+            if (!target.childNodes.length) target.textContent = 'The lesson note is empty.';
+            if (typeof renderMathInElement === 'function') {
+              renderMathInElement(target, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\\\(',right:'\\\\)',display:false},{left:'\\\\[',right:'\\\\]',display:true}],throwOnError:false});
+            }
+          }
+
+          document.querySelectorAll('[data-note-preview]').forEach(target => {
+            const editor = document.getElementById(target.dataset.notePreview);
+            if (!editor) return;
+            const details = target.closest('details');
+            editor.addEventListener('input', () => { if (details?.open) renderPreview(editor, target); });
+            details?.addEventListener('toggle', () => { if (details.open) renderPreview(editor, target); });
+            if (details?.open) renderPreview(editor, target);
+          });
+        })();
         """)
         return AppShell(
             Title("Teaching workspace — SkuPhase"),
@@ -601,7 +718,8 @@ def teaching_routes(app):
         if guard:
             return guard
         user = current_user(req) or {}
-        classes, subjects, weeks, class_level, subject, warnings = await _scope(req, class_level, subject, term)
+        board = await workspace_curriculum_board(req, user)
+        classes, subjects, weeks, class_level, subject, warnings = await _scope(req, class_level, subject, term, board)
         plans_data, exercises_data = await asyncio.gather(
             _fetch_data(req, "/lesson-plans", source="lesson plans"),
             _fetch_data(req, "/lesson-plans/exercises", source="worksheets"),
@@ -690,7 +808,8 @@ def teaching_routes(app):
             push_flash(req, "Lesson plan created from the selected scheme week.", "success")
         else:
             push_flash(req, data.get("message", "Could not create lesson plan."), "danger")
-        return RedirectResponse("/app/teaching", status_code=303)
+        scope_url = urlencode({"class_level": form.get("return_class_level", "Primary 4"), "subject": form.get("return_subject", ""), "term": form.get("return_term", "First Term")})
+        return RedirectResponse(f"/app/teaching?{scope_url}", status_code=303)
 
     @app.post("/app/teaching/{plan_id}/lesson-note")
     async def lesson_note(req: Request, plan_id: str):
@@ -738,8 +857,9 @@ def teaching_routes(app):
             return guard
         resp = await call_api(req, "POST", f"/lesson-plans/{plan_id}/coverage")
         ok, data = unwrap(resp)
-        push_flash(req, "Coverage tracking started for this week." if ok else data.get("message", "Could not start coverage."), "success" if ok else "danger")
-        return RedirectResponse("/app/teaching", status_code=303)
+        message = ("Coverage tracking started. The week is now visible in Coverage progress." if resp.status_code == 201 else "This week is already on the school coverage tracker.") if ok else data.get("message", "Could not start coverage.")
+        push_flash(req, message, "success" if ok else "danger")
+        return RedirectResponse("/app/teaching?show_coverage=1#coverage-progress", status_code=303)
 
     @app.post("/app/teaching/coverage/{coverage_id}")
     async def update_coverage(req: Request, coverage_id: str):
@@ -751,7 +871,7 @@ def teaching_routes(app):
         resp = await call_api(req, "PATCH", f"/lesson-plans/coverage/{coverage_id}", json={"status": status})
         ok, data = unwrap(resp)
         push_flash(req, "Coverage status updated." if ok else data.get("message", "Could not update coverage."), "success" if ok else "danger")
-        return RedirectResponse("/app/teaching", status_code=303)
+        return RedirectResponse("/app/teaching?show_coverage=1#coverage-progress", status_code=303)
 
     @app.post("/app/teaching/exercises/create")
     async def create_exercise(req: Request):
@@ -865,11 +985,14 @@ def teaching_routes(app):
         if not download_resp.is_success:
             push_flash(req, "Could not export this lesson note. Save or generate it, then try again.", "danger")
             return RedirectResponse("/app/teaching", status_code=303)
+        disposition = download_resp.headers.get("content-disposition", "")
+        filename_match = re.search(r'filename="([a-zA-Z0-9._-]+\.pdf)"', disposition)
+        filename = filename_match.group(1) if filename_match else f"lesson-note-{safe_plan_id[:8]}.pdf"
         return Response(
             content=download_resp.content,
             media_type=download_resp.headers.get("content-type", "application/pdf"),
             headers={
-                "Content-Disposition": f'attachment; filename="lesson-note-{safe_plan_id}.pdf"',
+                "Content-Disposition": f'attachment; filename="{filename}"',
                 "Cache-Control": "private, no-store",
             },
         )
@@ -894,11 +1017,14 @@ def teaching_routes(app):
         if not download_resp.is_success:
             push_flash(req, "Could not export this lesson note as Word. Save or generate it, then try again.", "danger")
             return RedirectResponse("/app/teaching", status_code=303)
+        disposition = download_resp.headers.get("content-disposition", "")
+        filename_match = re.search(r'filename="([a-zA-Z0-9._-]+\.docx)"', disposition)
+        filename = filename_match.group(1) if filename_match else f"lesson-note-{safe_plan_id[:8]}.docx"
         return Response(
             content=download_resp.content,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             headers={
-                "Content-Disposition": f'attachment; filename="lesson-note-{safe_plan_id}.docx"',
+                "Content-Disposition": f'attachment; filename="{filename}"',
                 "Cache-Control": "private, no-store",
             },
         )

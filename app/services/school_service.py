@@ -70,6 +70,7 @@ class SchoolService:
                     },
                     llm_provider=settings.primary_llm_provider,
                     exam_format=settings.exam_format,
+                    curriculum_board=settings.curriculum_board or "NERDC",
                     document_style=settings.document_style or {},
                     created_at=settings.created_at,
                     updated_at=settings.updated_at,
@@ -165,12 +166,15 @@ class SchoolService:
             school_id=settings.school_id,
             logo_url=settings.logo_url,
             logo_storage_path=settings.logo_storage_path,
+            document_display_name=settings.document_display_name,
+            personal_document_branding_enabled=bool(settings.personal_document_branding_enabled),
             colors={
                 "primary": settings.primary_color,
                 "secondary": settings.secondary_color,
             },
             llm_provider=settings.primary_llm_provider,
             exam_format=settings.exam_format,
+            curriculum_board=settings.curriculum_board or "NERDC",
             document_style=settings.document_style or {},
             created_at=settings.created_at,
             updated_at=settings.updated_at,
@@ -207,10 +211,25 @@ class SchoolService:
         try:
             # Update settings fields
             update_data = {}
+            if request.curriculum_board is not None:
+                from app.models.curriculum import Curriculum
+
+                board = request.curriculum_board.strip()
+                available_board = await db.scalar(
+                    select(Curriculum.board).where(Curriculum.board == board).limit(1)
+                )
+                if not available_board:
+                    raise ValueError("Select a curriculum source that is available in the catalogue.")
+                update_data["curriculum_board"] = board
             if "logo_url" in request.model_fields_set:
                 update_data["logo_url"] = request.logo_url
-            if request.logo_storage_path is not None:
+            if "logo_storage_path" in request.model_fields_set:
                 update_data["logo_storage_path"] = request.logo_storage_path
+            if "document_display_name" in request.model_fields_set:
+                display_name = (request.document_display_name or "").strip()
+                update_data["document_display_name"] = display_name or None
+            if request.personal_document_branding_enabled is not None:
+                update_data["personal_document_branding_enabled"] = request.personal_document_branding_enabled
             if request.colors and "primary" in request.colors:
                 update_data["primary_color"] = request.colors["primary"]
             if request.colors and "secondary" in request.colors:

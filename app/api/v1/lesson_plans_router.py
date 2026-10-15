@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user
@@ -25,8 +26,13 @@ from app.schemas.lesson_plan import (
     WeeklyExerciseResponse,
 )
 from app.services.export_service import ExportService
+from app.services.document_branding import resolve_document_branding
 from app.services.lesson_delivery_service import coverage_summary, generate_lesson_note
-from app.services.lesson_note_export_service import export_lesson_note_docx, export_lesson_note_pdf
+from app.services.lesson_note_export_service import (
+    export_lesson_note_docx,
+    export_lesson_note_pdf,
+    lesson_note_filename,
+)
 from app.services.worksheet_export_service import export_worksheet_pdf
 
 router = APIRouter()
@@ -130,7 +136,9 @@ async def export_weekly_exercise(exercise_id: UUID, current_user: User = Depends
     curriculum = await db.scalar(
         select(Curriculum).where(Curriculum.id == plan.curriculum_id)
     ) if plan else None
+    school = await db.scalar(select(School).where(School.id == current_user.school_id))
     school_settings = await db.scalar(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
+    branding = resolve_document_branding(school=school, settings=school_settings, user=current_user)
     filename = export_worksheet_pdf(
         export_dir=ExportService.EXPORT_DIR,
         title=exercise.title,
@@ -139,7 +147,8 @@ async def export_weekly_exercise(exercise_id: UUID, current_user: User = Depends
         term=plan.term if plan else "",
         instructions=exercise.instructions,
         questions=exercise.questions or [],
-        school_logo_path=school_settings.logo_url if school_settings else None,
+        school_name=branding.display_name,
+        school_logo_path=branding.logo_url,
     )
     return {"filename": filename, "download_path": f"/api/v1/lesson-plans/exercises/{exercise_id}/download/{filename}"}
 
@@ -196,20 +205,25 @@ async def export_lesson_note(
 
     curriculum = await db.scalar(select(Curriculum).where(Curriculum.id == plan.curriculum_id))
     school = await db.scalar(select(School).where(School.id == current_user.school_id))
-    payload = export_lesson_note_pdf(
+    school_settings = await db.scalar(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
+    branding = resolve_document_branding(school=school, settings=school_settings, user=current_user)
+    payload = await run_in_threadpool(
+        export_lesson_note_pdf,
         title=plan.title,
         subject=curriculum.subject_name if curriculum else "",
         class_level=curriculum.class_level if curriculum else "",
         term=plan.term,
         week_number=plan.week_number,
         content=plan.ai_lesson_note,
-        school_name=school.name if school else None,
+        school_name=branding.display_name,
+        school_logo=branding.logo_url,
     )
+    filename = lesson_note_filename(plan.title, str(lesson_plan_id), "pdf")
     return Response(
         content=payload,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="lesson-note-{lesson_plan_id}.pdf"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "private, no-store",
         },
     )
@@ -237,39 +251,68 @@ async def export_lesson_note_docx_file(
 
     curriculum = await db.scalar(select(Curriculum).where(Curriculum.id == plan.curriculum_id))
     school = await db.scalar(select(School).where(School.id == current_user.school_id))
+    school_settings = await db.scalar(select(SchoolSettings).where(SchoolSettings.school_id == current_user.school_id))
+    branding = resolve_document_branding(school=school, settings=school_settings, user=current_user)
     teacher = await db.scalar(select(User).where(User.id == plan.created_by_user_id)) if plan.created_by_user_id else None
-    payload = export_lesson_note_docx(
+    payload = await run_in_threadpool(
+        export_lesson_note_docx,
         title=plan.title,
         subject=curriculum.subject_name if curriculum else "",
         class_level=curriculum.class_level if curriculum else "",
         term=plan.term,
         week_number=plan.week_number,
         content=plan.ai_lesson_note,
-        school_name=school.name if school else None,
+        school_name=branding.display_name,
         teacher_name=teacher.full_name if teacher else None,
+        school_logo=branding.logo_url,
+        is_personal_workspace=current_user.account_type == "individual_teacher",
     )
+    filename = lesson_note_filename(plan.title, str(lesson_plan_id), "docx")
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="lesson-note-{lesson_plan_id}.docx"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "private, no-store",
         },
     )
 
 
-@router.post("/{lesson_plan_id}/coverage", response_model=CoverageResponse, status_code=201)
-async def start_coverage(lesson_plan_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
-    plan = await db.scalar(select(LessonPlan).where(LessonPlan.id == lesson_plan_id, LessonPlan.school_id == current_user.school_id))
+@router.post("/{lesson_plan_id}/coverage", response_model=CoverageResponse)
+async def start_coverage(
+    lesson_plan_id: UUID,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    plan = await db.scalar(
+        select(LessonPlan).where(
+            LessonPlan.id == lesson_plan_id,
+            LessonPlan.school_id == current_user.school_id,
+        )
+    )
     if plan is None:
         raise HTTPException(status_code=404, detail="Lesson plan not found")
-    existing = await db.scalar(select(SyllabusCoverage).where(SyllabusCoverage.school_id == current_user.school_id, SyllabusCoverage.scheme_id == plan.scheme_id, SyllabusCoverage.teacher_id == current_user.user_id))
+    existing = await db.scalar(
+        select(SyllabusCoverage).where(
+            SyllabusCoverage.school_id == current_user.school_id,
+            SyllabusCoverage.scheme_id == plan.scheme_id,
+            SyllabusCoverage.teacher_id == current_user.user_id,
+        )
+    )
     if existing:
+        response.status_code = 200
         return existing
-    row = SyllabusCoverage(school_id=current_user.school_id, curriculum_id=plan.curriculum_id, scheme_id=plan.scheme_id, teacher_id=current_user.user_id)
+    row = SyllabusCoverage(
+        school_id=current_user.school_id,
+        curriculum_id=plan.curriculum_id,
+        scheme_id=plan.scheme_id,
+        teacher_id=current_user.user_id,
+    )
     db.add(row)
     await db.commit()
     await db.refresh(row)
+    response.status_code = 201
     return row
 
 
@@ -294,11 +337,23 @@ async def update_coverage(coverage_id: UUID, request: CoverageUpdate, current_us
 async def list_coverage(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db_session)):
     """Return the school's coverage rows for the teaching workspace."""
     result = await db.execute(
-        select(SyllabusCoverage)
+        select(SyllabusCoverage, Curriculum, SchemeOfWork)
+        .join(Curriculum, Curriculum.id == SyllabusCoverage.curriculum_id)
+        .join(SchemeOfWork, SchemeOfWork.id == SyllabusCoverage.scheme_id)
         .where(SyllabusCoverage.school_id == current_user.school_id)
         .order_by(SyllabusCoverage.updated_at.desc())
     )
-    return list(result.scalars().all())
+    return [
+        {
+            **CoverageResponse.model_validate(coverage).model_dump(),
+            "class_level": curriculum.class_level,
+            "subject": curriculum.subject_name,
+            "term": scheme.term,
+            "week_number": scheme.week_number,
+            "topic": scheme.topic,
+        }
+        for coverage, curriculum, scheme in result.all()
+    ]
 
 
 @router.get("/coverage/summary", response_model=dict)

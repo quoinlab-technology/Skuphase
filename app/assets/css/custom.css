@@ -2443,6 +2443,13 @@ body {
   padding: 0.55rem 0.9rem;
   touch-action: manipulation;
 }
+.teaching-workspace .lesson-note-preview {
+  max-height: 30rem;
+  overflow: auto;
+  line-height: 1.65;
+}
+.teaching-workspace .lesson-note-preview p:last-child { margin-bottom: 0; }
+.teaching-workspace #coverage-progress > summary { cursor: pointer; }
 #lesson-note-confirm-modal .modal-footer .btn,
 #add-worksheet-question,
 .remove-worksheet-question {
