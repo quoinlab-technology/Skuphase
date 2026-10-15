@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 from app.models.exam import Exam, Question
 from app.utils.exam_utils import format_mcq_option
 from app.services.svg_safety import sanitize_svg
-from app.services.math_rendering import extract_display_formulas, formula_to_svg
+from app.services.math_rendering import (
+    extract_display_formulas,
+    formula_to_svg,
+    split_matrix_expressions,
+)
 from app.services.branding import logo_flowable
 
 
@@ -239,33 +243,47 @@ class ExportService:
         except Exception as e:  # pragma: no cover - env without reportlab
             raise ValueError(f"PDF export dependencies are not available: {e}") from e
 
-        # ── Font registration (Arial for full Unicode coverage: ₦, π, α …) ─────
+        # Register a Unicode-capable font where available. Helvetica and some
+        # platform Arial builds do not reliably render the Naira glyph in PDFs;
+        # verify known Linux Unicode fonts and use a textual NGN fallback below.
         import os as _os
-        _arial_path = r"C:\Windows\Fonts\arial.ttf"
-        _arial_bd_path = r"C:\Windows\Fonts\arialbd.ttf"
-        _arial_it_path = r"C:\Windows\Fonts\ariali.ttf"
-        if _os.path.exists(_arial_path) and not _font_registered("ExamArial"):
+        font_candidates = [
+            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"),
+            ("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"),
+            ("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Italic.ttf"),
+        ]
+        _base_font, _bold_font = "Helvetica", "Helvetica-Bold"
+        _unicode_font_found = False
+        for _font_idx, (_regular_path, _bold_path, _italic_path) in enumerate(font_candidates):
+            if not _os.path.isfile(_regular_path):
+                continue
             try:
-                pdfmetrics.registerFont(TTFont("ExamArial", _arial_path))
-                if _os.path.exists(_arial_bd_path):
-                    pdfmetrics.registerFont(TTFont("ExamArial-Bold", _arial_bd_path))
-                if _os.path.exists(_arial_it_path):
-                    pdfmetrics.registerFont(TTFont("ExamArial-Italic", _arial_it_path))
+                _candidate = TTFont(f"ExamUnicode{_font_idx}", _regular_path)
+                if 0x20A6 not in _candidate.face.charWidths:
+                    continue
+                if not _font_registered(_candidate.fontName):
+                    pdfmetrics.registerFont(_candidate)
+                _base_font = _candidate.fontName
+                _bold_font = _base_font
+                if _os.path.isfile(_bold_path):
+                    _bold = TTFont(f"ExamUnicodeBold{_font_idx}", _bold_path)
+                    pdfmetrics.registerFont(_bold)
+                    _bold_font = _bold.fontName
+                if _os.path.isfile(_italic_path):
+                    _italic = TTFont(f"ExamUnicodeItalic{_font_idx}", _italic_path)
+                    pdfmetrics.registerFont(_italic)
                 from reportlab.pdfbase.pdfmetrics import registerFontFamily
                 registerFontFamily(
-                    "ExamArial",
-                    normal="ExamArial",
-                    bold="ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "ExamArial",
-                    italic="ExamArial-Italic" if _os.path.exists(_arial_it_path) else "ExamArial",
+                    _base_font,
+                    normal=_base_font,
+                    bold=_bold_font,
+                    italic=_italic.fontName if _os.path.isfile(_italic_path) else _base_font,
+                    boldItalic=_bold_font,
                 )
-                _base_font = "ExamArial"
-                _bold_font = "ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "ExamArial"
-            except Exception:
-                _base_font = "Helvetica"
-                _bold_font = "Helvetica-Bold"
-        else:
-            _base_font = "ExamArial" if _os.path.exists(_arial_path) else "Helvetica"
-            _bold_font = "ExamArial-Bold" if _os.path.exists(_arial_bd_path) else "Helvetica-Bold"
+                _unicode_font_found = True
+                break
+            except Exception as exc:
+                logger.debug("Could not register PDF font %s: %s", _regular_path, exc)
 
         directory = cls.exam_dir(exam.id)
         directory.mkdir(parents=True, exist_ok=True)
@@ -319,7 +337,34 @@ class ExportService:
             # processes the rest of the text into ReportLab tags.
             safe = _xml_escape(str(raw) if raw else "")
             cleaned = cls._clean(safe)
+            if not _unicode_font_found:
+                cleaned = cleaned.replace("₦", "NGN ")
             return cleaned.replace("\n", "<br/>")
+
+        def text_with_math_flowables(raw: str, paragraph_style, prefix: str = "", suffix: str = "") -> list:
+            """Render matrix environments as typeset SVG between text runs."""
+            segments = split_matrix_expressions(raw)
+            if not any(kind == "matrix" for kind, _ in segments):
+                return [Paragraph(prefix + esc(raw) + suffix, paragraph_style)]
+            result = []
+            first_text = True
+            last_text_segment = max(
+                (idx for idx, (kind, _) in enumerate(segments) if kind == "text"),
+                default=-1,
+            )
+            for segment_idx, (kind, value) in enumerate(segments):
+                if kind == "text":
+                    segment_suffix = suffix if segment_idx == last_text_segment else ""
+                    if value.strip() or (first_text and prefix) or segment_suffix:
+                        result.append(Paragraph((prefix if first_text else "") + esc(value) + segment_suffix, paragraph_style))
+                    first_text = False
+                    continue
+                drawing = _svg_to_flowable(formula_to_svg(value), max_width_pt=380, max_height_pt=100)
+                if drawing is not None:
+                    result.extend([Spacer(1, 0.5 * mm), drawing, Spacer(1, 0.5 * mm)])
+            if suffix and last_text_segment < 0:
+                result.append(Paragraph(suffix, paragraph_style))
+            return result
 
         def structured_block_flowables(question) -> list:
             """Render persisted Faststrap blocks with safe legacy fallbacks."""
@@ -409,7 +454,6 @@ class ExportService:
             header_table = Table([[logo_image, header]], colWidths=[26 * mm, None])
             header_table.setStyle(
                 TableStyle([
-                    ("BOX", (0, 0), (-1, -1), 1, "#222222"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("ALIGN", (0, 0), (0, 0), "CENTER"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 8),
@@ -422,7 +466,6 @@ class ExportService:
             header_table = Table([[header]], colWidths=[None])
             header_table.setStyle(
                 TableStyle([
-                    ("BOX", (0, 0), (-1, -1), 1, "#222222"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 10),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                     ("TOPPADDING", (0, 0), (-1, -1), 8),
@@ -507,8 +550,13 @@ class ExportService:
 
             # ── Question text ─────────────────────────────────────────────────
             marks_bit = f"&nbsp;&nbsp;<b>[{q.marks}m]</b>" if q.marks else ""
-            story.append(
-                Paragraph(f"<b>{q_num}.</b>&nbsp;{esc(q.question_text)}{marks_bit}", question_style)
+            story.extend(
+                text_with_math_flowables(
+                    q.question_text or "",
+                    question_style,
+                    prefix=f"<b>{q_num}.</b>&nbsp;",
+                    suffix=marks_bit,
+                )
             )
 
             story.extend(structured_block_flowables(q))
@@ -547,7 +595,11 @@ class ExportService:
                 raw_opts = [format_mcq_option(str(opt), idx) for idx, opt in enumerate(q.options)]
                 # Use 2-column layout only if ALL options are short (<= 55 chars each)
                 _all_short = all(len(o) <= 55 for o in raw_opts)
-                if len(raw_opts) == 4 and _all_short:
+                _has_matrix = any(
+                    any(kind == "matrix" for kind, _ in split_matrix_expressions(option))
+                    for option in raw_opts
+                )
+                if len(raw_opts) == 4 and _all_short and not _has_matrix:
                     # Compact 2×2 table — A/B on row 1, C/D on row 2
                     fmt_opts = [Paragraph(esc(o), option_style) for o in raw_opts]
                     usable_w = A4[0] - 28 * mm   # page width minus margins
@@ -569,7 +621,7 @@ class ExportService:
                 else:
                     # Single-column stacking for long options or non-4-option sets
                     for o in raw_opts:
-                        story.append(Paragraph(esc(o), option_style))
+                        story.extend(text_with_math_flowables(o, option_style))
 
             # ── Answer key (when include_answers) ─────────────────────────────
             if include_answers:

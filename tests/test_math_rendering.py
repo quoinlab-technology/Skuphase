@@ -1,4 +1,8 @@
-from app.services.math_rendering import extract_display_formulas, formula_to_svg
+from app.services.math_rendering import (
+    extract_display_formulas,
+    formula_to_svg,
+    split_matrix_expressions,
+)
 from app.services.formula_catalog import get_all_formulas, validate_formula_catalog
 
 
@@ -20,6 +24,25 @@ def test_formula_svg_normalises_fraction_and_chemistry_without_markup():
     assert "(-b)/(2a)" in svg
     assert "H2O" in svg and chr(8594) in svg
     assert chr(92) + "frac" not in svg and chr(92) + "ce" not in svg
+
+
+def test_matrix_svg_renders_cells_and_matching_brackets():
+    formula = r"\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}"
+    svg = formula_to_svg(formula)
+    assert '<svg' in svg
+    assert 'text-anchor="middle"' in svg
+    assert 'stroke="#111827"' in svg
+    assert " C " in svg  # pmatrix uses curved parentheses, not square brackets
+    assert 'font-size="18">1</text>' in svg
+    assert r"\begin" not in svg and "pmatrix" not in svg
+
+
+def test_matrix_segments_preserve_surrounding_question_text():
+    text = r"Given A = \begin{bmatrix}1 & 2 \\ 3 & 4\end{bmatrix}, find det(A)."
+    segments = split_matrix_expressions(text)
+    assert segments[0] == ("text", "Given A = ")
+    assert segments[1][0] == "matrix"
+    assert segments[2] == ("text", ", find det(A).")
 
 
 def test_formula_catalog_has_reviewable_metadata():

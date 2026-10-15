@@ -207,6 +207,43 @@ def test_export_exam_pdf_renders_structured_question_blocks(tmp_path):
     assert "Result" in text
 
 
+def test_export_exam_pdf_preserves_naira_and_typesets_matrix_questions(tmp_path):
+    exam = _exam()
+    question = SimpleNamespace(
+        question_number=7,
+        type="multiple_choice",
+        question_text=r"Calculate the interest on ₦50,000. If A = \begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}, find det(A).",
+        marks=2,
+        options=[
+            r"A. \begin{pmatrix}1 & 0 \\ 0 & 1\end{pmatrix}",
+            "B. ₦10,000",
+            "C. ₦15,000",
+            "D. ₦20,000",
+        ],
+        correct_answer="A",
+        explanation=None,
+        marking_scheme=None,
+        diagram_svg=None,
+        content_blocks=[],
+    )
+    original_dir = ExportService.EXPORT_DIR
+    ExportService.EXPORT_DIR = Path(tmp_path)
+    try:
+        file_name = ExportService.export_exam_pdf(exam=exam, questions=[question])
+        created_path = ExportService.exam_dir(exam.id) / file_name
+    finally:
+        ExportService.EXPORT_DIR = original_dir
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(created_path))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "₦50,000" in text or "NGN 50,000" in text
+    assert "■" not in text
+    assert "pmatrix" not in text
+    assert "find det(A)" in text
+
+
 def test_export_marking_guide_includes_structured_block_notes(tmp_path):
     exam = _exam()
     question = SimpleNamespace(
