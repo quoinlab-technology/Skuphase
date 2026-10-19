@@ -133,7 +133,9 @@ def _status_badge(status: str) -> Span:
 
 def _plan_card(plan: dict, user: dict) -> Card:
     plan_id = plan.get("id", "")
-    ai_note = plan.get("ai_lesson_note")
+    raw_ai_note = (plan.get("ai_lesson_note") or "").strip()
+    # Treat empty or corrupted placeholder like "[1]" as empty
+    ai_note = raw_ai_note if raw_ai_note and raw_ai_note != "[1]" else ""
     
     refinement_chips = Div(
         Span("Quick refinements:", cls="small fw-semibold text-muted d-block mb-1"),
@@ -823,8 +825,12 @@ def teaching_routes(app):
             payload["additional_guidance"] = guidance
         resp = await call_api(req, "POST", f"/lesson-plans/{plan_id}/lesson-note", json=payload)
         ok, data = unwrap(resp)
-        msg = f"AI lesson note updated ({guidance[:30]}...)." if guidance else "AI lesson note drafted from the scheme."
-        push_flash(req, msg if ok else data.get("message", "Lesson note failed."), "success" if ok else "danger")
+        if ok and data.get("ai_lesson_note"):
+            msg = f"AI lesson note updated ({guidance[:30]}...)." if guidance else "AI lesson note drafted from the scheme."
+            push_flash(req, msg, "success")
+        else:
+            err_detail = data.get("message") or "AI generation timed out or could not complete. Please tap 'Draft with AI' to try again."
+            push_flash(req, f"Lesson note generation incomplete: {err_detail}", "warning")
         return RedirectResponse("/app/teaching", status_code=303)
 
     @app.post("/app/teaching/{plan_id}/save-note")
@@ -983,7 +989,7 @@ def teaching_routes(app):
             f"/lesson-plans/{safe_plan_id}/lesson-note/export.pdf",
         )
         if not download_resp.is_success:
-            push_flash(req, "Could not export this lesson note. Save or generate it, then try again.", "danger")
+            push_flash(req, "This lesson note has no content yet — tap 'Draft with AI' to generate it before exporting.", "warning")
             return RedirectResponse("/app/teaching", status_code=303)
         disposition = download_resp.headers.get("content-disposition", "")
         filename_match = re.search(r'filename="([a-zA-Z0-9._-]+\.pdf)"', disposition)
@@ -1015,7 +1021,7 @@ def teaching_routes(app):
             f"/lesson-plans/{safe_plan_id}/lesson-note/export.docx",
         )
         if not download_resp.is_success:
-            push_flash(req, "Could not export this lesson note as Word. Save or generate it, then try again.", "danger")
+            push_flash(req, "This lesson note has no content yet — tap 'Draft with AI' to generate it before exporting as Word.", "warning")
             return RedirectResponse("/app/teaching", status_code=303)
         disposition = download_resp.headers.get("content-disposition", "")
         filename_match = re.search(r'filename="([a-zA-Z0-9._-]+\.docx)"', disposition)

@@ -526,6 +526,69 @@ async def generate_exam(
         )
 
 
+@router.post(
+    "/{exam_id}/retry",
+    response_model=ExamGenerationResponse,
+    summary="Retry failed exam generation",
+    description="Re-queue a failed exam generation job.",
+    tags=["Exams"],
+)
+async def retry_exam_generation(
+    exam_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> ExamGenerationResponse:
+    """Retry a failed exam generation."""
+    if not allows_llm_actions(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only teachers and school administrators can retry exam generation",
+        )
+
+    result = await db.execute(
+        select(Exam).where(
+            and_(
+                Exam.id == exam_id,
+                Exam.school_id == current_user.school_id,
+            )
+        )
+    )
+    exam = result.scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    job_result = await db.execute(
+        select(GenerationJob)
+        .where(GenerationJob.exam_id == exam_id)
+        .order_by(GenerationJob.updated_at.desc())
+        .limit(1)
+    )
+    job = job_result.scalar_one_or_none()
+    if not job or not job.request_data:
+        raise HTTPException(status_code=400, detail="Cannot retry: original generation request data is missing.")
+
+    # Reset job and exam state
+    job.status = "pending"
+    job.attempts = 0
+    job.last_error = None
+    job.run_at = utc_now()
+    job.updated_at = utc_now()
+
+    exam.status = "draft"
+    exam.workflow_state = "generation_requested"
+    exam.updated_at = utc_now()
+
+    await db.commit()
+
+    return ExamGenerationResponse(
+        message="Exam generation retry queued",
+        exam_id=exam_id,
+        status="generating",
+        poll_endpoint=f"/api/v1/exams/{exam_id}",
+        estimated_time_seconds=30,
+    )
+
+
 # ============================================================================
 # MANUAL EXAM SUBMISSION ENDPOINT
 # ============================================================================
@@ -652,6 +715,8 @@ async def submit_manual_exam(
             QuestionResponse(
                 id=q.id,
                 question_number=q.question_number,
+                section_number=getattr(q, "section_number", 1) or 1,
+                section_name=getattr(q, "section_name", None),
                 type=q.type,
                 question_text=q.question_text,
                 marks=q.marks,
@@ -1439,6 +1504,8 @@ async def get_exam(
             QuestionResponse(
                 id=q.id,
                 question_number=q.question_number,
+                section_number=getattr(q, "section_number", 1) or 1,
+                section_name=getattr(q, "section_name", None),
                 type=q.type,
                 question_text=q.question_text,
                 marks=q.marks,
@@ -1455,6 +1522,15 @@ async def get_exam(
             for q in questions
         ]
         
+        # Fetch last error from generation job if available
+        job_result = await db.execute(
+            select(GenerationJob.last_error)
+            .where(GenerationJob.exam_id == exam_id)
+            .order_by(GenerationJob.updated_at.desc())
+            .limit(1)
+        )
+        job_error = job_result.scalar_one_or_none()
+
         return ExamResponse(
             id=exam.id,
             school_id=exam.school_id,
@@ -1469,7 +1545,7 @@ async def get_exam(
             selected_weeks=getattr(exam, "selected_weeks", None),
             source_type=getattr(exam, "source_type", None) or ("ai" if (exam.llm_call_count or 0) > 0 else "manual"),
             status=exam.status,
-workflow_state=(getattr(exam, "workflow_state", None) or "teacher_review"),
+            workflow_state=(getattr(exam, "workflow_state", None) or "teacher_review"),
             total_marks=exam.total_marks,
             duration_minutes=exam.duration_minutes,
             instructions=exam.instructions,
@@ -1477,6 +1553,7 @@ workflow_state=(getattr(exam, "workflow_state", None) or "teacher_review"),
             blueprint=exam.blueprint,
             questions=question_responses,
             passages=[ExamPassageResponse.model_validate(p) for p in passages] or None,
+            last_error=job_error,
             created_at=exam.created_at,
             updated_at=exam.updated_at,
         )
@@ -1584,6 +1661,8 @@ async def update_exam(
             QuestionResponse(
                 id=q.id,
                 question_number=q.question_number,
+                section_number=getattr(q, "section_number", 1) or 1,
+                section_name=getattr(q, "section_name", None),
                 type=q.type,
                 question_text=q.question_text,
                 marks=q.marks,

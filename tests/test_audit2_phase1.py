@@ -199,7 +199,7 @@ def test_export_error_returns_toast(client, monkeypatch):
     ])
     monkeypatch.setattr("app.frontend.routes.exams.call_api", stub)
 
-    r = client.post("/ui/exams/e1/export", data={"include_answers": "1"})
+    r = client.post("/ui/exams/e1/export", data={"doc_type": "marking_guide", "include_answers": "1"})
     assert r.status_code == 200
     body = r.text
     assert TOAST_MARKER in body
@@ -217,7 +217,7 @@ def test_export_success_renders_download_link_and_toast(client, monkeypatch):
     ])
     monkeypatch.setattr("app.frontend.routes.exams.call_api", stub)
 
-    r = client.post("/ui/exams/e1/export", data={})
+    r = client.post("/ui/exams/e1/export", data={"doc_type": "marking_guide"})
     assert r.status_code == 200
     body = r.text
     assert TOAST_MARKER in body

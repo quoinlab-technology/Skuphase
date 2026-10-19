@@ -268,13 +268,25 @@ def register_routes(app):
             cls="mb-4",
         )
 
-        # 4 KPI cards row
+        # 4 KPI cards row with friendly onboarding labels
         metrics_row = Row(
             Col(_metric_card("Exams Generating", generating_count, "lightning-charge-fill", "icon-blue-light", "/app/exams?status=generating"), span=6, lg=3),
             Col(_metric_card("Under Review", review_count, "eye-fill", "icon-purple-light", "/app/exams?status=teacher_review"), span=6, lg=3),
             Col(_metric_card("Approved", approved_count, "check-circle-fill", "icon-green-light", "/app/exams?status=approved"), span=6, lg=3),
             Col(_metric_card("Failed (24h)", failed_count, "exclamation-triangle-fill", "icon-red-light", "/app/exams?status=failed"), span=6, lg=3),
-            cls="g-3 mb-4",
+            cls="g-3 mb-3",
+        )
+
+        status_guide = Div(
+            Div(
+                Icon("info-circle", cls="bi text-muted me-2 flex-shrink-0 mt-1"),
+                Div(
+                    Strong("Exam Workflow Guide: ", cls="text-dark small"),
+                    Span("Draft (working draft) → Generating (AI creating questions) → Under Review (teacher review & preflight) → Approved (ready for printable PDF/Word).", cls="text-muted small"),
+                    A("See full tutorial →", href="/app/tutorials", cls="small text-success fw-semibold ms-2 text-decoration-none"),
+                ),
+                cls="d-flex align-items-center p-2 px-3 bg-light rounded-3 border mb-4",
+            )
         )
 
         # Recent exams card
@@ -413,6 +425,7 @@ def register_routes(app):
                 curriculum_cta,
                 workflow_section,
                 metrics_row,
+                status_guide,
                 Row(
                     Col(recent_exams_card, span=12, lg=8),
                     Col(right_widget_card, span=12, lg=4),

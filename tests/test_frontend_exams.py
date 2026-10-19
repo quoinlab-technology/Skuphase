@@ -786,3 +786,66 @@ def test_import_bank_questions_into_section(client, logged_in, monkeypatch):
     )
     assert r.status_code == 200
     assert 'Successfully imported 1 question(s)' in r.text
+
+
+def test_exam_retry_action_from_wizard(client, logged_in, monkeypatch):
+    logged_in(FakeResp(200, EXAM))
+
+    async def fake_api_call(req, method, path, **kwargs):
+        if '/exams/e1/retry' in path and method == 'POST':
+            return FakeResp(200, {'message': 'queued'})
+        if '/exams/e1' in path and method == 'GET':
+            return FakeResp(200, EXAM)
+        return FakeResp(404, {})
+
+    monkeypatch.setattr('app.frontend.routes.exams.call_api', fake_api_call)
+    r = client.post('/ui/exams/e1/retry', headers={'hx-request': 'true', 'hx-target': 'wizard-container'})
+    assert r.status_code == 200
+    assert 'Generating Your Exam' in r.text or 'Generating' in r.text
+    assert '/ui/exams/e1/poll-status' in r.text
+
+
+def test_exam_retry_action_outside_wizard_redirects(client, logged_in, monkeypatch):
+    logged_in(FakeResp(200, EXAM))
+
+    async def fake_api_call(req, method, path, **kwargs):
+        if '/exams/e1/retry' in path and method == 'POST':
+            return FakeResp(200, {'message': 'queued'})
+        return FakeResp(404, {})
+
+    monkeypatch.setattr('app.frontend.routes.exams.call_api', fake_api_call)
+    r = client.post('/ui/exams/e1/retry', headers={'hx-request': 'true', 'hx-target': 'exam-action-feedback'})
+    assert r.status_code == 200
+    assert r.headers.get('hx-redirect') == '/app/exams/e1'
+
+
+def test_exam_detail_failed_state_renders_diagnostics_and_retry(client, logged_in):
+    failed_exam = {
+        **EXAM,
+        'workflow_state': 'failed',
+        'status': 'failed',
+        'last_error': 'Provider timeout after 45s while generating section B.',
+    }
+    logged_in(FakeResp(200, failed_exam))
+    r = client.get('/app/exams/e1')
+    assert r.status_code == 200
+    assert 'Generation failed:' in r.text
+    assert 'Provider timeout after 45s' in r.text
+    assert 'Retry Generation Now' in r.text
+    assert 'hx-post="/ui/exams/e1/retry"' in r.text
+
+
+def test_exam_poll_failed_state_renders_diagnostic_box(client, logged_in):
+    failed_exam = {
+        **EXAM,
+        'workflow_state': 'failed',
+        'status': 'failed',
+        'last_error': 'Gemini API call timed out',
+    }
+    logged_in(FakeResp(200, failed_exam))
+    r = client.get('/ui/exams/e1/poll-status?poll_count=3')
+    assert r.status_code == 200
+    assert 'Generation Failed' in r.text
+    assert 'The AI model took longer than usual to respond' in r.text
+    assert 'Gemini API call timed out' in r.text
+    assert 'Retry Generation' in r.text

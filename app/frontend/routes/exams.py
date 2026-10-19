@@ -349,10 +349,10 @@ def _row_actions(exam: dict, user: dict = None):
     if state == "failed":
         items.append(
             DropdownItem(
-                Icon("arrow-counterclockwise", cls="me-2"),
-                "Retry",
+                Icon("arrow-clockwise", cls="me-2 text-primary"),
+                "Retry Generation",
                 href="#",
-                onclick="this.textContent='Retry queued'; this.classList.add('text-success'); return false;",
+                hx_post=f"/ui/exams/{exam_id}/retry",
             )
         )
 
@@ -2488,6 +2488,17 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
                 **{"data-bs-toggle": "modal", "data-bs-target": f"#approveExamModal-{exam_id}"},
             ),
         ])
+    elif state == "failed":
+        primary_actions.append(
+            Button(
+                Icon("arrow-clockwise", cls="bi me-2"),
+                "Retry Generation",
+                type="button",
+                cls="btn btn-brand text-white rounded-pill px-4 py-2 fw-semibold d-inline-flex align-items-center",
+                style="background:#00412E; border:none;",
+                hx_post=f"/ui/exams/{exam_id}/retry",
+            )
+        )
 
     # Kebab Dropdown for Secondary Actions
     kebab_items = [
@@ -2565,13 +2576,24 @@ def _render_exam_detail(exam: dict, user: dict, show_answers: bool = False) -> D
     ]
 
     if state == "failed":
-        failure_text = exam.get("failure_reason") or exam.get("error_message") or "Generation failed."
+        failure_text = exam.get("last_error") or exam.get("failure_reason") or exam.get("error_message") or "Generation failed."
         body_parts.append(
             Alert(
                 Div(
-                    Icon("x-circle-fill", cls="bi me-2"),
-                    Strong("Generation failed: ", cls="me-1"),
-                    Span(failure_text),
+                    Icon("x-circle-fill", cls="bi me-2 flex-shrink-0 mt-1"),
+                    Div(
+                        Strong("Generation failed: ", cls="me-1"),
+                        Span(failure_text),
+                        Div(
+                            Button(
+                                Icon("arrow-clockwise", cls="bi me-1"),
+                                "Retry Generation Now",
+                                type="button",
+                                cls="btn btn-sm btn-danger rounded-pill px-3 mt-2",
+                                hx_post=f"/ui/exams/{exam_id}/retry",
+                            ),
+                        ),
+                    ),
                     cls="d-flex align-items-start",
                 ),
                 variant="danger",
@@ -5239,8 +5261,36 @@ def _render_generating_screen(
 # Generated State Screen (media_1788788326252.png)
 # ---------------------------------------------------------------------------
 
-def _render_generation_failed_screen(exam_id: str) -> Div:
+def _render_generation_failed_screen(exam_id: str, last_error: str | None = None) -> Div:
     """Error card shown in the wizard when the background generation job fails."""
+    diagnostic_box = None
+    if last_error:
+        clean_error = last_error.strip()
+        if "timeout" in clean_error.lower() or "timed out" in clean_error.lower() or "time out" in clean_error.lower():
+            friendly_hint = "The AI model took longer than usual to respond. This is common during peak hours."
+        elif "quota" in clean_error.lower() or "rate" in clean_error.lower() or "429" in clean_error:
+            friendly_hint = "Provider request rate limit reached. Retrying usually switches to a fresh connection."
+        elif "invalid json" in clean_error.lower() or "parse" in clean_error.lower():
+            friendly_hint = "The generated output was formatted inconsistently by the AI model. Retrying will run a clean generation."
+        else:
+            friendly_hint = "An unexpected error occurred during generation."
+
+        diagnostic_box = Div(
+            Div(
+                Icon("info-circle-fill", cls="bi text-danger me-2 flex-shrink-0"),
+                Div(
+                    Strong("Diagnostic Reason: ", cls="text-dark small"),
+                    Span(friendly_hint, cls="text-muted small d-block mt-1"),
+                    Details(
+                        Summary("Technical details", cls="small text-danger fw-semibold mt-1", style="cursor:pointer;"),
+                        P(clean_error[:300], cls="small font-monospace text-muted mt-1 mb-0 bg-white p-2 rounded border"),
+                        cls="mt-1",
+                    ),
+                ),
+                cls="d-flex align-items-start text-start p-3 bg-danger-subtle rounded-3 border border-danger-subtle mb-4",
+            )
+        )
+
     return Div(
         Div(
             Div(
@@ -5249,22 +5299,34 @@ def _render_generation_failed_screen(exam_id: str) -> Div:
             ),
             H2("Generation Failed", style="font-weight:700; font-size:1.5rem; color:#0f172a; margin-bottom:0.45rem;"),
             P(
-                "The AI could not complete your exam. This can happen due to a content quality check, "
-                "a provider timeout, or an unusually complex request. Please try again — it usually succeeds on the next attempt.",
-                style="font-size:0.9rem; color:#64748b; margin-bottom:1.75rem; max-width:420px; margin-left:auto; margin-right:auto;",
+                "The AI could not complete this exam paper. You can retry immediately with one click below, or view the partial record.",
+                style="font-size:0.9rem; color:#64748b; margin-bottom:1.5rem; max-width:440px; margin-left:auto; margin-right:auto;",
             ),
-            A(
-                "Try Again",
-                Icon("arrow-counterclockwise", cls="bi ms-2", style="font-size:0.8rem;"),
-                href="/app/exams/new",
-                style="background:#00412E; color:#fff; text-decoration:none; border-radius:999px; padding:0.65rem 2.25rem; font-size:0.92rem; font-weight:600; display:inline-flex; align-items:center; cursor:pointer; margin-right:0.75rem;",
+            diagnostic_box if diagnostic_box else Div(),
+            Div(
+                Button(
+                    Icon("arrow-clockwise", cls="bi me-2"),
+                    "Retry Generation",
+                    type="button",
+                    hx_post=f"/ui/exams/{exam_id}/retry",
+                    hx_target="#wizard-container",
+                    hx_swap="outerHTML",
+                    cls="btn btn-brand text-white rounded-pill px-4 py-2 me-2",
+                    style="background:#00412E; border:none; font-weight:600;",
+                ),
+                A(
+                    "New Exam",
+                    href="/app/exams/new",
+                    cls="btn btn-outline-secondary rounded-pill px-4 py-2 me-2",
+                ),
+                A(
+                    "View Exam",
+                    href=f"/app/exams/{exam_id}",
+                    cls="btn btn-link text-muted text-decoration-none small",
+                ),
+                cls="d-flex align-items-center justify-content-center flex-wrap gap-2",
             ),
-            A(
-                "View Exam",
-                href=f"/app/exams/{exam_id}",
-                style="color:#64748b; text-decoration:none; font-size:0.88rem; font-weight:500;",
-            ),
-            cls="bg-white border border-danger-subtle rounded-4 shadow-sm p-5 text-center",
+            cls="bg-white border border-danger-subtle rounded-4 shadow-sm p-4 p-md-5 text-center",
         ),
         id="wizard-container",
         cls="mt-2",
@@ -5542,9 +5604,38 @@ def register_action_routes(app):
                 poll_count=poll_count,
             )
         if state == "failed":
-            return _render_generation_failed_screen(exam_id)
+            return _render_generation_failed_screen(exam_id, last_error=exam.get("last_error"))
         # Reset poll count when done
         return _render_generated_screen(exam_id, exam)
+
+    @app.post("/ui/exams/{exam_id}/retry")
+    async def ui_retry_exam(req: Request, exam_id: str):
+        """Trigger generation retry for a failed exam and re-enter generating screen."""
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        resp = await call_api(req, "POST", f"/exams/{exam_id}/retry")
+        ok, data = unwrap(resp)
+        if not ok:
+            return show_toast(data.get("message", "Retry failed to schedule. Please try again."), "danger")
+        
+        if req.headers.get("hx-request") and req.headers.get("hx-target") != "wizard-container":
+            return Response(headers={"HX-Redirect": f"/app/exams/{exam_id}"})
+        if not req.headers.get("hx-request"):
+            return RedirectResponse(f"/app/exams/{exam_id}", status_code=303)
+
+        ok_exam, exam = await _fetch_exam(req, exam_id)
+        generation = _generation_context(req, exam if ok_exam else {}, exam_id)
+        return _render_generating_screen(
+            exam_id,
+            total_q=generation["total_questions"],
+            num_sections=generation["num_sections"],
+            num_weeks=generation["num_weeks"],
+            subject=generation["subject"],
+            grade_level=generation["grade_level"],
+            term=generation["term"],
+            poll_count=0,
+        )
 
     @app.get("/ui/exams/curriculum-subjects")
     async def exam_curriculum_subjects(req: Request):

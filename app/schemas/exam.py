@@ -198,6 +198,8 @@ class QuestionResponse(BaseModel):
     
     id: UUID
     question_number: int
+    section_number: Optional[int] = 1
+    section_name: Optional[str] = None
     type: str
     question_text: str
     marks: int
@@ -277,6 +279,7 @@ class ExamResponse(BaseModel):
     sections: Optional[List[SectionResponse]] = None
     questions: Optional[List[QuestionResponse]] = None  # Flat list for backward compatibility
     passages: Optional[List["ExamPassageResponse"]] = None
+    last_error: Optional[str] = None
     
     created_at: datetime
     updated_at: datetime
