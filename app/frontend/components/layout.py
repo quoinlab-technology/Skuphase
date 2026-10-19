@@ -1,7 +1,7 @@
 """Layout shells for the SkuPhase frontend (FRONTEND_SPEC sec 3.3)."""
 
 from fasthtml.common import A, Img, Button as HtmlButton, Div, Footer, Form, H1, Main, Nav, P, Script, Span, Strong, Title
-from faststrap import Button, Col, Container, Icon, Row
+from faststrap import Button, Col, Container, Icon, Row, SafeArea
 
 from app.frontend.theme import FONT_FAMILY
 from app.frontend.components.feedback import app_toast_container, to_toast
@@ -164,19 +164,23 @@ def _bottom_nav(active: str = ""):
             },
         )
 
-    return Nav(
-        _item("Dashboard", "/app", "dashboard", "grid-fill"),
-        _item("Exams", "/app/exams", "exams", "file-earmark-text"),
-        A(
-            Icon("plus-lg", cls="bi"),
-            Span("Generate"),
-            href="/app/exams/new",
-            cls="app-bottomnav-gen",
-            **{"aria-label": "Generate exam with AI"},
+    return SafeArea(
+        Nav(
+            _item("Dashboard", "/app", "dashboard", "grid-fill"),
+            _item("Exams", "/app/exams", "exams", "file-earmark-text"),
+            A(
+                Icon("plus-lg", cls="bi"),
+                Span("Generate"),
+                href="/app/exams/new",
+                cls="app-bottomnav-gen",
+                **{"aria-label": "Generate exam with AI"},
+            ),
+            _item("Bank", "/app/bank", "bank", "book"),
+            _menu_button(),
+            cls="app-bottomnav d-lg-none",
         ),
-        _item("Bank", "/app/bank", "bank", "book"),
-        _menu_button(),
-        cls="app-bottomnav d-lg-none",
+        edges="bottom",
+        mode="padding",
     )
 
 

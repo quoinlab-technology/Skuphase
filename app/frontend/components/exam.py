@@ -18,7 +18,7 @@ from fasthtml.common import (
     NotStr,
 )
 
-from faststrap import Badge, Button, Card, Row, Col, Icon, Svg, Mermaid
+from faststrap import Badge, Button, Card, Row, Col, Icon, ListItem, Svg, Mermaid
 
 from app.core.workflow import REFINABLE_STATES, SUBMITTABLE_STATES
 from app.utils.exam_utils import format_mcq_option
@@ -575,42 +575,48 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
             **{"aria-hidden": "true"},
         )
 
-    # Question Card Container
-    header_toggle = Div(
-        Div(
-            Span(str(number), cls="app-q-num-pill me-2 flex-shrink-0"),
-            Span(type_label, cls="app-q-type-badge me-2 flex-shrink-0"),
-            Span(section_label, cls="app-q-section-label text-truncate", style="max-width: 180px;"),
-            cls="d-flex align-items-center flex-wrap gap-1 min-w-0 flex-grow-1 me-2",
-            style="min-width: 0;",
-        ),
-        Div(
-            Span(marks_str, cls="app-q-marks-pill me-2 flex-shrink-0"),
-            Icon("chevron-down", cls="bi text-muted collapse-chevron flex-shrink-0", style="transition:transform 0.2s ease; font-size:0.85rem;"),
-            cls="d-flex align-items-center flex-shrink-0 ms-auto",
-        ),
-        cls="d-flex justify-content-between align-items-center cursor-pointer w-100",
-        style="cursor:pointer; user-select:none; min-width: 0;",
-        **{
-            "data-bs-toggle": "collapse",
-            "data-bs-target": f"#{collapse_id}",
-            "aria-expanded": "true",
-            "aria-controls": collapse_id,
-        },
+    # Question Card Container — use ListItem for proper mobile overflow handling.
+    # The ListItem's content slot is flex-grow-1 min-w-0, preventing title overflow
+    # from pushing the trailing (chevron/marks) off-screen.
+    meta_line = Span(
+        f"{type_label} · {marks_str} · {section_label}",
+        cls="text-muted small",
     )
 
-    card = Div(
-        header_toggle,
-        q_text_display,
+    trailing_slot = Div(
+        Span(marks_str, cls="app-q-marks-pill me-2 flex-shrink-0"),
+        Icon("chevron-down", cls="bi text-muted collapse-chevron flex-shrink-0", style="transition:transform 0.2s ease; font-size:0.85rem;"),
+        cls="d-flex align-items-center flex-shrink-0",
+    )
+
+    collapse_toggle_attrs = {
+        "data-bs-toggle": "collapse",
+        "data-bs-target": f"#{collapse_id}",
+        "aria-expanded": "true",
+        "aria-controls": collapse_id,
+    }
+
+    card = ListItem(
+        # Collapse body — full question text + body parts inside the collapsible area
         Div(
+            q_text_display,
             Div(*body_parts, cls="pt-3 border-top mt-2", style="min-width:0;"),
             id=collapse_id,
             cls="collapse show",
             style="min-width:0;",
         ),
+        leading=Span(str(number), cls="app-q-num-pill flex-shrink-0"),
+        title=Span(
+            render_rich_text(q.get("question_text", "") or ""),
+            cls="fw-medium text-dark text-truncate d-block",
+        ),
+        subtitle=meta_line,
+        trailing=trailing_slot,
+        density="comfortable",
         id=card_id,
-        cls="app-question-card mb-3",
-        style="min-width:0; max-width:100%; box-sizing:border-box;",
+        cls="app-question-card mb-3 cursor-pointer",
+        style="cursor:pointer; user-select:none;",
+        **collapse_toggle_attrs,
     )
 
     elements = [card]

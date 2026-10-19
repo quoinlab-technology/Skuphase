@@ -67,9 +67,12 @@ from faststrap import (
     EmptyState,
     FormGroup,
     Icon,
+    ListItem,
     Row,
+    SafeArea,
     Select,
     Spinner,
+    StickyActionBar,
     TBody,
     TCell,
     THead,
@@ -528,38 +531,25 @@ def _exam_card(exam: dict, user: dict = None) -> Div:
         except (ValueError, TypeError):
             quality_el = None
 
+    meta_row = Div(
+        StatusBadge(exam),
+        *([quality_el] if quality_el else []),
+        Span(created, cls="text-muted small ms-2"),
+        cls="d-flex align-items-center flex-wrap gap-1 mt-1",
+    )
+
     return Div(
-        Div(
-            Div(
-                Div(Icon(icon_name, cls=icon_svg_cls), cls=icon_container_cls),
-                Div(
-                    A(
-                        Strong(
-                            title_text,
-                            cls="fw-semibold text-dark d-block text-truncate mb-1",
-                            style="max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;",
-                        ),
-                        href=detail_link,
-                        cls="text-decoration-none d-block",
-                        style="min-width:0; max-width:100%; overflow:hidden;",
-                    ),
-                    Span(subtitle_text, cls="text-muted small"),
-                    cls="flex-grow-1 min-w-0 me-2 overflow-hidden",
-                    style="min-width:0;",
-                ),
-                _row_actions(exam, user),
-                cls="d-flex align-items-start justify-content-between mb-3 w-100",
+        ListItem(
+            meta_row,
+            leading=Div(Icon(icon_name, cls=icon_svg_cls), cls=icon_container_cls),
+            title=A(
+                title_text,
+                href=detail_link,
+                cls="text-decoration-none text-dark fw-semibold text-truncate d-block",
             ),
-            Div(
-                StatusBadge(exam),
-                Div(
-                    *([quality_el] if quality_el else []),
-                    Span(created, cls="text-muted small ms-3"),
-                    cls="d-flex align-items-center ms-auto",
-                ),
-                cls="d-flex align-items-center justify-content-between pt-2 border-top border-light",
-            ),
-            cls="p-3 w-100",
+            subtitle=Span(subtitle_text, cls="text-muted small"),
+            trailing=_row_actions(exam, user),
+            density="comfortable",
         ),
         cls="exam-mobile-card bg-white rounded-4 shadow-sm border mb-3 w-100",
         id=f"exam-card-{exam_id}",
