@@ -30,6 +30,8 @@ from faststrap import (
     Badge,
     Button,
     Card,
+    Chip,
+    ChipGroup,
     Col,
     Container,
     EmptyState,
@@ -165,21 +167,23 @@ def register_routes(app):
             cls="d-flex flex-wrap justify-content-between align-items-center mb-4",
         )
 
-        # Search Bar matching P07
+        # Search Bar — clean inline flex layout (no absolute-position hacks)
         search_bar = Div(
-            Icon("search", cls="bi position-absolute text-muted", style="left: 1rem; top: 50%; transform: translateY(-50%); font-size: 1rem; pointer-events: none; z-index: 5;"),
+            Icon("search", cls="bi text-muted me-2 flex-shrink-0"),
             Input(
                 name="q",
                 value=q,
                 placeholder="Search questions or topics...",
-                cls="form-control bank-search-input w-100",
+                cls="border-0 bg-transparent shadow-none p-0 flex-grow-1",
+                style="outline:none; font-size: 0.92rem;",
                 hx_get="/ui/bank/list",
                 hx_target="#bank-items-container",
                 hx_swap="outerHTML",
                 hx_trigger="input changed delay:300ms, search",
                 hx_include="#bank-filter-form",
+                **{"aria-label": "Search questions or topics"},
             ),
-            cls="position-relative mb-3",
+            cls="d-flex align-items-center bg-white border rounded-pill px-3 py-2 shadow-sm mb-3",
             id="bank-search-wrapper",
         )
 

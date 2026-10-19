@@ -25,7 +25,7 @@ from fasthtml.common import (
     Title,
     Ul,
 )
-from faststrap import Alert, Button, Card, Col, Container, Icon, Row, Select
+from faststrap import Alert, Button, Card, Chip, ChipGroup, Col, Container, Icon, Row, Select
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
@@ -137,37 +137,41 @@ def _plan_card(plan: dict, user: dict) -> Card:
     # Treat empty or corrupted placeholder like "[1]" as empty
     ai_note = raw_ai_note if raw_ai_note and raw_ai_note != "[1]" else ""
     
+    # Quick refinement chips — each submits a hidden form; Chip wraps the button
+    # so it has consistent touch targets and brand theming on all screen sizes.
     refinement_chips = Div(
-        Span("Quick refinements:", cls="small fw-semibold text-muted d-block mb-1"),
-        Div(
+        Span("Quick refinements:", cls="small fw-semibold text-muted d-block mb-2"),
+        ChipGroup(
             Form(
                 Input(type="hidden", name="lesson_plan_id", value=plan_id),
                 Input(type="hidden", name="guidance", value="Include relatable Nigerian examples, local market contexts, and cultural applications familiar to primary pupils."),
-                Button(Icon("geo-alt-fill", cls="bi me-1 text-success"), "+ Nigerian Context", type="submit", variant="outline-success", aria_label="Refine this lesson note with Nigerian context", cls="btn btn-sm rounded-pill teaching-refinement me-1 mb-1"),
+                Chip("🌍 Nigerian Context", variant="secondary", cls="teaching-refinement", **{"type": "submit", "aria-label": "Refine with Nigerian context"}),
                 action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
             ),
             Form(
                 Input(type="hidden", name="lesson_plan_id", value=plan_id),
                 Input(type="hidden", name="guidance", value="Make the lesson note concise, bulleted, and easy to deliver within a single 40-minute classroom period."),
-                Button(Icon("scissors", cls="bi me-1 text-success"), "Make Shorter", type="submit", variant="outline-success", aria_label="Refine this lesson note to be shorter", cls="btn btn-sm rounded-pill teaching-refinement me-1 mb-1"),
+                Chip("✂ Make Shorter", variant="secondary", cls="teaching-refinement", **{"type": "submit", "aria-label": "Make lesson note shorter"}),
                 action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
             ),
             Form(
                 Input(type="hidden", name="lesson_plan_id", value=plan_id),
                 Input(type="hidden", name="guidance", value="Simplify vocabulary and explanations so slower learners and early ESL readers can follow easily."),
-                Button(Icon("lightbulb", cls="bi me-1 text-success"), "Simplify Language", type="submit", variant="outline-success", aria_label="Refine this lesson note with simpler language", cls="btn btn-sm rounded-pill teaching-refinement me-1 mb-1"),
+                Chip("💡 Simplify Language", variant="secondary", cls="teaching-refinement", **{"type": "submit", "aria-label": "Simplify language"}),
                 action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
             ),
             Form(
                 Input(type="hidden", name="lesson_plan_id", value=plan_id),
                 Input(type="hidden", name="guidance", value="Add a step-by-step practical demonstration using everyday classroom items (chalk, cup, ruler, seeds)."),
-                Button(Icon("tools", cls="bi me-1 text-success"), "Add Activity", type="submit", variant="outline-success", aria_label="Refine this lesson note by adding a practical activity", cls="btn btn-sm rounded-pill teaching-refinement me-1 mb-1"),
+                Chip("🔧 Add Activity", variant="secondary", cls="teaching-refinement", **{"type": "submit", "aria-label": "Add a practical activity"}),
                 action=f"/app/teaching/{plan_id}/lesson-note", method="post", cls="d-inline",
             ),
-            cls="d-flex flex-wrap align-items-center mb-2",
+            wrap=True,
+            gap=2,
         ),
         cls="mb-2 d-none d-lg-block",
     ) if ai_note else None
+
 
     return Card(
         Div(
