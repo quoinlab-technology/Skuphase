@@ -1251,8 +1251,28 @@ def register_page_routes(app):
                 )
                 body_content = Div(desktop_table, mobile_cards)
 
-        # Status filter chips — ChipGroup replaces manual pill anchors.
-        # Links preserve search & filter params so the active status is sticky.
+        # Status filter pills (UI_design/Exams2.png) — links preserve search & filters.
+        def _pill(label: str, key: str, active_key: str, count: int | None = None):
+            href_params = {k: v for k, v in (("q", q), ("subject", subject), ("grade", grade)) if v}
+            if key:
+                href_params["status"] = key
+            href = "/app/exams" + (("?" + urlencode(href_params)) if href_params else "")
+            count_str = f" ({count})" if count is not None else ""
+            is_active = (active_key == key) or (not active_key and not key)
+            if is_active:
+                cls = "badge rounded-pill text-white px-3 py-2 fw-semibold text-decoration-none shadow-sm"
+                style = "background-color: #00412E !important; font-size: 0.88rem;"
+            else:
+                cls = "badge rounded-pill bg-white text-muted border px-3 py-2 fw-normal text-decoration-none shadow-sm"
+                style = "font-size: 0.88rem;"
+            return A(
+                f"{label}{count_str}",
+                href=href,
+                cls=f"exam-filter-link {cls}",
+                style=style,
+                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
+                     **({"aria-current": "true"} if is_active else {}))
+
         all_exams = (data.get("exams", []) or []) if ok else []
         counts = data.get("status_counts") or {}
         approved_cnt = counts.get("approved", sum(1 for e in all_exams if _state_of(e) == "approved"))
@@ -1262,69 +1282,14 @@ def register_page_routes(app):
         failed_cnt = counts.get("failed", sum(1 for e in all_exams if _state_of(e) == "failed"))
         all_cnt = counts.get("all", data.get("total", len(all_exams)))
 
-        def _chip_href(key: str) -> str:
-            href_params = {k: v for k, v in (("q", q), ("subject", subject), ("grade", grade)) if v}
-            if key:
-                href_params["status"] = key
-            return "/app/exams" + (("?" + urlencode(href_params)) if href_params else "")
-
-        pills = ChipGroup(
-            Chip(
-                f"All ({all_cnt})",
-                selected=(not status),
-                href=_chip_href(""),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if not status else {}),
-            ),
-            Chip(
-                f"Approved ({approved_cnt})",
-                selected=(status == "approved"),
-                href=_chip_href("approved"),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if status == "approved" else {}),
-            ),
-            Chip(
-                f"Under Review ({review_cnt})",
-                selected=(status == "under_review"),
-                href=_chip_href("under_review"),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if status == "under_review" else {}),
-            ),
-            Chip(
-                f"Generating ({gen_cnt})",
-                selected=(status == "generating"),
-                href=_chip_href("generating"),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if status == "generating" else {}),
-            ),
-            Chip(
-                f"Draft ({draft_cnt})",
-                selected=(status == "draft"),
-                href=_chip_href("draft"),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if status == "draft" else {}),
-            ),
-            Chip(
-                f"Failed ({failed_cnt})",
-                selected=(status == "failed"),
-                href=_chip_href("failed"),
-                size="lg",
-                cls="exam-filter-link",
-                onclick="this.classList.add('is-loading'); this.setAttribute('aria-disabled', 'true');",
-                **({"aria-current": "true"} if status == "failed" else {}),
-            ),
-            wrap=False,
-            cls="mb-3 overflow-x-auto flex-nowrap",
+        pills = Div(
+            _pill("All", "", status, all_cnt),
+            _pill("Approved", "approved", status, approved_cnt),
+            _pill("Under Review", "under_review", status, review_cnt),
+            _pill("Generating", "generating", status, gen_cnt),
+            _pill("Draft", "draft", status, draft_cnt),
+            _pill("Failed", "failed", status, failed_cnt),
+            cls="d-flex gap-2 overflow-x-auto pb-2 flex-nowrap flex-md-wrap mb-3 align-items-center",
         )
 
 
