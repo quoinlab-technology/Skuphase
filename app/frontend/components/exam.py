@@ -608,14 +608,15 @@ def QuestionBlock(q: dict, number: int, show_answers: bool, can_edit: bool = Fal
         leading=Span(str(number), cls="app-q-num-pill flex-shrink-0"),
         title=Span(
             render_rich_text(q.get("question_text", "") or ""),
-            cls="fw-medium text-dark text-truncate d-block",
+            cls="fw-medium text-dark d-block",
         ),
         subtitle=meta_line,
         trailing=trailing_slot,
         density="comfortable",
+        lines=2,
         id=card_id,
         cls="app-question-card mb-3 cursor-pointer",
-        style="cursor:pointer; user-select:none;",
+        style="cursor:pointer; user-select:none; min-width:0;",
         **collapse_toggle_attrs,
     )
 

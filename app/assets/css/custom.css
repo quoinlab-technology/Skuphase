@@ -984,6 +984,67 @@ body {
   animation: exam-filter-spin 0.7s linear infinite;
 }
 
+/* Faststrap Chip & ListItem responsive fixes */
+.faststrap-list-item-content {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+.faststrap-list-item-title {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.faststrap-list-item-lines-2 .faststrap-list-item-title {
+  white-space: normal !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+}
+
+.faststrap-list-item-lines-3 .faststrap-list-item-title {
+  white-space: normal !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+}
+
+/* Chip filter navigation and size */
+.exam-filter-link[data-fs-chip="true"] {
+  padding: 0.5rem 0.95rem !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  border-radius: 50rem !important;
+  text-decoration: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.exam-filter-link[data-fs-chip="true"].chip-selected {
+  background-color: #00412E !important;
+  color: #ffffff !important;
+  border-color: #00412E !important;
+  box-shadow: 0 1px 3px rgba(0, 65, 46, 0.25) !important;
+}
+
+.exam-filter-link[data-fs-chip="true"]:not(.chip-selected) {
+  background-color: #ffffff !important;
+  color: #475569 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.exam-filter-link[data-fs-chip="true"]:hover:not(.chip-selected) {
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
 #exams-filter {
   position: relative;
 }
