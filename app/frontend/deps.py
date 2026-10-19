@@ -42,13 +42,21 @@ def ensure_login(request: Request) -> Optional[RedirectResponse]:
         if not _is_token_expired(token) or request.session.get("refresh_token"):
             return None
 
-    # No access token (and no refresh fallback) — redirect to login.
+    # Differentiate between an expired session vs a first-time visitor.
+    # If the user previously had a token or refresh token, they expired.
+    # Otherwise, it's a clean first visit to a protected URL — redirect to /login without flash.
+    had_prior_session = bool(token or request.session.get("refresh_token") or request.session.get("user"))
     clear_auth(request.session)
     is_htmx = (
         request.headers.get("hx-request") == "true"
         or request.headers.get("HX-Request") == "true"
     )
-    login_path = "/internal/login?expired=1" if request.url.path.startswith("/internal") else "/login?expired=1"
+    is_internal = request.url.path.startswith("/internal")
+    if had_prior_session:
+        login_path = "/internal/login?expired=1" if is_internal else "/login?expired=1"
+    else:
+        login_path = "/internal/login" if is_internal else "/login"
+
     if is_htmx:
         from starlette.responses import Response
         return Response(status_code=200, headers={"HX-Redirect": login_path})

@@ -505,6 +505,7 @@ class ManualExamSubmissionRequest(BaseModel):
     title: Optional[str] = Field(None, max_length=180)
     subject: str = Field(..., min_length=1, max_length=100)
     grade_level: str = Field(..., min_length=1, max_length=50)
+    term: Optional[str] = Field(None, max_length=50, description="First Term, Second Term, or Third Term")
     curriculum_board: Optional[str] = Field(None, min_length=2, max_length=50)
     duration_minutes: Optional[int] = Field(120, ge=30, le=300)
     instructions: Optional[str] = Field(default=None, max_length=2000)

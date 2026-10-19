@@ -312,6 +312,7 @@ def AppShell(*content, user: dict | None = None, active: str = "", flash=None, c
         if is_school_staff:
             pass
 
+        nav_items.append(("Tutorials & Guides", "/app/tutorials", "tutorials", "mortarboard"))
         nav_items.append(("Help & feedback", "/app/feedback", "support", "chat-square-text"))
         nav_items.append(("Question Bank", "/app/bank", "bank", "book"))
 

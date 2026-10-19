@@ -7070,6 +7070,28 @@ def _manual_exam_composer(req: Request, subject_options: list[str], grade_option
     meta_card = Card(
         Row(
             Col(
+                Label("Exam Title (optional)", cls="form-label text-muted small fw-medium mb-1"),
+                Input(name="title", placeholder="e.g. First Term Physics Examination", cls="form-control rounded-3 border-0 py-2 px-3", style="background-color: #F4F6F4; font-size: 0.92rem;"),
+                span=12,
+                md=6,
+            ),
+            Col(
+                Label("Term", cls="form-label text-muted small fw-medium mb-1"),
+                HtmlSelect(
+                    Option("Select Term", value=""),
+                    Option("First Term", value="First Term"),
+                    Option("Second Term", value="Second Term"),
+                    Option("Third Term", value="Third Term"),
+                    name="term",
+                    id="manual-term",
+                    required=True,
+                    cls="form-select rounded-3 border-0 py-2 px-3",
+                    style="background-color: #F4F6F4; font-size: 0.92rem;",
+                ),
+                span=12,
+                md=6,
+            ),
+            Col(
                 Label("Subject", cls="form-label text-muted small fw-medium mb-1"),
                 HtmlSelect(
                     Option("Subject", value=""),
@@ -7468,8 +7490,10 @@ def register_manual_routes(app):
             return show_toast("Duration must be between 30 and 300 minutes.", "danger")
 
         payload = {
+            "title": (form.get("title") or "").strip() or None,
             "subject": (form.get("subject") or "").strip(),
             "grade_level": (form.get("grade_level") or "").strip(),
+            "term": (form.get("term") or "").strip() or None,
             "curriculum_board": (form.get("curriculum_board") or "").strip() or None,
             "duration_minutes": duration,
             "language": form.get("language") or "English",
@@ -7489,11 +7513,24 @@ def register_manual_routes(app):
         exam_id = str(data.get("exam_id") or data.get("id") or "")
         if not exam_id:
             return show_toast("Submission succeeded but no exam id was returned.", "warning")
+        
+        set_flash(req.session, "success", "Exam created successfully!")
+        target_url = f"/app/exams/{exam_id}"
+        is_htmx = (
+            req.headers.get("hx-request") == "true"
+            or req.headers.get("HX-Request") == "true"
+        )
+        if is_htmx:
+            from starlette.responses import Response as StarletteResponse
+            return StarletteResponse(
+                status_code=200,
+                headers={"HX-Redirect": target_url},
+            )
         return Div(
-            show_toast("Exam created successfully! Redirecting…", "success", title="Exam Created"),
+            show_toast("Exam created successfully!", "success", title="Exam Created"),
             A(
                 "Open exam",
-                href=f"/app/exams/{exam_id}",
+                href=target_url,
                 cls="btn btn-sm btn-brand mt-2",
             ),
             id="manual-result",

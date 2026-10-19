@@ -96,12 +96,18 @@ class ExamQualityReportService:
                 "Low curriculum alignment signal from lexical overlap; review source alignment."
             )
 
-        quality_status = ExamQualityReportService._traffic_light_status(
-            coverage_score=coverage_score,
-            quality_flags_count=len(quality_flags),
+        # Compute structural health score based on question completeness
+        structural_flaws = len(quality_flags)
+        structure_health = max(0.0, 100.0 - (structural_flaws * 5.0))
+
+        # Overall score blends curriculum vocabulary alignment (40%) and structural exam health (60%)
+        overall_score = round(
+            min(100.0, max(0.0, (coverage_score * 0.4) + (structure_health * 0.6))),
+            1,
         )
-        overall_score = ExamQualityReportService._overall_score(
-            coverage_score=coverage_score,
+
+        quality_status = ExamQualityReportService._traffic_light_status(
+            overall_score=overall_score,
             quality_flags_count=len(quality_flags),
         )
 
@@ -135,13 +141,13 @@ class ExamQualityReportService:
 
     @staticmethod
     def _overall_score(*, coverage_score: float, quality_flags_count: int) -> float:
-        penalty = min(quality_flags_count * 8, 50)
-        return round(max(0.0, coverage_score - penalty), 2)
+        penalty = min(quality_flags_count * 5, 50)
+        return round(max(0.0, min(100.0, coverage_score + 60.0 - penalty)), 1)
 
     @staticmethod
-    def _traffic_light_status(*, coverage_score: float, quality_flags_count: int) -> str:
-        if coverage_score >= 60 and quality_flags_count <= 1:
+    def _traffic_light_status(*, overall_score: float, quality_flags_count: int) -> str:
+        if overall_score >= 70 and quality_flags_count <= 2:
             return "green"
-        if coverage_score >= 35 and quality_flags_count <= 4:
+        if overall_score >= 45 and quality_flags_count <= 5:
             return "amber"
         return "red"

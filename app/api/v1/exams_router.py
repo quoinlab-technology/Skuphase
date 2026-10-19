@@ -561,6 +561,7 @@ async def submit_manual_exam(
         created_by_user_id=current_user.user_id,
         subject=request.subject,
         grade_level=request.grade_level,
+        term=(request.term or "").strip() or None,
         title=(request.title or "").strip() or None,
         source_type="manual",
         status="under_review",
