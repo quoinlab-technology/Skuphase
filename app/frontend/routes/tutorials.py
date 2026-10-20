@@ -16,6 +16,7 @@ def _tutorial_step(
     desktop_img: str | None = None,
     mobile_img: str | None = None,
     tips: list[str] | None = None,
+    action_link: tuple[str, str] | None = None,
 ):
     step_id = f"step-{num}"
     
@@ -53,11 +54,16 @@ def _tutorial_step(
                 # Tab content
                 Div(
                     Div(
-                        Img(
-                            src=f"/assets/img/tutorials/{desktop_img}",
-                            alt=f"{title} - Desktop",
-                            cls="img-fluid rounded-3 border shadow-sm",
-                            style="max-height: 480px; object-fit: contain; width: 100%;",
+                        A(
+                            Img(
+                                src=f"/assets/img/tutorials/{desktop_img}",
+                                alt=f"{title} - Desktop",
+                                cls="img-fluid rounded-3 border shadow-sm",
+                                style="max-height: 480px; object-fit: contain; width: 100%; cursor: zoom-in;",
+                            ),
+                            href=f"/assets/img/tutorials/{desktop_img}",
+                            target="_blank",
+                            title="Click to view full image in new tab",
                         ),
                         id=f"{step_id}-desktop",
                         cls="tab-pane fade show active",
@@ -65,11 +71,16 @@ def _tutorial_step(
                     ),
                     Div(
                         Div(
-                            Img(
-                                src=f"/assets/img/tutorials/{mobile_img}",
-                                alt=f"{title} - Mobile",
-                                cls="img-fluid rounded-3 border shadow-sm mx-auto d-block",
-                                style="max-height: 520px; max-width: 340px; object-fit: contain;",
+                            A(
+                                Img(
+                                    src=f"/assets/img/tutorials/{mobile_img}",
+                                    alt=f"{title} - Mobile",
+                                    cls="img-fluid rounded-3 border shadow-sm mx-auto d-block",
+                                    style="max-height: 520px; max-width: 340px; object-fit: contain; cursor: zoom-in;",
+                                ),
+                                href=f"/assets/img/tutorials/{mobile_img}",
+                                target="_blank",
+                                title="Click to view full image in new tab",
                             ),
                             cls="text-center bg-light p-3 rounded-3",
                         ),
@@ -84,21 +95,31 @@ def _tutorial_step(
         )
     elif desktop_img:
         img_component = Div(
-            Img(
-                src=f"/assets/img/tutorials/{desktop_img}",
-                alt=title,
-                cls="img-fluid rounded-3 border shadow-sm mt-3",
-                style="max-height: 480px; object-fit: contain; width: 100%;",
+            A(
+                Img(
+                    src=f"/assets/img/tutorials/{desktop_img}",
+                    alt=title,
+                    cls="img-fluid rounded-3 border shadow-sm mt-3",
+                    style="max-height: 480px; object-fit: contain; width: 100%; cursor: zoom-in;",
+                ),
+                href=f"/assets/img/tutorials/{desktop_img}",
+                target="_blank",
+                title="Click to view full image in new tab",
             )
         )
     elif mobile_img:
         img_component = Div(
             Div(
-                Img(
-                    src=f"/assets/img/tutorials/{mobile_img}",
-                    alt=title,
-                    cls="img-fluid rounded-3 border shadow-sm mx-auto d-block",
-                    style="max-height: 520px; max-width: 340px; object-fit: contain;",
+                A(
+                    Img(
+                        src=f"/assets/img/tutorials/{mobile_img}",
+                        alt=title,
+                        cls="img-fluid rounded-3 border shadow-sm mx-auto d-block",
+                        style="max-height: 520px; max-width: 340px; object-fit: contain; cursor: zoom-in;",
+                    ),
+                    href=f"/assets/img/tutorials/{mobile_img}",
+                    target="_blank",
+                    title="Click to view full image in new tab",
                 ),
                 cls="text-center bg-light p-3 rounded-3 mt-3",
             )
@@ -118,6 +139,19 @@ def _tutorial_step(
             cls="mt-3 p-3 bg-light rounded-3 border-start border-success border-3",
         )
 
+    action_btn = None
+    if action_link:
+        btn_text, btn_href = action_link
+        action_btn = Div(
+            A(
+                Icon("arrow-right-circle", cls="bi me-2"),
+                btn_text,
+                href=btn_href,
+                cls="btn btn-sm btn-outline-success rounded-pill px-3 mt-2",
+            ),
+            cls="mt-2",
+        )
+
     return Div(
         Div(
             Span(f"Step {num}", cls="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 mb-2"),
@@ -125,6 +159,7 @@ def _tutorial_step(
             P(description, cls="text-muted mb-0", style="line-height: 1.6;"),
             img_component if img_component else Div(),
             tips_component if tips_component else Div(),
+            action_btn if action_btn else Div(),
             cls="p-4 bg-white rounded-4 border shadow-sm mb-4",
         )
     )
@@ -191,6 +226,50 @@ def register_routes(app):
             style="background: #F8FAF9;",
         )
 
+        exam_guide_card = Card(
+            Row(
+                Col(
+                    Div(
+                        Badge("Visual Walkthrough", variant="primary", pill=True, cls="mb-2"),
+                        H2("How to Generate & Review an Exam with AI", cls="h4 fw-bold text-dark mb-2"),
+                        P(
+                            "Walk through the 4-step Generation Wizard, configure curriculum sections, select Bloom's taxonomy cognitive levels, monitor the live generation pipeline, review math formulas, and approve the paper for student printing.",
+                            cls="text-muted mb-3",
+                            style="line-height: 1.6;",
+                        ),
+                        Div(
+                            A(
+                                Icon("stars", cls="bi me-2"),
+                                "Read Exam Guide",
+                                href="/app/tutorials/exam-generation-workflow",
+                                cls="btn btn-outline-success rounded-pill px-4 me-2",
+                            ),
+                            Span("⏱ ~3 mins to read", cls="small text-muted align-self-center"),
+                            cls="d-flex align-items-center flex-wrap gap-2",
+                        ),
+                        cls="p-4",
+                    ),
+                    span=12,
+                    md=8,
+                ),
+                Col(
+                    Div(
+                        Img(
+                            src="/assets/img/tutorials/13_wizard_step1.png",
+                            alt="Exam Generation Wizard",
+                            cls="img-fluid rounded-3 border shadow-sm",
+                            style="max-height: 220px; width: 100%; object-fit: cover;",
+                        ),
+                        cls="p-3 d-none d-md-block h-100",
+                    ),
+                    span=12,
+                    md=4,
+                ),
+            ),
+            cls="border-0 shadow-sm rounded-4 overflow-hidden mb-4",
+            style="background: #F8FAF9;",
+        )
+
         troubleshooting_card = Card(
             Div(
                 H2("Quick Troubleshooting & FAQs", cls="h5 fw-bold text-dark mb-3"),
@@ -210,6 +289,7 @@ def register_routes(app):
         content = Div(
             header,
             overview_card,
+            exam_guide_card,
             troubleshooting_card,
             cls="container-fluid px-3 px-md-4 py-4",
             style="max-width: 1080px;",
@@ -250,16 +330,18 @@ def register_routes(app):
                 1,
                 "Open the Teaching Workspace",
                 "Sign in and click 'Teaching' in the navigation bar. On mobile phones, open the menu (☰) at the top-left and choose 'Teaching'.",
-                desktop_img="01_teaching_workspace.png",
+                desktop_img="annotated/step1_teaching_scope_annotated.png",
                 mobile_img="mobile_01_teaching_workspace.png",
                 tips=[
-                    "The Teaching workspace filters everything by Class, Subject, and Term. Check these selectors first before creating plans.",
+                    "Notice Callout ① on the sidebar and Callout ② on the Scope selector. The Teaching workspace filters everything by Class, Subject, and Term.",
                 ],
+                action_link=("Open Teaching Workspace", "/app/teaching"),
             ),
             _tutorial_step(
                 2,
                 "Choose Your Scope (Class, Subject, Term)",
                 "Pick your Class (e.g. Primary 4), Subject (e.g. Mathematics), and Term (e.g. First Term). Click 'Refresh scheme' to load the official NERDC curriculum scheme of work.",
+                desktop_img="01_teaching_workspace_scope_crop.png",
                 tips=[
                     "If you ever see a brief connection notification, pulling down to refresh or tapping 'Refresh scheme' reloads your saved selection safely.",
                 ],
@@ -268,8 +350,9 @@ def register_routes(app):
                 3,
                 "Fill in the Lesson Plan Form",
                 "Select the scheme week from the dropdown, give your plan a title, and provide brief notes on learning activities, assessment checks, and local materials.",
-                desktop_img="02_plan_form_filled.png",
+                desktop_img="annotated/step3_plan_form_annotated.png",
                 tips=[
+                    "See Callout ③: tap 'Create lesson plan' once your notes are ready.",
                     "Include familiar local teaching materials (e.g. bundle sticks, chalkboard, Nigerian Naira coins/notes) to make the AI draft fit your classroom.",
                 ],
             ),
@@ -277,8 +360,9 @@ def register_routes(app):
                 4,
                 "Draft the Note with AI",
                 "Once the plan card appears under 'Your teaching plans', tap 'Draft with AI'. The server generates a complete lesson note including objectives, starter, explanation, guided practice, assessment, and differentiation.",
-                desktop_img="03_plan_card_draft_with_ai.png",
+                desktop_img="annotated/step4_draft_with_ai_annotated.png",
                 tips=[
+                    "See Callout ④ highlighting the green 'Draft with AI' button.",
                     "AI generation takes approximately 20–30 seconds. Keep the tab open while the spinner is active.",
                     "If a draft is ever interrupted, simply tap 'Regenerate draft' to fetch a fresh note.",
                 ],
@@ -287,17 +371,20 @@ def register_routes(app):
                 5,
                 "Preview & Personalize Your Note",
                 "Review the generated note. You can directly type inside the draft text area to add local notes or instructions. Tap 'Preview lesson note' to see the formatted output.",
-                desktop_img="04_ai_lesson_note_generated.png",
+                desktop_img="annotated/step5_note_preview_annotated.png",
                 tips=[
-                    "You can also use quick refinement chips (e.g. 'Nigerian context', 'Make shorter', 'Simplify language') to adjust the tone.",
+                    "See Callout ⑤: You can preview formatted KaTeX math and use quick refinement chips (e.g. '🌍 Nigerian Context', '✂ Make Shorter', '💡 Simplify Language') to adjust the tone.",
                 ],
             ),
             _tutorial_step(
                 6,
                 "Save & Submit for Review",
                 "Tap 'Save & submit for review'. The card badge updates from 'Draft' to 'Submitted', and your notes are securely stored for school administration.",
-                desktop_img="06_submitted_card_exports.png",
+                desktop_img="annotated/step6_submitted_exports_annotated.png",
                 mobile_img="mobile_02_submitted_card_note.png",
+                tips=[
+                    "See Callout ⑥: The badge flips to 'Submitted' and refinement chips stay accessible for further tweaks.",
+                ],
             ),
             _tutorial_step(
                 7,
@@ -306,8 +393,9 @@ def register_routes(app):
                 desktop_img="06_submitted_card_exports.png",
                 mobile_img="mobile_03_export_links.png",
                 tips=[
-                    "The exported document includes your configured school branding with no platform watermarks in the body.",
+                    "See Callout ⑦ on the previous screen: The exported document includes your configured school branding with no platform watermarks in the body.",
                 ],
+                action_link=("Configure School Logo in Settings", "/app/settings"),
             ),
         ]
 
@@ -339,4 +427,115 @@ def register_routes(app):
             user=user,
             active="tutorials",
             crumbs=[("Tutorials", "/app/tutorials"), ("Lesson Note Guide", "/app/tutorials/lesson-note-workflow")],
+        )
+
+    @app.get("/app/tutorials/exam-generation-workflow")
+    async def exam_generation_guide(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+
+        header = Div(
+            A(
+                Icon("arrow-left", cls="bi me-1"),
+                "Back to Tutorials",
+                href="/app/tutorials",
+                cls="text-decoration-none small text-success fw-medium mb-2 d-inline-block",
+            ),
+            H1("Generating & Printing an Exam Paper (AI Walkthrough)", cls="h3 fw-bold text-dark mb-2"),
+            P(
+                "A complete guide to configuring your exam parameters, launching AI generation, reviewing formulas, and exporting student-ready exam papers.",
+                cls="text-muted mb-4",
+            ),
+            cls="mb-4",
+        )
+
+        steps = [
+            _tutorial_step(
+                1,
+                "Start the AI Exam Generator",
+                "From your dashboard or exams page, click 'Generate with AI'. This launches the 4-step generation wizard designed specifically around the NERDC curriculum.",
+                desktop_img="13_wizard_step1.png",
+                tips=[
+                    "Select the exact Class Level and Subject so the AI generator matches curriculum expectations.",
+                ],
+                action_link=("Launch Exam Wizard", "/app/exams/new"),
+            ),
+            _tutorial_step(
+                2,
+                "Define Exam Structure & Sections",
+                "Choose how many sections your exam will have (e.g. Section A: Multiple Choice, Section B: Theory & Short Answer). You can specify marks per section and question counts.",
+                desktop_img="14_wizard_step2.png",
+                tips=[
+                    "SkuPhase automatically adjusts total marks to 100 or your school's configured maximum.",
+                ],
+            ),
+            _tutorial_step(
+                3,
+                "Confirm & Launch Generation",
+                "Review your parameters on the confirmation step, then tap 'Generate Exam'. The backend will enqueue the generation job and begin AI drafting.",
+                desktop_img="15_wizard_step4_confirm.png",
+                tips=[
+                    "You will see real-time progress as sections and questions are composed, validated, and structured.",
+                ],
+            ),
+            _tutorial_step(
+                4,
+                "Monitor Generation Progress",
+                "While the exam is generating, the progress screen keeps you updated. Generation typically finishes in under 60 seconds.",
+                desktop_img="16_ai_generating_progress.png",
+                tips=[
+                    "If a network interruption occurs, SkuPhase's background job queue continues processing safely.",
+                ],
+            ),
+            _tutorial_step(
+                5,
+                "Review Questions & Math Formulas",
+                "Once generated, inspect each question. SkuPhase renders KaTeX equations (e.g. fractions, square roots, matrices) cleanly for both screen and print.",
+                desktop_img="21_q8_math_rendering.png",
+                tips=[
+                    "Each question card shows marks and taxonomy levels. You can edit any question text or options directly.",
+                ],
+            ),
+            _tutorial_step(
+                6,
+                "Approve and Print Student Paper",
+                "When satisfied, click 'Approve Exam'. You can then print clean student question papers with your official school header or download master answer keys.",
+                desktop_img="11_print_student_paper.png",
+                tips=[
+                    "The print view strips out navigation controls, leaving a crisp, distraction-free document ready for the duplicating machine.",
+                ],
+                action_link=("View Your Exams List", "/app/exams"),
+            ),
+        ]
+
+        content = Div(
+            header,
+            *steps,
+            Div(
+                A(
+                    Icon("arrow-left", cls="bi me-2"),
+                    "Return to Tutorials Overview",
+                    href="/app/tutorials",
+                    cls="btn btn-outline-secondary rounded-pill px-4",
+                ),
+                A(
+                    Icon("stars", cls="bi me-2"),
+                    "Generate an Exam Now",
+                    href="/app/exams/new",
+                    cls="btn btn-brand text-white rounded-pill px-4 ms-2",
+                ),
+                cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
+            ),
+            cls="container-fluid px-3 px-md-4 py-4",
+            style="max-width: 960px;",
+        )
+
+        return AppShell(
+            Title("Exam Generation Walkthrough — SkuPhase"),
+            content,
+            user=user,
+            active="tutorials",
+            crumbs=[("Tutorials", "/app/tutorials"), ("Exam Generation Guide", "/app/tutorials/exam-generation-workflow")],
         )
