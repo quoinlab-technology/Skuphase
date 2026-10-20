@@ -270,6 +270,94 @@ def register_routes(app):
             style="background: #F8FAF9;",
         )
 
+        bank_guide_card = Card(
+            Row(
+                Col(
+                    Div(
+                        Badge("Visual Walkthrough", variant="info", pill=True, cls="mb-2"),
+                        H2("Question Bank & Manual Exam Builder", cls="h4 fw-bold text-dark mb-2"),
+                        P(
+                            "Learn how to create custom exams manually without AI, type questions with live KaTeX math formula previews, bookmark top exam questions into your school's shared Question Bank, and insert saved questions into new papers.",
+                            cls="text-muted mb-3",
+                            style="line-height: 1.6;",
+                        ),
+                        Div(
+                            A(
+                                Icon("book", cls="bi me-2"),
+                                "Read Question Bank Guide",
+                                href="/app/tutorials/question-bank-workflow",
+                                cls="btn btn-outline-success rounded-pill px-4 me-2",
+                            ),
+                            Span("⏱ ~2 mins to read", cls="small text-muted align-self-center"),
+                            cls="d-flex align-items-center flex-wrap gap-2",
+                        ),
+                        cls="p-4",
+                    ),
+                    span=12,
+                    md=8,
+                ),
+                Col(
+                    Div(
+                        Img(
+                            src="/assets/img/tutorials/21_q8_math_rendering.png",
+                            alt="Question Bank & Math",
+                            cls="img-fluid rounded-3 border shadow-sm",
+                            style="max-height: 220px; width: 100%; object-fit: cover;",
+                        ),
+                        cls="p-3 d-none d-md-block h-100",
+                    ),
+                    span=12,
+                    md=4,
+                ),
+            ),
+            cls="border-0 shadow-sm rounded-4 overflow-hidden mb-4",
+            style="background: #F8FAF9;",
+        )
+
+        admin_guide_card = Card(
+            Row(
+                Col(
+                    Div(
+                        Badge("Admin & Setup", variant="warning", pill=True, cls="mb-2"),
+                        H2("School Setup, Branding & Staff Invites", cls="h4 fw-bold text-dark mb-2"),
+                        P(
+                            "A step-by-step guide for School Principals and Administrators: upload your official school crest/logo, customize exam headers, configure terms, invite subject teachers with custom roles, and oversee teaching coverage.",
+                            cls="text-muted mb-3",
+                            style="line-height: 1.6;",
+                        ),
+                        Div(
+                            A(
+                                Icon("gear-wide-connected", cls="bi me-2"),
+                                "Read Admin Guide",
+                                href="/app/tutorials/school-setup-workflow",
+                                cls="btn btn-outline-success rounded-pill px-4 me-2",
+                            ),
+                            Span("⏱ ~2 mins to read", cls="small text-muted align-self-center"),
+                            cls="d-flex align-items-center flex-wrap gap-2",
+                        ),
+                        cls="p-4",
+                    ),
+                    span=12,
+                    md=8,
+                ),
+                Col(
+                    Div(
+                        Img(
+                            src="/assets/img/tutorials/03_dashboard_desktop.png",
+                            alt="Admin & Dashboard Setup",
+                            cls="img-fluid rounded-3 border shadow-sm",
+                            style="max-height: 220px; width: 100%; object-fit: cover;",
+                        ),
+                        cls="p-3 d-none d-md-block h-100",
+                    ),
+                    span=12,
+                    md=4,
+                ),
+            ),
+            cls="border-0 shadow-sm rounded-4 overflow-hidden mb-4",
+            style="background: #F8FAF9;",
+        )
+
         troubleshooting_card = Card(
             Div(
                 H2("Quick Troubleshooting & FAQs", cls="h5 fw-bold text-dark mb-3"),
@@ -290,6 +378,8 @@ def register_routes(app):
             header,
             overview_card,
             exam_guide_card,
+            bank_guide_card,
+            admin_guide_card,
             troubleshooting_card,
             cls="container-fluid px-3 px-md-4 py-4",
             style="max-width: 1080px;",
@@ -538,4 +628,192 @@ def register_routes(app):
             user=user,
             active="tutorials",
             crumbs=[("Tutorials", "/app/tutorials"), ("Exam Generation Guide", "/app/tutorials/exam-generation-workflow")],
+        )
+
+    @app.get("/app/tutorials/question-bank-workflow")
+    async def question_bank_guide(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+
+        header = Div(
+            A(
+                Icon("arrow-left", cls="bi me-1"),
+                "Back to Tutorials",
+                href="/app/tutorials",
+                cls="text-decoration-none small text-success fw-medium mb-2 d-inline-block",
+            ),
+            H1("Using the Question Bank & Manual Exam Builder", cls="h3 fw-bold text-dark mb-2"),
+            P(
+                "Learn how to manually create custom exam papers without AI, write KaTeX formulas, and reuse top questions across your school's Question Bank.",
+                cls="text-muted mb-4",
+            ),
+            cls="mb-4",
+        )
+
+        steps = [
+            _tutorial_step(
+                1,
+                "Access the Manual Exam Creator",
+                "When you already have a past examination paper or specific exam questions to type in directly, click 'Manual Exam' on the Exams workspace.",
+                desktop_img="12_exams_list_desktop.png",
+                tips=[
+                    "Manual exams bypass the AI generation queue, creating an editable draft immediately.",
+                ],
+                action_link=("Start a Manual Exam", "/app/exams/new/manual"),
+            ),
+            _tutorial_step(
+                2,
+                "Format Questions with Math Delimiters",
+                "Type question text and options. Wrap math equations in single dollar signs ($x^2 + y^2 = r^2$) for inline math or double dollar signs ($$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$) for block equations.",
+                desktop_img="21_q8_math_rendering.png",
+                tips=[
+                    "SkuPhase automatically previews KaTeX rendering so you can verify fraction formatting and indices before printing.",
+                ],
+            ),
+            _tutorial_step(
+                3,
+                "Bookmark Verified Questions to the School Bank",
+                "On any approved or reviewed exam detail page, open the question's action menu (⋮) and tap 'Save to Question Bank'.",
+                desktop_img="22_approved_exam.png",
+                tips=[
+                    "Saved questions carry their subject, class grade level, marks, and solution explanations into your school's private bank.",
+                ],
+            ),
+            _tutorial_step(
+                4,
+                "Browse and Filter the Question Bank",
+                "Go to 'Bank' in the main navigation. You can filter questions by Subject, Class Level, Difficulty (Easy, Medium, Hard), and Type (MCQ, Short Answer, Essay).",
+                desktop_img="12_exams_list_desktop.png",
+                tips=[
+                    "Teachers can quickly search by keywords or topic names to assemble quick weekly revision tests.",
+                ],
+                action_link=("Explore Question Bank", "/app/bank"),
+            ),
+        ]
+
+        content = Div(
+            header,
+            *steps,
+            Div(
+                A(
+                    Icon("arrow-left", cls="bi me-2"),
+                    "Return to Tutorials Overview",
+                    href="/app/tutorials",
+                    cls="btn btn-outline-secondary rounded-pill px-4",
+                ),
+                A(
+                    Icon("book", cls="bi me-2"),
+                    "Open Question Bank",
+                    href="/app/bank",
+                    cls="btn btn-brand text-white rounded-pill px-4 ms-2",
+                ),
+                cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
+            ),
+            cls="container-fluid px-3 px-md-4 py-4",
+            style="max-width: 960px;",
+        )
+
+        return AppShell(
+            Title("Question Bank Guide — SkuPhase"),
+            content,
+            user=user,
+            active="tutorials",
+            crumbs=[("Tutorials", "/app/tutorials"), ("Question Bank Guide", "/app/tutorials/question-bank-workflow")],
+        )
+
+    @app.get("/app/tutorials/school-setup-workflow")
+    async def school_setup_guide(req: Request):
+        guard = ensure_login(req)
+        if guard:
+            return guard
+        user = current_user(req) or {}
+
+        header = Div(
+            A(
+                Icon("arrow-left", cls="bi me-1"),
+                "Back to Tutorials",
+                href="/app/tutorials",
+                cls="text-decoration-none small text-success fw-medium mb-2 d-inline-block",
+            ),
+            H1("School Setup, Branding & Staff Invites (Admin Guide)", cls="h3 fw-bold text-dark mb-2"),
+            P(
+                "A visual guide for School Principals & Administrators to configure your school identity, upload custom logos, and invite teaching staff.",
+                cls="text-muted mb-4",
+            ),
+            cls="mb-4",
+        )
+
+        steps = [
+            _tutorial_step(
+                1,
+                "Upload Your Official School Crest / Logo",
+                "Navigate to 'Settings' (or click your school name at the top-right). Under School Identity, upload a clear PNG or JPEG of your school's logo or crest.",
+                desktop_img="03_dashboard_desktop.png",
+                tips=[
+                    "Transparent PNG logos look best on printed documents and avoid white box borders.",
+                    "The logo will automatically embed in all exported lesson notes and exam headers.",
+                ],
+                action_link=("Go to School Settings", "/app/settings"),
+            ),
+            _tutorial_step(
+                2,
+                "Set School Masthead & Examination Header",
+                "Enter your official School Name, Motto, Postal/Campus Address, and current Academic Term (e.g. First Term 2026/2027).",
+                desktop_img="03_dashboard_desktop.png",
+                tips=[
+                    "These settings ensure every teacher's exported test paper follows your school's exact standard format.",
+                ],
+            ),
+            _tutorial_step(
+                3,
+                "Invite Teachers & Assign Subject Roles",
+                "Under 'Staff' or 'Users', click 'Invite Teacher'. Enter their email address and select their role (e.g. Teacher, Department Head, School Admin).",
+                desktop_img="03_dashboard_desktop.png",
+                tips=[
+                    "Teachers will receive an activation email and will immediately gain access to your school's curriculum schemes and shared Question Bank.",
+                ],
+                action_link=("Manage School Staff", "/app/staff"),
+            ),
+            _tutorial_step(
+                4,
+                "Track Syllabus Delivery & Coverage",
+                "Principals can review the Teaching workspace coverage tracker to see weekly curriculum completion progress across all primary and secondary arms.",
+                desktop_img="annotated/step1_teaching_scope_annotated.png",
+                tips=[
+                    "When teachers mark weeks as delivered, administrators can verify and sign off on completion records directly in the portal.",
+                ],
+                action_link=("View Coverage Progress", "/app/teaching?show_coverage=true"),
+            ),
+        ]
+
+        content = Div(
+            header,
+            *steps,
+            Div(
+                A(
+                    Icon("arrow-left", cls="bi me-2"),
+                    "Return to Tutorials Overview",
+                    href="/app/tutorials",
+                    cls="btn btn-outline-secondary rounded-pill px-4",
+                ),
+                A(
+                    Icon("gear", cls="bi me-2"),
+                    "Go to Settings",
+                    href="/app/settings",
+                    cls="btn btn-brand text-white rounded-pill px-4 ms-2",
+                ),
+                cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
+            ),
+            cls="container-fluid px-3 px-md-4 py-4",
+            style="max-width: 960px;",
+        )
+
+        return AppShell(
+            Title("School Setup & Admin Guide — SkuPhase"),
+            content,
+            user=user,
+            active="tutorials",
+            crumbs=[("Tutorials", "/app/tutorials"), ("Admin Guide", "/app/tutorials/school-setup-workflow")],
         )
