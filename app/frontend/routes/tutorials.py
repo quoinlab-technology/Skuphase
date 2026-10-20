@@ -1,6 +1,6 @@
 """Tutorials and interactive guides hub for teachers and school administrators."""
 
-from fasthtml.common import A, Div, H1, H2, H3, Img, P, Span, Strong, Title
+from fasthtml.common import A, Code, Div, H1, H2, H3, Img, P, Span, Strong, Title
 from starlette.requests import Request
 
 from faststrap import Badge, Card, Col, Icon, Row
@@ -12,7 +12,7 @@ from app.frontend.deps import current_user, ensure_login
 def _tutorial_step(
     num: int,
     title: str,
-    description: str,
+    description,
     desktop_img: str | None = None,
     mobile_img: str | None = None,
     tips: list[str] | None = None,
@@ -156,7 +156,7 @@ def _tutorial_step(
         Div(
             Span(f"Step {num}", cls="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 mb-2"),
             H3(title, cls="h5 fw-bold text-dark mb-2"),
-            P(description, cls="text-muted mb-0", style="line-height: 1.6;"),
+            P(description, cls="text-muted mb-0", style="line-height: 1.6;") if isinstance(description, str) else description,
             img_component if img_component else Div(),
             tips_component if tips_component else Div(),
             action_btn if action_btn else Div(),
@@ -381,8 +381,7 @@ def register_routes(app):
             bank_guide_card,
             admin_guide_card,
             troubleshooting_card,
-            cls="container-fluid px-3 px-md-4 py-4",
-            style="max-width: 1080px;",
+            cls="container py-4",
         )
 
         return AppShell(
@@ -420,10 +419,10 @@ def register_routes(app):
                 1,
                 "Open the Teaching Workspace",
                 "Sign in and click 'Teaching' in the navigation bar. On mobile phones, open the menu (☰) at the top-left and choose 'Teaching'.",
-                desktop_img="annotated/step1_teaching_scope_annotated.png",
+                desktop_img="01_teaching_workspace.png",
                 mobile_img="mobile_01_teaching_workspace.png",
                 tips=[
-                    "Notice Callout ① on the sidebar and Callout ② on the Scope selector. The Teaching workspace filters everything by Class, Subject, and Term.",
+                    "The Teaching workspace filters everything by Class, Subject, and Term — set your scope before creating plans.",
                 ],
                 action_link=("Open Teaching Workspace", "/app/teaching"),
             ),
@@ -440,9 +439,9 @@ def register_routes(app):
                 3,
                 "Fill in the Lesson Plan Form",
                 "Select the scheme week from the dropdown, give your plan a title, and provide brief notes on learning activities, assessment checks, and local materials.",
-                desktop_img="annotated/step3_plan_form_annotated.png",
+                desktop_img="02_plan_form_filled.png",
                 tips=[
-                    "See Callout ③: tap 'Create lesson plan' once your notes are ready.",
+                    "Tap 'Create lesson plan' once your notes are ready.",
                     "Include familiar local teaching materials (e.g. bundle sticks, chalkboard, Nigerian Naira coins/notes) to make the AI draft fit your classroom.",
                 ],
             ),
@@ -450,9 +449,8 @@ def register_routes(app):
                 4,
                 "Draft the Note with AI",
                 "Once the plan card appears under 'Your teaching plans', tap 'Draft with AI'. The server generates a complete lesson note including objectives, starter, explanation, guided practice, assessment, and differentiation.",
-                desktop_img="annotated/step4_draft_with_ai_annotated.png",
+                desktop_img="03_plan_card_draft_with_ai.png",
                 tips=[
-                    "See Callout ④ highlighting the green 'Draft with AI' button.",
                     "AI generation takes approximately 20–30 seconds. Keep the tab open while the spinner is active.",
                     "If a draft is ever interrupted, simply tap 'Regenerate draft' to fetch a fresh note.",
                 ],
@@ -461,19 +459,19 @@ def register_routes(app):
                 5,
                 "Preview & Personalize Your Note",
                 "Review the generated note. You can directly type inside the draft text area to add local notes or instructions. Tap 'Preview lesson note' to see the formatted output.",
-                desktop_img="annotated/step5_note_preview_annotated.png",
+                desktop_img="05_lesson_note_preview.png",
                 tips=[
-                    "See Callout ⑤: You can preview formatted KaTeX math and use quick refinement chips (e.g. '🌍 Nigerian Context', '✂ Make Shorter', '💡 Simplify Language') to adjust the tone.",
+                    "You can preview formatted KaTeX math and use quick refinement chips (e.g. '🌍 Nigerian Context', '✂ Make Shorter', '💡 Simplify Language') to adjust the tone.",
                 ],
             ),
             _tutorial_step(
                 6,
                 "Save & Submit for Review",
                 "Tap 'Save & submit for review'. The card badge updates from 'Draft' to 'Submitted', and your notes are securely stored for school administration.",
-                desktop_img="annotated/step6_submitted_exports_annotated.png",
+                desktop_img="06_submitted_card_exports.png",
                 mobile_img="mobile_02_submitted_card_note.png",
                 tips=[
-                    "See Callout ⑥: The badge flips to 'Submitted' and refinement chips stay accessible for further tweaks.",
+                    "The badge flips to 'Submitted' and refinement chips stay accessible for further tweaks.",
                 ],
             ),
             _tutorial_step(
@@ -507,8 +505,7 @@ def register_routes(app):
                 ),
                 cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
             ),
-            cls="container-fluid px-3 px-md-4 py-4",
-            style="max-width: 960px;",
+            cls="container py-4",
         )
 
         return AppShell(
@@ -618,8 +615,7 @@ def register_routes(app):
                 ),
                 cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
             ),
-            cls="container-fluid px-3 px-md-4 py-4",
-            style="max-width: 960px;",
+            cls="container py-4",
         )
 
         return AppShell(
@@ -657,7 +653,6 @@ def register_routes(app):
                 1,
                 "Access the Manual Exam Creator",
                 "When you already have a past examination paper or specific exam questions to type in directly, click 'Manual Exam' on the Exams workspace.",
-                desktop_img="12_exams_list_desktop.png",
                 tips=[
                     "Manual exams bypass the AI generation queue, creating an editable draft immediately.",
                 ],
@@ -666,7 +661,15 @@ def register_routes(app):
             _tutorial_step(
                 2,
                 "Format Questions with Math Delimiters",
-                "Type question text and options. Wrap math equations in single dollar signs ($x^2 + y^2 = r^2$) for inline math or double dollar signs ($$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$) for block equations.",
+                P(
+                    "Type question text and options. Wrap inline math in single dollar signs — e.g. ",
+                    Code("$x^2 + y^2 = r^2$"),
+                    " — or block equations in double dollar signs — e.g. ",
+                    Code(r"$$\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$"),
+                    " — and SkuPhase will render them instantly.",
+                    cls="text-muted mb-0",
+                    style="line-height: 1.6;",
+                ),
                 desktop_img="21_q8_math_rendering.png",
                 tips=[
                     "SkuPhase automatically previews KaTeX rendering so you can verify fraction formatting and indices before printing.",
@@ -685,7 +688,6 @@ def register_routes(app):
                 4,
                 "Browse and Filter the Question Bank",
                 "Go to 'Bank' in the main navigation. You can filter questions by Subject, Class Level, Difficulty (Easy, Medium, Hard), and Type (MCQ, Short Answer, Essay).",
-                desktop_img="12_exams_list_desktop.png",
                 tips=[
                     "Teachers can quickly search by keywords or topic names to assemble quick weekly revision tests.",
                 ],
@@ -711,8 +713,7 @@ def register_routes(app):
                 ),
                 cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
             ),
-            cls="container-fluid px-3 px-md-4 py-4",
-            style="max-width: 960px;",
+            cls="container py-4",
         )
 
         return AppShell(
@@ -780,7 +781,7 @@ def register_routes(app):
                 4,
                 "Track Syllabus Delivery & Coverage",
                 "Principals can review the Teaching workspace coverage tracker to see weekly curriculum completion progress across all primary and secondary arms.",
-                desktop_img="annotated/step1_teaching_scope_annotated.png",
+                desktop_img="01_teaching_workspace.png",
                 tips=[
                     "When teachers mark weeks as delivered, administrators can verify and sign off on completion records directly in the portal.",
                 ],
@@ -806,8 +807,7 @@ def register_routes(app):
                 ),
                 cls="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-3 pb-5",
             ),
-            cls="container-fluid px-3 px-md-4 py-4",
-            style="max-width: 960px;",
+            cls="container py-4",
         )
 
         return AppShell(
